@@ -295,10 +295,10 @@ function renderProjectWorkspace(project) {
     <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
     <section class="project-overview-card project-linked-quotes">
       <div class="project-section-heading"><div><span class="eyebrow">COMMERCIAL RECORDS</span><h2>Linked quotations</h2><p>Attach quotations already recorded in ProcureAI without changing their original purchase request.</p></div><span class="project-deliverable-count">${(project.linked_quotations || []).length} linked</span></div>
-      ${project.status === "completed" ? '<p class="project-muted">This project is closed. Linked quotations are retained as read-only records.</p>' : '<form id="projectLinkQuotationForm" class="project-link-quote-form">
+      ${project.status === "completed" ? '<p class="project-muted">This project is closed. Linked quotations are retained as read-only records.</p>' : `<form id="projectLinkQuotationForm" class="project-link-quote-form">
         <label>Choose an existing quotation<select name="quote_id" id="projectQuotationSelect" required><option value="">Loading available quotations…</option></select></label>
         <button class="btn btn-primary" type="submit">Link quotation to project</button>
-      </form>'}
+      </form>`}
       <div class="project-linked-quote-list">${(project.linked_quotations || []).length ? project.linked_quotations.map(q=>`
         <article class="project-linked-quote-row">
           <div><b>#${q.id} · ${escapeHtml(q.supplier)}</b><span>${escapeHtml(q.request_code)} · ${escapeHtml(q.material)}</span></div>
@@ -309,7 +309,7 @@ function renderProjectWorkspace(project) {
     <section class="project-activity-layout">
       <article class="project-overview-card project-feed-card"><div class="project-section-heading"><div><span class="eyebrow">TEAM JOURNAL</span><h2>Daily activity log</h2><p>Field notes, procurement updates, blockers and next actions.</p></div><span class="project-deliverable-count">${updates.length} entries</span></div><div class="project-update-feed">${updateMarkup}</div></article>
       <article class="project-overview-card project-update-form-card"><span class="eyebrow">TEAM JOURNAL</span><h2>${project.status === "completed" ? "Project updates locked" : "Submit daily update"}</h2><p class="project-muted">${project.status === "completed" ? "This project is closed. Historical updates remain available above." : "Your signed-in account is recorded automatically as the author."}</p>
-        ${project.status === "completed" ? "" : '<form id="projectUpdateForm">
+        ${project.status === "completed" ? ""  : `<form id="projectUpdateForm">
           <label>Update type<select name="update_type"><option value="daily">Daily update</option><option value="field_note">Field note</option><option value="blocker">Blocker / issue</option><option value="milestone">Milestone update</option></select></label>
           <label>Current status<input name="status" maxlength="80" value="In progress" required></label>
           <label>Reported workstream progress <strong id="projectReportedProgressValue">${latestReported}%</strong><input name="progress_percent" type="range" min="0" max="100" value="${latestReported}" step="5" id="projectReportedProgress"></label>
@@ -318,7 +318,7 @@ function renderProjectWorkspace(project) {
           <label>Next steps<textarea name="next_steps" rows="2" placeholder="Actions planned for the next work period"></textarea></label>
           <div class="project-milestone-checklist"><b>Mark milestones completed</b>${milestones.map(item=>`<label class="project-check-option"><input type="checkbox" name="completed_milestones" value="${escapeHtml(item.key)}" ${item.completed ? "disabled" : ""}><span>${escapeHtml(item.label)}${item.completed ? " · already complete" : ""}</span></label>`).join("")}</div>
           <button class="btn btn-primary project-submit-update" type="submit">Post project update</button>
-        </form>'}
+        </form>`}
       </article>
     </section>`;
   const progressInput = document.getElementById("projectReportedProgress");
