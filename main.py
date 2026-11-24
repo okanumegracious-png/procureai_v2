@@ -75,7 +75,7 @@ def _create_database_backup() -> dict:
         raise RuntimeError("ProcureAI database file is not available for backup")
     backup_dir = Path(os.getenv("PROCUREAI_BACKUP_DIR", str(source_path.parent / "backups")))
     backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
     final_path = backup_dir / f"procureai-{stamp}.sqlite3"
     temp_path = backup_dir / f".{final_path.name}.tmp"
     try:
