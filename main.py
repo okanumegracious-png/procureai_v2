@@ -479,6 +479,9 @@ class ProjectDailyUpdatePayload(BaseModel):
 class ProjectCompletionPayload(BaseModel):
     completion_note: str = Field(default="", max_length=3000)
 
+class ProjectTerminationPayload(BaseModel):
+    termination_note: str = Field(default="", max_length=3000)
+
 
 class BuyerConfirmationPayload(BaseModel):
     buyer_name: str = Field(min_length=2, max_length=200)
@@ -609,6 +612,10 @@ def _project_overview(db, project_id: str) -> dict:
     project["closed_by"] = closure["closed_by"] if closure else None
     project["completion_note"] = closure["completion_note"] if closure else ""
     project["progress_at_close"] = closure["progress_at_close"] if closure else None
+    termination = db.execute("SELECT terminated_at,terminated_by,termination_note FROM project_terminations WHERE project_id=?", (project_id,)).fetchone() if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_terminations'").fetchone() else None
+    project["terminated_at"] = termination["terminated_at"] if termination else None
+    project["terminated_by"] = termination["terminated_by"] if termination else None
+    project["termination_note"] = termination["termination_note"] if termination else ""
     project["boq_items_count"] = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
     project["quotations_count"] = db.execute("SELECT COUNT(*) FROM workflow_quotations WHERE project_id=?", (project_id,)).fetchone()[0]
     project["purchase_orders_count"] = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=?", (project_id,)).fetchone()[0]
@@ -1163,7 +1170,7 @@ def dashboard_create_request(payload: DashboardRequestPayload):
         selected_project = db.execute("SELECT status FROM projects WHERE project_id=?", (payload.project_id,)).fetchone()
         if not selected_project:
             raise HTTPException(status_code=404, detail="Selected project was not found")
-        if selected_project["status"] == "completed":
+        if selected_project["status"] in ("completed", "terminated"):
             raise HTTPException(status_code=409, detail="This project is closed. Reopen it through an authorised process before adding requests.")
         next_id = db.execute("SELECT COALESCE(MAX(id),0)+1 FROM requests").fetchone()[0]
         code = f"PR-{next_id+141:04d}"
@@ -1600,6 +1607,45 @@ def complete_project(project_id: str, payload: ProjectCompletionPayload, request
     return {"success":True,"project":overview}
 
 
+@app.post("/api/projects/{project_id}/terminate")
+def terminate_project(project_id: str, payload: ProjectTerminationPayload, request: Request):
+    now = _now()
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    note = payload.termination_note.strip()
+    with connect() as db:
+        project = db.execute("SELECT project_id,title,status,progress_percent FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] == "terminated":
+            raise HTTPException(status_code=409, detail="This project has already been terminated.")
+        if project["status"] == "completed":
+            raise HTTPException(status_code=409, detail="A completed project cannot be terminated. Its completion record is already final.")
+        db.execute("""CREATE TABLE IF NOT EXISTS project_terminations (
+            project_id TEXT PRIMARY KEY REFERENCES projects(project_id),
+            terminated_at TEXT NOT NULL,
+            terminated_by TEXT NOT NULL,
+            termination_note TEXT NOT NULL DEFAULT '',
+            progress_at_termination REAL NOT NULL DEFAULT 0
+        )""")
+        db.execute("""INSERT INTO project_terminations
+            (project_id,terminated_at,terminated_by,termination_note,progress_at_termination)
+            VALUES(?,?,?,?,?)""",
+            (project_id,now,actor,note,float(project["progress_percent"] or 0)))
+        db.execute("UPDATE projects SET status='terminated',updated_at=? WHERE project_id=?", (now,project_id))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor,"terminate","project",project_id,json.dumps({
+                "project_title":project["title"],"termination_note":note,
+                "progress_at_termination":float(project["progress_percent"] or 0),
+                "records_retained":True
+            }),now))
+        overview = _project_overview(db,project_id)
+    return {"success":True,"project":overview}
+
+
 @app.get("/api/projects/trends")
 def project_completion_trends():
     today = date.today()
@@ -1653,7 +1699,7 @@ def link_quotation_to_project(project_id: str, quote_id: int, request: Request):
         project = db.execute("SELECT title,status FROM projects WHERE project_id=?", (project_id,)).fetchone()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        if project["status"] == "completed":
+        if project["status"] in ("completed", "terminated"):
             raise HTTPException(status_code=409, detail="This project is closed. Linked quotations are read-only.")
         quote = db.execute("""SELECT q.id,s.name AS supplier,r.code AS request_code,r.material
             FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id
@@ -1733,7 +1779,7 @@ def record_buyer_confirmation(project_id: str, payload: BuyerConfirmationPayload
         project = db.execute("SELECT project_id,title,status FROM projects WHERE project_id=?", (project_id,)).fetchone()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        if project["status"] == "completed":
+        if project["status"] in ("completed", "terminated"):
             raise HTTPException(status_code=409, detail="This project is closed. Buyer confirmation is read-only.")
         db.execute("""CREATE TABLE IF NOT EXISTS buyer_confirmations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1791,8 +1837,8 @@ def add_project_daily_update(project_id: str, payload: ProjectDailyUpdatePayload
         project_row = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
         if not project_row:
             raise HTTPException(status_code=404, detail="Project not found")
-        if project_row["status"] == "completed":
-            raise HTTPException(status_code=409, detail="This project is closed. Daily updates are read-only.")
+        if project_row["status"] in ("completed", "terminated"):
+            raise HTTPException(status_code=409, detail="This project is closed or archived. Daily updates are read-only.")
         db.execute("""INSERT INTO project_updates
             (project_id,author,update_type,status,progress_percent,field_notes,blockers,next_steps,
              completed_milestones_json,created_at)
@@ -1812,6 +1858,11 @@ def add_project_daily_update(project_id: str, payload: ProjectDailyUpdatePayload
 @app.post("/api/projects/{project_id}/recalculate")
 def recalculate_project_progress(project_id: str):
     with connect() as db:
+        current = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if current["status"] in ("completed", "terminated"):
+            raise HTTPException(status_code=409, detail="This project is closed or archived. Progress is read-only.")
         progress = _recalculate_project(db, project_id)
         project = _project_overview(db, project_id)
     return {"success": True, "progress": progress, "project": project}
