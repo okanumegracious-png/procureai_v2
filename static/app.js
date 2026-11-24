@@ -320,6 +320,47 @@ function exportPdf(type) {
   const html = "<!doctype html><html><head><meta charset='utf-8'><title>"+escapePdfHtml(title)+" - ProcureAI</title><style>@page{size:A4 landscape;margin:14mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#17251f;margin:0}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #203c32;padding-bottom:12px;margin-bottom:18px}h1{font-size:22px;margin:0 0 5px}p{margin:0;color:#64736c}.meta{text-align:right;font-size:10px;color:#64736c}table{width:100%;border-collapse:collapse;table-layout:auto}th{background:#edf2ef;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em}th,td{border:1px solid #d9e1dc;padding:7px 6px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8faf9}.empty{padding:24px;text-align:center;color:#64736c;border:1px dashed #cbd5cf;margin-top:12px}footer{margin-top:18px;padding-top:8px;border-top:1px solid #d9e1dc;color:#64736c;font-size:9px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><header><div><h1>"+escapePdfHtml(title)+"</h1><p>Gestro Global Consult Ltd · ProcureAI</p></div><div class='meta'>Generated: "+escapePdfHtml(generated)+"<br>Records: "+dataset.rows.length+"</div></header>"+(dataset.rows.length?"<table><thead><tr>"+tableHead+"</tr></thead><tbody>"+tableRows+"</tbody></table>":"<div class='empty'>No records match the current filters.</div>")+"<footer>Internal procurement report · Handle supplier and commercial information confidentially.</footer><script>window.onload=function(){window.print();};<\/script></body></html>";
   popup.document.open(); popup.document.write(html); popup.document.close();
 }
+async function exportPurchaseOrder(orderId) {
+  const popup = window.open("", "_blank");
+  if (!popup) return showToast("Allow pop-ups to export this purchase order.", true);
+  popup.document.write("<!doctype html><title>Preparing purchase order…</title><p style='font:16px Arial;padding:24px'>Preparing purchase order PDF…</p>");
+  try {
+    const response = await apiFetch(`${API}/orders/${encodeURIComponent(orderId)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load purchase order");
+    const po = data.order;
+    const status = String(po.status || "Pending approval");
+    const approved = status.toLowerCase() === "approved";
+    const rejected = status.toLowerCase() === "rejected";
+    const documentTitle = approved ? "PURCHASE ORDER" : rejected ? "REJECTED — NOT VALID FOR SUPPLY" : "PURCHASE ORDER PROPOSAL";
+    const safe = value => escapePdfHtml(value ?? "—");
+    const money = value => formatMoney(Number(value || 0));
+    const dateText = value => value ? new Date(value).toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"}) : "—";
+    const subtotal = Number(po.quantity||0)*Number(po.unit_price||0);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${safe(po.code)} - ProcureAI</title><style>
+    @page{size:A4;margin:17mm}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#17251f;margin:0}
+    header{display:flex;justify-content:space-between;gap:24px;align-items:flex-start;border-bottom:3px solid #203c32;padding-bottom:18px;margin-bottom:22px}
+    .brand{font-size:20px;font-weight:800}.brand small{display:block;font-size:9px;color:#64736c;letter-spacing:.14em;margin-top:5px}
+    h1{font-size:22px;margin:0 0 8px;text-align:right}.status{font-size:10px;font-weight:800;letter-spacing:.08em;padding:7px 10px;border:1px solid ${approved?"#27734d":rejected?"#a33":"#b87916"};color:${approved?"#27734d":rejected?"#a33":"#94600d"};display:inline-block}
+    .meta{text-align:right;color:#64736c;font-size:11px;line-height:1.7;margin-top:8px}.notice{border:1px solid ${approved?"#cbd5cf":"#e7c98e"};background:${approved?"#f4f8f5":"#fff9eb"};padding:11px 13px;margin:0 0 20px;font-size:11px;line-height:1.5}
+    h2{font-size:13px;margin:0 0 9px;color:#203c32;text-transform:uppercase;letter-spacing:.06em}.parties{display:grid;grid-template-columns:1fr 1fr;gap:26px;margin-bottom:22px}.party{line-height:1.65}.party b{display:block;font-size:13px;margin-bottom:3px}
+    .facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0 22px}.fact{background:#f4f7f5;padding:10px}.fact small{display:block;color:#64736c;font-size:9px;text-transform:uppercase;margin-bottom:5px}.fact b{font-size:11px}
+    table{width:100%;border-collapse:collapse;margin-top:8px}th{background:#edf2ef;text-align:left;font-size:9px;text-transform:uppercase}th,td{border:1px solid #d9e1dc;padding:10px 8px;vertical-align:top}td.num,th.num{text-align:right}
+    .totals{width:48%;margin:14px 0 0 auto}.totals td{padding:7px 9px}.totals tr:last-child{font-weight:800;font-size:14px;background:#edf2ef}
+    .terms{margin-top:24px;font-size:11px;line-height:1.6}.terms p{margin:5px 0;color:#43534b}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:45px;margin-top:48px}.signature{border-top:1px solid #87958e;padding-top:8px;color:#64736c;font-size:10px}
+    footer{border-top:1px solid #d9e1dc;margin-top:28px;padding-top:9px;color:#64736c;font-size:9px;line-height:1.5}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
+    <header><div class="brand">GESTRO GLOBAL CONSULT LTD<small>PROCUREMENT & INDUSTRIAL OPERATIONS</small></div><div><h1>${documentTitle}</h1><div style="text-align:right"><span class="status">${safe(status.toUpperCase())}</span></div><div class="meta"><b>${safe(po.code)}</b><br>Created: ${safe(dateText(po.created_at))}<br>Required by: ${safe(dateText(po.required_by))}</div></div></header>
+    ${!approved ? `<div class="notice"><b>${rejected?"REJECTED DOCUMENT":"DRAFT — PENDING INTERNAL APPROVAL"}</b><br>${rejected?"This order has been rejected and is not valid for supply.":"This is an internal purchase-order proposal only. It is not an approved purchase order, award notice, authority to supply, or commitment to pay. Do not commence work or dispatch goods."}</div>` : '<div class="notice"><b>APPROVED PURCHASE ORDER</b><br>This purchase order has been approved internally. Supplier acceptance and applicable contract terms remain subject to the organisation’s procurement process.</div>'}
+    <div class="parties"><section><h2>Supplier</h2><div class="party"><b>${safe(po.supplier)}</b>${safe(po.supplier_contact)}<br>${safe(po.supplier_address || po.supplier_city)}<br>${safe(po.supplier_email)}<br>${safe(po.supplier_phone)}</div></section><section><h2>Deliver to / Requesting site</h2><div class="party"><b>Gestro Global Consult Ltd</b>${safe(po.site)}<br>Required delivery: ${safe(dateText(po.required_by))}<br>Priority: ${safe(po.priority)}</div></section></div>
+    <div class="facts"><div class="fact"><small>Purchase request</small><b>${safe(po.request_code)}</b></div><div class="fact"><small>Material / equipment</small><b>${safe(po.material)}</b></div><div class="fact"><small>Category</small><b>${safe(po.category)}</b></div></div>
+    <h2>Order details</h2><table><thead><tr><th>Description</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Line subtotal</th></tr></thead><tbody><tr><td>${safe(po.material)}<br><small>${safe(po.request_code)} · ${safe(po.site)}</small></td><td class="num">${Number(po.quantity||0).toLocaleString()} ${safe(po.unit)}</td><td class="num">${money(po.unit_price)}</td><td class="num">${money(subtotal)}</td></tr></tbody></table>
+    <table class="totals"><tbody><tr><td>Subtotal</td><td class="num">${money(subtotal)}</td></tr><tr><td>Tax (${safe(po.tax_rate ?? "—")}%)</td><td class="num">${money(po.tax)}</td></tr><tr><td>Freight / delivery</td><td class="num">${money(po.freight)}</td></tr><tr><td>Commercial total</td><td class="num">${money(po.total)}</td></tr></tbody></table>
+    <div class="terms"><h2>Delivery & payment terms</h2><p><b>Delivery lead time:</b> ${safe(po.lead_days)} days</p><p><b>Payment terms:</b> Net ${safe(po.payment_days)} days</p><p><b>Supplier quotation note:</b> ${safe(po.quotation_note)}</p><p><b>Internal decision note:</b> ${safe(po.decision_note)}</p></div>
+    ${approved ? '<div class="signatures"><div class="signature">Authorised by · Gestro Global Consult Ltd</div><div class="signature">Supplier acknowledgement · Name / Signature / Date</div></div>' : '<div class="signatures"><div class="signature">Prepared by · Procurement team</div><div class="signature">Reviewed / approved by · Authorised officer</div></div>'}
+    <footer>ProcureAI · Confidential procurement document · Generated ${safe(new Date().toLocaleString())}. Verify quantities, specifications, delivery arrangements and commercial terms before approval.</footer><script>window.onload=function(){window.focus();window.print();};<\/script></body></html>`;
+    popup.document.open(); popup.document.write(html); popup.document.close();
+  } catch (error) { popup.close(); showToast(error.message || "Could not export purchase order.", true); }
+}
 function renderDashboard() {
   const { metrics, requests, suppliers, orders, recent_quotes } = dashboardData;
   // Metrics
@@ -421,6 +462,7 @@ function renderDashboard() {
       <td>${o.required_by}</td>
       <td><span class="pill ${o.status === 'Approved' ? 'green' : (o.status === 'Rejected' ? 'red' : 'amber')}">${o.status}</span></td>
       <td>
+        <button type="button" class="action-btn" data-export-po="${o.id}">↓ Export PDF</button>
         ${o.status === 'Pending approval' ? `
           <button class="action-btn" onclick="decideOrder(${o.id}, 'approve')">Approve</button>
           <button class="action-btn reject" onclick="decideOrder(${o.id}, 'reject')">Reject</button>
@@ -467,6 +509,8 @@ document.addEventListener("click", async event => {
 
 // --- Administrator request and quotation controls ---
 document.addEventListener("click", event => {
+  const exportPoButton = event.target.closest("[data-export-po]");
+  if (exportPoButton) exportPurchaseOrder(exportPoButton.dataset.exportPo);
   const deleteButton = event.target.closest("[data-delete-request]");
   if (deleteButton) window.deleteRequest(deleteButton.dataset.deleteRequest, deleteButton.dataset.requestCode);
   const quoteButton = event.target.closest("[data-open-quote]");
