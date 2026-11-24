@@ -1729,6 +1729,11 @@ def link_quotation_to_project(project_id: str, quote_id: int, request: Request):
 def unlink_quotation_from_project(project_id: str, quote_id: int, request: Request):
     actor = getattr(request.state, "auth_user", "") or "Workspace user"
     with connect() as db:
+        project = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] in ("completed", "terminated"):
+            raise HTTPException(status_code=409, detail="This project is closed or archived. Linked quotations are read-only.")
         cur = db.execute("DELETE FROM project_quotations WHERE project_id=? AND quote_id=?", (project_id,quote_id))
         if not cur.rowcount:
             raise HTTPException(status_code=404, detail="This quotation is not linked to the project.")
@@ -1849,8 +1854,8 @@ def add_project_daily_update(project_id: str, payload: ProjectDailyUpdatePayload
         for key in payload.completed_milestones:
             _complete_project_milestone(db, project_id, key, "Daily team update")
         project_row = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
-        if project_row and project_row["status"] == "completed":
-            raise HTTPException(status_code=409, detail="This project is closed. Reopen it through an authorised process before adding updates.")
+        if project_row and project_row["status"] in ("completed","terminated"):
+            raise HTTPException(status_code=409, detail="This project is closed or archived. Updates are read-only.")
         project = _project_overview(db, project_id)
     return {"success": True, "project": project}
 
@@ -1946,8 +1951,10 @@ def save_job_completion_report(project_id: str, payload: dict, request: Request)
         raise HTTPException(status_code=422, detail="Both before and after photographs are required before submission.")
     now=_now(); actor=getattr(request.state,"auth_user","") or "Workspace user"
     with connect() as db:
-        project=db.execute("SELECT project_id FROM projects WHERE project_id=?",(project_id,)).fetchone()
+        project=db.execute("SELECT project_id,status FROM projects WHERE project_id=?",(project_id,)).fetchone()
         if not project: raise HTTPException(status_code=404,detail="Project not found")
+        if project["status"] in ("completed","terminated"):
+            raise HTTPException(status_code=409,detail="This project is closed or archived. Job completion reports are read-only.")
         db.execute("""CREATE TABLE IF NOT EXISTS project_job_completion_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL UNIQUE REFERENCES projects(project_id) ON DELETE CASCADE,
