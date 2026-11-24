@@ -6,6 +6,8 @@ External supplier contact and purchase commitments are deliberately gated.
 from __future__ import annotations
 
 import json
+import asyncio
+import sqlite3
 import html
 import os
 import uuid
@@ -61,6 +63,65 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", API_KEY_NAME, "X-CSRF-Token"],
 )
+
+def _database_file() -> Path:
+    return Path(os.getenv("PROCUREAI_DB_PATH", str(BASE_DIR / "procureai.db")))
+
+
+def _create_database_backup() -> dict:
+    """Create a consistent SQLite online backup and retain the newest seven copies."""
+    source_path = _database_file()
+    if not source_path.is_file():
+        raise RuntimeError("ProcureAI database file is not available for backup")
+    backup_dir = Path(os.getenv("PROCUREAI_BACKUP_DIR", str(source_path.parent / "backups")))
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    final_path = backup_dir / f"procureai-{stamp}.sqlite3"
+    temp_path = backup_dir / f".{final_path.name}.tmp"
+    try:
+        with sqlite3.connect(str(source_path), timeout=30) as source_db:
+            with sqlite3.connect(str(temp_path), timeout=30) as backup_db:
+                source_db.backup(backup_db)
+                integrity = backup_db.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise RuntimeError("Database backup failed its SQLite integrity check")
+        os.replace(temp_path, final_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+    backups = sorted(backup_dir.glob("procureai-*.sqlite3"), key=lambda path: path.stat().st_mtime, reverse=True)
+    for old_backup in backups[7:]:
+        old_backup.unlink(missing_ok=True)
+    return {"filename": final_path.name, "size_bytes": final_path.stat().st_size,
+            "created_at": datetime.utcfromtimestamp(final_path.stat().st_mtime).isoformat(timespec="seconds") + "Z",
+            "integrity": "ok"}
+
+
+def _list_database_backups() -> list[dict]:
+    source_path = _database_file()
+    backup_dir = Path(os.getenv("PROCUREAI_BACKUP_DIR", str(source_path.parent / "backups")))
+    if not backup_dir.is_dir():
+        return []
+    files = sorted(backup_dir.glob("procureai-*.sqlite3"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return [{"filename": path.name, "size_bytes": path.stat().st_size,
+             "created_at": datetime.utcfromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds") + "Z"}
+            for path in files[:7]]
+
+
+async def _scheduled_database_backups():
+    """Check hourly and create one integrity-checked backup every 24 hours."""
+    while True:
+        try:
+            backups = _list_database_backups()
+            latest = datetime.fromisoformat(backups[0]["created_at"].replace("Z", "+00:00")) if backups else None
+            due = latest is None or (datetime.now(latest.tzinfo) - latest).total_seconds() >= 24 * 60 * 60
+            if due:
+                result = await asyncio.to_thread(_create_database_backup)
+                print("ProcureAI database backup completed:", result["filename"], result["integrity"])
+        except Exception as exc:
+            print("ProcureAI database backup failed:", type(exc).__name__)
+        await asyncio.sleep(60 * 60)
+
 
 def _init_auth_store():
     with connect() as db:
@@ -356,6 +417,8 @@ def startup():
     dashboard_module.init_db()
     init_store()
     _init_auth_store()
+    if os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"):
+        app.state.database_backup_task = asyncio.create_task(_scheduled_database_backups())
     with connect() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS project_quotations (
             project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -497,9 +560,23 @@ def _require_buyer_confirmation(db, project_id: str):
     table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='buyer_confirmations'").fetchone()
     if not table:
         raise HTTPException(status_code=409, detail="Buyer confirmation is required before AI bid analysis or PO creation.")
-    latest = db.execute("SELECT status FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
-    if not latest or latest["status"] != "confirmed":
-        raise HTTPException(status_code=409, detail="Buyer confirmation is required. Record the buyer's confirmation in the Project Workspace before proceeding.")
+    latest = db.execute("SELECT status,budget_delivery_accepted FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+    if not latest or latest["status"] != "confirmed" or latest["budget_delivery_accepted"] != "yes":
+        raise HTTPException(status_code=409, detail="Explicit buyer confirmation of the requirements, budget and delivery is required. Record a confirmed decision and select Yes for budget and delivery acceptance in the Project Workspace.")
+
+
+
+
+def _require_request_buyer_confirmation(db, request_id: int) -> str:
+    """Resolve a dashboard request to its project and enforce the buyer gate."""
+    linked = db.execute("""SELECT p.project_id,p.status FROM project_purchase_requests pr
+        JOIN projects p ON p.project_id=pr.project_id WHERE pr.request_id=?""", (request_id,)).fetchone()
+    if not linked:
+        raise HTTPException(status_code=409, detail="This purchase request is not linked to a managed project. Link it to a project before analysis or purchase-order creation.")
+    if linked["status"] in ("completed", "terminated", "cancelled"):
+        raise HTTPException(status_code=409, detail="This project is closed or archived. Procurement actions are read-only.")
+    _require_buyer_confirmation(db, linked["project_id"])
+    return linked["project_id"]
 
 
 def _now() -> str:
@@ -912,15 +989,29 @@ def decide_award(po_number: str, payload: AwardApprovalRequest):
     now = _now()
     status = "approved" if payload.action == "approve" else "rejected"
     with connect() as db:
+        pending = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=? AND status='pending_approval'", (po_number,)).fetchone()
+        if not pending:
+            raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
+        if status == "approved":
+            _require_buyer_confirmation(db, pending["project_id"])
+            project = db.execute("SELECT status FROM projects WHERE project_id=?", (pending["project_id"],)).fetchone()
+            if project and project["status"] in ("completed", "terminated", "cancelled"):
+                raise HTTPException(status_code=409, detail="This project is closed or archived. Purchase-order approval is blocked.")
+            supplier = db.execute("SELECT verification_status FROM workflow_suppliers WHERE supplier_id=?", (pending["supplier_id"],)).fetchone()
+            if not supplier or supplier["verification_status"] != "verified":
+                raise HTTPException(status_code=409, detail="Supplier must remain verified at the point of purchase-order approval.")
         cur = db.execute("""UPDATE workflow_purchase_orders SET status=?,decided_by=?,decision_note=?,decided_at=?
             WHERE po_number=? AND status='pending_approval'""",
             (status,payload.decided_by,payload.note,now,po_number))
         if cur.rowcount != 1:
-            raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
+            raise HTTPException(status_code=409, detail="Purchase order is no longer awaiting approval")
         row = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=?", (po_number,)).fetchone()
         if status == "approved":
             _complete_project_milestone(db, row["project_id"], "po_award", "Human-approved purchase order")
             _recalculate_project(db, row["project_id"])
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (payload.decided_by, "approve" if status == "approved" else "reject", "workflow_purchase_order", po_number, json.dumps({"status":status,"note":payload.note,"supplier_id":pending["supplier_id"],"project_id":pending["project_id"]}), now))
     return {"success":True,"purchase_order":dict(row)}
 
 
@@ -1369,6 +1460,7 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
             (payload.quote_id,)).fetchone()
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
+        _require_request_buyer_confirmation(db, int(quote["request_id"]))
         supplier_status = (quote["supplier_status"] or "").strip().casefold()
         if supplier_status not in {"verified", "active"} or "[fictional demo]" in quote["supplier_name"].casefold():
             raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation. Verify the seller first.")
@@ -1420,42 +1512,65 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
 
 
 @app.post("/api/orders", status_code=201)
-def dashboard_create_order(payload: DashboardOrderPayload):
-    req = dashboard_module.one("SELECT * FROM requests WHERE id=?", (payload.request_id,))
-    quote = dashboard_module.one("SELECT * FROM quotes WHERE request_id=? AND supplier_id=? ORDER BY id DESC LIMIT 1",
-                                 (payload.request_id,payload.supplier_id))
-    supplier = dashboard_module.one("SELECT * FROM suppliers WHERE id=?", (payload.supplier_id,))
-    if not req or not quote or not supplier:
-        raise HTTPException(status_code=404, detail="A matching request, supplier and quotation are required")
-    qty, price = Decimal(str(req["quantity"])), Decimal(str(quote["unit_price"]))
-    tax = qty * price * Decimal(str(quote["tax_rate"])) / Decimal("100")
-    freight = Decimal(str(quote["freight"]))
-    total = qty * price + tax + freight
-    reasons = ["Human approval required before any purchase commitment"]
-    if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold")
-    if supplier["rating"] < 3.5: reasons.append("Supplier rating is below the preferred threshold")
-    if quote["lead_days"] > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
-        reasons.append("Quoted lead time misses the requested delivery date")
+def dashboard_create_order(payload: DashboardOrderPayload, request: Request):
     with dashboard_module.connect() as db:
+        req = db.execute("SELECT * FROM requests WHERE id=?", (payload.request_id,)).fetchone()
+        quote = db.execute("SELECT * FROM quotes WHERE request_id=? AND supplier_id=? ORDER BY id DESC LIMIT 1",
+                           (payload.request_id,payload.supplier_id)).fetchone()
+        supplier = db.execute("SELECT * FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone()
+        if not req or not quote or not supplier:
+            raise HTTPException(status_code=404, detail="A matching request, supplier and quotation are required")
+        _require_request_buyer_confirmation(db, int(payload.request_id))
+        supplier_status = str(supplier["status"] or "").strip().casefold()
+        if supplier_status not in {"verified", "active"} or "[fictional demo]" in str(supplier["name"]).casefold():
+            raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation.")
+        if req["status"] != "Open":
+            raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
+        _ensure_supplier_request_email_table(db)
+        if not db.execute("SELECT 1 FROM supplier_request_emails WHERE quote_id=?", (quote["id"],)).fetchone():
+            raise HTTPException(status_code=409, detail="Email the purchase request to this seller and receive a successful send confirmation before generating the PO proposal.")
+        if db.execute("SELECT 1 FROM orders WHERE quote_id=?", (quote["id"],)).fetchone():
+            raise HTTPException(status_code=409, detail="A purchase order proposal already exists for this quotation.")
+        qty, price = Decimal(str(req["quantity"])), Decimal(str(quote["unit_price"]))
+        tax = qty * price * Decimal(str(quote["tax_rate"])) / Decimal("100")
+        freight = Decimal(str(quote["freight"]))
+        total = qty * price + tax + freight
+        reasons = ["Human approval required before any purchase commitment"]
+        if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold")
+        if float(supplier["rating"] or 0) < 3.5: reasons.append("Supplier rating is below the preferred threshold")
+        if int(quote["lead_days"]) > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
+            reasons.append("Quoted lead time misses the requested delivery date")
         count = db.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
         code = f"PO-{datetime.utcnow():%y%m%d}-{count+1:03d}"
-        cur = db.execute("""INSERT INTO orders(code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,required_by,created_at,decision_note)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+        cur = db.execute("""INSERT INTO orders(code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,required_by,created_at,decision_note,quote_id,analysis_estimate,lead_days,payment_days)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (code,payload.supplier_id,payload.request_id,float(qty),float(price),float(freight),float(tax),
-             float(total),"Pending approval",req["required_by"],datetime.utcnow().isoformat(),"; ".join(reasons)))
+             float(total),"Pending approval",req["required_by"],datetime.utcnow().isoformat(),"; ".join(reasons),
+             int(quote["id"]),float(total),int(quote["lead_days"]),int(quote["payment_days"])))
     return {"success":True,"id":cur.lastrowid,"code":code,"status":"Pending approval","total":float(total),"reasons":reasons}
 
 
 @app.post("/api/orders/{order_id}/decision")
-def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload):
+def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload, request: Request):
     status = "Approved" if payload.action == "approve" else "Rejected"
     with dashboard_module.connect() as db:
+        order = db.execute("""SELECT o.request_id,o.supplier_id,s.status AS supplier_status,s.name AS supplier_name
+            FROM orders o JOIN suppliers s ON s.id=o.supplier_id WHERE o.id=? AND o.status='Pending approval'""", (order_id,)).fetchone()
+        if not order:
+            raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
+        if payload.action == "approve":
+            _require_request_buyer_confirmation(db, int(order["request_id"]))
+            if str(order["supplier_status"] or "").strip().casefold() not in {"verified", "active"} or "[fictional demo]" in str(order["supplier_name"]).casefold():
+                raise HTTPException(status_code=409, detail="Supplier verification must remain valid at the point of approval.")
         cur = db.execute("UPDATE orders SET status=?,decision_note=? WHERE id=? AND status='Pending approval'",
                          (status,payload.note,order_id))
         if cur.rowcount != 1:
-            raise HTTPException(status_code=409, detail="Order is not awaiting approval")
+            raise HTTPException(status_code=409, detail="Purchase order is no longer awaiting approval")
         if payload.action == "approve":
-            db.execute("UPDATE requests SET status='Awarded' WHERE id=(SELECT request_id FROM orders WHERE id=?)",(order_id,))
+            db.execute("UPDATE requests SET status='Awarded' WHERE id=?",(order["request_id"],))
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state,"auth_user",""), "approve" if payload.action=="approve" else "reject", "purchase_order", str(order_id), json.dumps({"status":status,"note":payload.note}), _now()))
     return {"success":True,"status":status}
 
 
@@ -1555,6 +1670,26 @@ def dashboard_mark_invoice_paid(invoice_id: int, request: Request):
             VALUES(?,?,?,?,?,?)""",
             (getattr(request.state,"auth_user",""),"mark_paid","invoice",str(invoice_id),"{}",now))
     return {"success":True,"status":"Paid"}
+
+@app.get("/api/admin/database/backups")
+def list_database_backups():
+    return {"backups": _list_database_backups(), "retention": 7,
+            "automatic_backup": os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"),
+            "storage_note": "Backups are stored beside the configured SQLite database on the Railway volume. Copy them off-volume for disaster recovery."}
+
+
+@app.post("/api/admin/database/backups", status_code=201)
+def create_database_backup(request: Request):
+    try:
+        result = _create_database_backup()
+    except (OSError, sqlite3.Error, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=f"Database backup could not be completed: {type(exc).__name__}")
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state,"auth_user",""), "create_database_backup", "database_backup", result["filename"], json.dumps({"size_bytes":result["size_bytes"],"integrity":result["integrity"]}), _now()))
+    return {"success": True, "backup": result}
+
 
 @app.get("/api/admin/company-profile")
 def get_company_profile():
@@ -1951,6 +2086,8 @@ def get_dashboard():
 
 @app.get("/api/analysis")
 def get_dashboard_analysis(request_id: int):
+    with dashboard_module.connect() as db:
+        _require_request_buyer_confirmation(db, int(request_id))
     try:
         return dashboard_module.analyse_request(request_id)
     except ValueError as exc:
