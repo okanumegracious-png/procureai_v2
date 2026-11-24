@@ -41,6 +41,7 @@ def test_browser_api_requires_session_and_csrf(tmp_path, monkeypatch):
     monkeypatch.setenv("PROCUREAI_BACKUP_DIR", str(tmp_path / "backups"))
     monkeypatch.setenv("PROCUREAI_AUTO_BACKUP", "false")
     monkeypatch.setattr(dashboard_module, "DB", database)
+    monkeypatch.setattr(shared_store, "DB_PATH", database)
     monkeypatch.setattr(procureai_main.intake_store, "path", str(database))
     with TestClient(procureai_main.app, base_url="https://testserver") as client:
         assert client.get("/api/dashboard").status_code == 401
