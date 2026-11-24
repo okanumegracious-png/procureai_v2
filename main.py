@@ -642,7 +642,8 @@ def dashboard_update_supplier(supplier_id: int, payload: DashboardSupplierPayloa
 @app.get("/api/quotes")
 def dashboard_quotes():
     quotes = dashboard_module.rows("""SELECT q.*,s.name supplier,s.city supplier_city,
-        s.contact supplier_contact,r.code request_code,r.material,r.category
+        s.contact supplier_contact,r.code request_code,r.material,r.category,
+        EXISTS(SELECT 1 FROM orders o WHERE o.quote_id=q.id) AS has_purchase_order
         FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
         JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC""")
     return {"quotes": quotes}
@@ -691,7 +692,8 @@ def dashboard_create_request(payload: DashboardRequestPayload):
 def dashboard_quote_detail(quote_id: int):
     with dashboard_module.connect() as db:
         _ensure_supplier_request_email_table(db)
-        row = db.execute("SELECT q.*, s.name AS supplier, s.email AS supplier_email, s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.priority, r.status AS request_status, EXISTS(SELECT 1 FROM supplier_request_emails e WHERE e.quote_id=q.id) AS request_email_sent FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?", (quote_id,)).fetchone()
+        row = db.execute("SELECT q.*, s.name AS supplier, s.email AS supplier_email, s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.priority, r.status AS request_status, EXISTS(SELECT 1 FROM supplier_request_emails e WHERE e.quote_id=q.id) AS request_email_sent,
+        EXISTS(SELECT 1 FROM orders o WHERE o.quote_id=q.id) AS has_purchase_order FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?", (quote_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Quotation not found")
     quote = dict(row)
@@ -733,6 +735,47 @@ def dashboard_create_quote(payload: DashboardQuotePayload):
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,
              payload.lead_days,payload.payment_days,payload.note,datetime.utcnow().isoformat()))
     return {"success":True,"id":cur.lastrowid}
+
+
+
+@app.put("/api/quotes/{quote_id}")
+def dashboard_update_quote(quote_id: int, payload: DashboardQuotePayload, request: Request):
+    now = datetime.utcnow().isoformat()
+    with dashboard_module.connect() as db:
+        current = db.execute("SELECT * FROM quotes WHERE id=?", (quote_id,)).fetchone()
+        if not current: raise HTTPException(status_code=404, detail="Quotation not found")
+        if db.execute("SELECT 1 FROM orders WHERE quote_id=? LIMIT 1", (quote_id,)).fetchone():
+            raise HTTPException(status_code=409, detail="This quotation already has a purchase-order proposal. It is locked to preserve approval and audit history.")
+        if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone(): raise HTTPException(status_code=404, detail="Purchase request not found")
+        if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone(): raise HTTPException(status_code=404, detail="Supplier not found")
+        before = {key: current[key] for key in ("supplier_id","request_id","unit_price","freight","tax_rate","lead_days","payment_days","note")}
+        db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,note=? WHERE id=?""",
+            (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,payload.note,quote_id))
+        _ensure_supplier_request_email_table(db)
+        email_invalidated = db.execute("DELETE FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).rowcount > 0
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state, "auth_user", ""), "update", "quotation", str(quote_id),
+             json.dumps({"before": before, "after": payload.model_dump(), "supplier_email_status_reset": email_invalidated}), now))
+    return {"success": True, "id": quote_id, "supplier_email_reset": email_invalidated}
+
+
+@app.delete("/api/quotes/{quote_id}")
+def dashboard_delete_quote(quote_id: int, request: Request):
+    with dashboard_module.connect() as db:
+        current = db.execute("""SELECT q.id,q.unit_price,r.code AS request_code,s.name AS supplier_name
+            FROM quotes q JOIN requests r ON r.id=q.request_id JOIN suppliers s ON s.id=q.supplier_id WHERE q.id=?""", (quote_id,)).fetchone()
+        if not current: raise HTTPException(status_code=404, detail="Quotation not found")
+        if db.execute("SELECT 1 FROM orders WHERE quote_id=? LIMIT 1", (quote_id,)).fetchone():
+            raise HTTPException(status_code=409, detail="This quotation has a linked purchase-order proposal and cannot be deleted. Keep it for approval and audit history.")
+        _ensure_supplier_request_email_table(db)
+        email_removed = db.execute("DELETE FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).rowcount
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state, "auth_user", ""), "delete", "quotation", str(quote_id),
+             json.dumps({"request_code": current["request_code"], "supplier": current["supplier_name"], "unit_price": current["unit_price"], "supplier_email_records_removed": email_removed}), _now()))
+        db.execute("DELETE FROM quotes WHERE id=?", (quote_id,))
+    return {"success": True, "deleted_quote_id": quote_id}
 
 
 @app.post("/api/orders/from-analysis", status_code=201)

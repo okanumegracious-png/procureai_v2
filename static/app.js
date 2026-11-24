@@ -176,7 +176,8 @@ function renderDashboard() {
       <td>${formatMoney(q.freight)}</td>
       <td>${q.lead_days} days</td>
       <td>Net ${q.payment_days}</td>
-      <td><button class="action-btn" data-open-quote="${q.id}">Open</button></td>
+      <td class="quote-actions"><button class="action-btn" data-open-quote="${q.id}">Open</button>
+        ${q.has_purchase_order ? '<span class="pill gray">PO linked · locked</span>' : `<button type="button" class="icon-action" data-edit-quote="${q.id}" aria-label="Edit quotation ${q.id}" title="Edit quotation">✎</button><button type="button" class="action-btn reject" data-delete-quote="${q.id}">Delete</button>`}</td>
     </tr>
   `).join("");
   // Orders Table
@@ -228,6 +229,10 @@ document.addEventListener("click", event => {
   if (deleteButton) window.deleteRequest(deleteButton.dataset.deleteRequest, deleteButton.dataset.requestCode);
   const quoteButton = event.target.closest("[data-open-quote]");
   if (quoteButton) window.openQuote(quoteButton.dataset.openQuote);
+  const editQuoteButton = event.target.closest("[data-edit-quote]");
+  if (editQuoteButton) window.editQuote(editQuoteButton.dataset.editQuote);
+  const deleteQuoteButton = event.target.closest("[data-delete-quote]");
+  if (deleteQuoteButton) window.deleteQuote(deleteQuoteButton.dataset.deleteQuote);
 });
 window.deleteRequest = async function(id, code) {
   if (!confirm("Delete purchase request " + code + "? Linked quotations and purchase orders will also be deleted. This cannot be undone.")) return;
@@ -236,6 +241,33 @@ window.deleteRequest = async function(id, code) {
   if (!response.ok) return showToast(data.detail || data.error || "Could not delete request", true);
   showToast("Request " + data.deleted_request + " deleted");
   await fetchDashboard();
+};
+
+window.editQuote = async function(id) {
+  try {
+    const response = await apiFetch(API + "/quotes/" + id), quote = await response.json();
+    if (!response.ok) throw new Error(quote.detail || "Could not load quotation");
+    if (quote.has_purchase_order) throw new Error("This quotation is locked because a purchase order is linked to it.");
+    const form = document.getElementById("quoteForm"); form.reset();
+    document.getElementById("quoteRequest").innerHTML = (dashboardData.requests || []).map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
+    document.getElementById("quoteSupplier").innerHTML = (dashboardData.suppliers || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+    ["request_id","supplier_id","unit_price","freight","tax_rate","lead_days","payment_days","note"].forEach(key => { if (form.elements[key]) form.elements[key].value = quote[key] ?? ""; });
+    form.dataset.quoteId = String(id);
+    document.getElementById("quoteModalTitle").textContent = "Edit registered quotation";
+    document.getElementById("quoteModalDescription").textContent = "Any previous seller request email will be reset and must be sent again before PO generation.";
+    form.querySelector('button[type="submit"]').textContent = "Save changes";
+    document.getElementById("quoteDetailModal").classList.remove("open");
+    document.getElementById("quoteModal").classList.add("open");
+  } catch (error) { showToast(error.message, true); }
+};
+window.deleteQuote = async function(id) {
+  if (!confirm("Delete quotation #" + id + "? This cannot be undone. Quotations linked to a purchase-order proposal are protected.")) return;
+  try {
+    const response = await apiFetch(API + "/quotes/" + id, {method:"DELETE"}), result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Could not delete quotation");
+    document.getElementById("quoteDetailModal").classList.remove("open");
+    showToast("Quotation deleted"); await fetchDashboard();
+  } catch (error) { showToast(error.message, true); }
 };
 window.openQuote = async function(id) {
   const modal = document.getElementById("quoteDetailModal");
@@ -248,7 +280,7 @@ window.openQuote = async function(id) {
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
     const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
-    content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + String(pair[1] ?? "—").replaceAll("<","&lt;").replaceAll(">","&gt;") + "</b></div>").join("") + "</div>";
+    content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + escapeHtml(String(pair[1] ?? "—")) + "</b></div>").join("") + "</div>" + (q.has_purchase_order ? '<p class="quote-lock-note">This quotation is locked because a purchase-order proposal is linked to it.</p>' : '<div class="quote-detail-actions"><button type="button" class="btn btn-ghost" data-edit-quote="' + q.id + '">✎ Edit quotation</button><button type="button" class="btn btn-ghost reject" data-delete-quote="' + q.id + '">Delete quotation</button></div>');
   } catch (error) { content.textContent = error.message; }
 };
 
@@ -399,30 +431,32 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
 });
 // Populate quote modal dropdowns
 document.querySelector('[data-modal="quoteModal"]').addEventListener("click", () => {
-  document.getElementById("quoteRequest").innerHTML = dashboardData.requests.filter(r => r.status === "Open").map(r =>
-    `<option value="${r.id}">${r.code} - ${r.material}</option>`
-  ).join("");
-  document.getElementById("quoteSupplier").innerHTML = dashboardData.suppliers.map(s =>
-    `<option value="${s.id}">${s.name}</option>`
-  ).join("");
+  const form = document.getElementById("quoteForm");
+  if (form.dataset.quoteId) return;
+  form.reset();
+  document.getElementById("quoteModalTitle").textContent = "Add supplier quotation";
+  document.getElementById("quoteModalDescription").textContent = "";
+  form.querySelector('button[type="submit"]').textContent = "Save quotation";
+  document.getElementById("quoteRequest").innerHTML = dashboardData.requests.filter(r => r.status === "Open").map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
+  document.getElementById("quoteSupplier").innerHTML = dashboardData.suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
 });
 document.getElementById("quoteForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const formData = new FormData(e.target);
-  const payload = Object.fromEntries(formData.entries());
- 
-  const res = await apiFetch(`${API}/quotes`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+  const form = e.currentTarget, payload = Object.fromEntries(new FormData(form).entries());
+  ["supplier_id","request_id","lead_days","payment_days","unit_price","freight","tax_rate"].forEach(key => payload[key] = Number(payload[key]));
+  const quoteId = form.dataset.quoteId;
+  const res = await apiFetch(API + (quoteId ? "/quotes/" + quoteId : "/quotes"), {
+    method: quoteId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
   });
+  const result = await res.json();
   if (res.ok) {
-    document.getElementById("quoteModal").classList.remove("open");
-    e.target.reset();
-    showToast("Quotation saved");
-    fetchDashboard();
-  } else {
-    const err = await res.json();
-    showToast(err.error, true);
-  }
+    document.getElementById("quoteModal").classList.remove("open"); form.reset(); delete form.dataset.quoteId;
+    document.getElementById("quoteModalTitle").textContent = "Add supplier quotation";
+    document.getElementById("quoteModalDescription").textContent = "";
+    form.querySelector('button[type="submit"]').textContent = "Save quotation";
+    showToast(quoteId ? (result.supplier_email_reset ? "Quotation updated. Re-email the seller before generating a PO." : "Quotation updated") : "Quotation saved");
+    await fetchDashboard();
+  } else showToast(result.detail || "Could not save quotation", true);
 });
 // Register search/filter controls and PDF exports.
 ["requestSearch","requestStatusFilter","supplierSearch","supplierStatusFilter","quoteSearch","orderSearch","orderStatusFilter"].forEach(id => {
