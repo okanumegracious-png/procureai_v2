@@ -1622,13 +1622,14 @@ def list_buyer_confirmations(project_id: str):
             comments TEXT NOT NULL DEFAULT '', recorded_by TEXT NOT NULL,
             recorded_at TEXT NOT NULL
         )""")
-        records = [dict(row) for row in db.execute(
-            "SELECT * FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC", (project_id,)
-        ).fetchall()]
-    return {"confirmations": records, "latest": records[0] if records else None}
+        latest = db.execute(
+            "SELECT * FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)
+        ).fetchone()
+        record = dict(latest) if latest else None
+    return {"confirmation": record, "latest": record, "confirmations": [record] if record else []}
 
 
-@app.post("/api/projects/{project_id}/buyer-confirmations", status_code=201)
+@app.post("/api/projects/{project_id}/buyer-confirmations")
 def record_buyer_confirmation(project_id: str, payload: BuyerConfirmationPayload, request: Request):
     now = _now()
     actor = getattr(request.state, "auth_user", "") or "Workspace user"
@@ -1637,7 +1638,7 @@ def record_buyer_confirmation(project_id: str, payload: BuyerConfirmationPayload
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         if project["status"] == "completed":
-            raise HTTPException(status_code=409, detail="This project is closed. Buyer confirmations are read-only.")
+            raise HTTPException(status_code=409, detail="This project is closed. Buyer confirmation is read-only.")
         db.execute("""CREATE TABLE IF NOT EXISTS buyer_confirmations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -1648,25 +1649,38 @@ def record_buyer_confirmation(project_id: str, payload: BuyerConfirmationPayload
             comments TEXT NOT NULL DEFAULT '', recorded_by TEXT NOT NULL,
             recorded_at TEXT NOT NULL
         )""")
-        cur = db.execute("""INSERT INTO buyer_confirmations
-            (project_id,buyer_name,organisation,channel,status,requirements_confirmed,
-             budget_delivery_accepted,comments,recorded_by,recorded_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (project_id,payload.buyer_name.strip(),payload.organisation.strip(),payload.channel,
-             payload.status,payload.requirements_confirmed.strip(),payload.budget_delivery_accepted,
-             payload.comments.strip(),actor,now))
-        confirmation_id = cur.lastrowid
+        existing = db.execute(
+            "SELECT id FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)
+        ).fetchone()
+        values = (payload.buyer_name.strip(),payload.organisation.strip(),payload.channel,
+                  payload.status,payload.requirements_confirmed.strip(),payload.budget_delivery_accepted,
+                  payload.comments.strip(),actor,now)
+        if existing:
+            confirmation_id = existing["id"]
+            db.execute("""UPDATE buyer_confirmations SET buyer_name=?,organisation=?,channel=?,status=?,
+                requirements_confirmed=?,budget_delivery_accepted=?,comments=?,recorded_by=?,recorded_at=?
+                WHERE id=?""", (*values,confirmation_id))
+            action = "update_buyer_confirmation"
+        else:
+            cur = db.execute("""INSERT INTO buyer_confirmations
+                (project_id,buyer_name,organisation,channel,status,requirements_confirmed,
+                 budget_delivery_accepted,comments,recorded_by,recorded_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                (project_id,*values))
+            confirmation_id = cur.lastrowid
+            action = "record_buyer_confirmation"
+        # Keep a single current confirmation per project. Older duplicate rows from
+        # the previous history-based implementation are removed; audit events remain.
+        db.execute("DELETE FROM buyer_confirmations WHERE project_id=? AND id<>?", (project_id,confirmation_id))
         db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
             VALUES(?,?,?,?,?,?)""",
-            (actor,"record_buyer_confirmation","project",project_id,json.dumps({
+            (actor,action,"project",project_id,json.dumps({
                 "confirmation_id":confirmation_id,"buyer_name":payload.buyer_name.strip(),
                 "channel":payload.channel,"status":payload.status,
                 "budget_delivery_accepted":payload.budget_delivery_accepted
             }),now))
-        records = [dict(row) for row in db.execute(
-            "SELECT * FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC", (project_id,)
-        ).fetchall()]
-    return {"success":True,"confirmation":records[0],"confirmations":records}
+        saved = dict(db.execute("SELECT * FROM buyer_confirmations WHERE id=?", (confirmation_id,)).fetchone())
+    return {"success":True,"confirmation":saved,"confirmations":[saved],"updated":bool(existing)}
 
 
 @app.post("/api/projects/{project_id}/updates", status_code=201)
