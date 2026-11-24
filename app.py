@@ -284,6 +284,9 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         "lead_days": int(o["lead_days"]), "payment_days": int(o["payment_days"]),
         "rating": float(o["rating"] or 0), "on_time_percent": float(o["on_time"] or 0),
         "seller_status": o["supplier_status"], "feasible": bool(o["feasible"]),
+        "award_eligible": bool(o.get("award_eligible")),
+        "budget_feasibility": o.get("budget_feasibility", "not_configured"),
+        "technical_feasibility": o.get("technical_feasibility", "pending"),
         "issues": o["issues"], "quotation_note": o["note"] or ""
     } for o in offers]
     fallback_reviews = []
@@ -310,6 +313,21 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         if str(o["seller_status"] or "").lower() not in ("verified", "active"):
             gaps.append("Seller is not currently marked Active or Verified in the supplier register.")
             improvements.append("Complete identity, capability, references and bank-account verification before award.")
+        if o["budget_feasibility"] == "over_budget":
+            gaps.append("Estimated total exceeds the remaining project budget.")
+            improvements.append("Seek a revised price, reduce scope only with buyer approval, or obtain an authorised budget revision.")
+        elif o["budget_feasibility"] == "not_configured":
+            gaps.append("Project budget has not been configured, so budget feasibility cannot be confirmed.")
+            improvements.append("Record the approved project budget before progressing to award.")
+        if o["technical_feasibility"] == "pending":
+            gaps.append("Technical compliance has not been reviewed against the request specification.")
+            improvements.append("Compare datasheets, ratings, standards, scope and deviations, then record the technical review.")
+        elif o["technical_feasibility"] == "deviation":
+            gaps.append("Supplier quotation contains technical deviations.")
+            improvements.append("Obtain written buyer acceptance or request a compliant alternative.")
+        elif o["technical_feasibility"] == "non_compliant":
+            gaps.append("Supplier quotation is technically non-compliant.")
+            improvements.append("Do not award this offer; source a technically compliant alternative.")
         if o["freight"] < 0:
             gaps.append("Freight value needs correction.")
             improvements.append("Resubmit a complete landed-cost breakdown.")
@@ -322,15 +340,15 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
             "next_step": "Request a revised quotation / clarification" if gaps else "Proceed to technical and commercial due diligence"
         })
 
-    eligible = [o for o in offers if o["feasible"] and str(o["supplier_status"] or "").lower() in ("verified", "active")]
+    eligible = [o for o in offers if o.get("award_eligible")]
     if not offers:
         action = "Source additional quotations"
         reason = "No quotations have been submitted for this request yet. The review can still be completed as a sourcing-gap assessment."
         solution = "Invite suitable suppliers, request comparable itemised quotations, and confirm specifications, delivery lead time, warranty and payment terms."
     elif eligible:
         action = "Proceed to human review"
-        reason = "At least one offer passes the current delivery and minimum-rating checks. This is a shortlist recommendation, not an award decision."
-        solution = "Validate the recommended seller's technical compliance, stock, quotation validity, references and final landed cost before approval."
+        reason = "At least one offer passes the recorded budget, delivery, supplier-verification and technical-compliance gates. This is a shortlist recommendation, not an award decision."
+        solution = "Confirm stock, quotation validity, warranty, references and final landed cost, then obtain human approval before any commitment."
     else:
         action = "Do not award yet — seek revisions or alternatives"
         reason = "No submitted offer currently meets both the basic feasibility checks and seller-status requirements. The analysis is still complete and identifies corrective actions."
@@ -360,6 +378,8 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
                 "specific improvements and next step. Suggest alternatives only from unquoted_supplier_options, clearly "
                 "stating that they have not submitted a bid and require verification. Recommend a solution such as "
                 "clarification, revised bid, phased delivery, split lots only where safe, re-sourcing, or no-award. "
+                "Treat budget_feasibility and technical_feasibility as hard evidence-based gates; never call an offer award-eligible "
+                "when the budget is unconfigured/overrun or technical compliance is pending, deviating or non-compliant. "
                 "Return JSON with keys overall_assessment, recommended_action, solution, seller_reviews (array with "
                 "quote_id, seller, strengths (array), gaps (array), improvements (array), risk_level, next_step), "
                 "alternative_recommendations (array of objects with supplier_id, supplier, reason, verification_note), "
