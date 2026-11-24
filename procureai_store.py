@@ -33,6 +33,38 @@ def init_store() -> None:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS projects (
+            project_id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            client_name TEXT NOT NULL DEFAULT '',
+            agency_details TEXT NOT NULL DEFAULT '',
+            executive_summary TEXT NOT NULL DEFAULT '',
+            procurement_lead TEXT NOT NULL DEFAULT '',
+            deliverables_json TEXT NOT NULL DEFAULT '[]',
+            start_date TEXT,
+            due_date TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            milestones_json TEXT NOT NULL DEFAULT '[]',
+            progress_percent REAL NOT NULL DEFAULT 0 CHECK(progress_percent >= 0 AND progress_percent <= 100),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_projects_due_date ON projects(due_date);
+        CREATE TABLE IF NOT EXISTS project_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            author TEXT NOT NULL,
+            update_type TEXT NOT NULL DEFAULT 'daily',
+            status TEXT NOT NULL DEFAULT 'In progress',
+            progress_percent REAL NOT NULL DEFAULT 0 CHECK(progress_percent >= 0 AND progress_percent <= 100),
+            field_notes TEXT NOT NULL DEFAULT '',
+            blockers TEXT NOT NULL DEFAULT '',
+            next_steps TEXT NOT NULL DEFAULT '',
+            completed_milestones_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_updates_project_created
+            ON project_updates(project_id, created_at DESC);
         CREATE TABLE IF NOT EXISTS workflow_boq_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL REFERENCES workflow_projects(project_id) ON DELETE CASCADE,
@@ -101,3 +133,8 @@ def init_store() -> None:
             updated_at TEXT NOT NULL
         );
         """)
+        # Backfill the workspace view for BOQ projects created before the project dashboard existed.
+        db.execute("""INSERT OR IGNORE INTO projects
+            (project_id,title,executive_summary,status,created_at,updated_at)
+            SELECT project_id,project_id,summary,status,created_at,updated_at
+            FROM workflow_projects""")
