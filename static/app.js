@@ -1266,7 +1266,7 @@ document.getElementById("parseQuoteMessage").addEventListener("click", async () 
     if (x.tax_rate !== null) lines.push("Tax: " + x.tax_rate + "%");
     if (x.lead_days !== null) lines.push("Lead time: " + x.lead_days + " days");
     if (x.payment_days !== null) lines.push("Payment period: " + x.payment_days + " days");
-    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + " (recorded in the original message)");
+    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + ". The form stores payment periods in days, so verify the day-based field and retain this split in the original message.");
     lines.push(quantityNote);
     review.innerHTML = "<strong>Extraction review</strong><ul>" + lines.map(line => "<li>" + escapeHtml(line) + "</li>").join("") + "</ul><small>Supplier quantity is checked against the purchase request, never used to overwrite the requirement. All extracted values remain editable.</small>";
     review.hidden = false;
