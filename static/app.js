@@ -466,9 +466,9 @@ function renderDashboard() {
       <div class="supplier-logo">${escapeHtml(s.name.substring(0,2).toUpperCase())}</div>
       <div class="supplier-info">
         <b>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
-        <small>${escapeHtml(s.city)} · ${Number(s.on_time || 0)}% on-time</small>
+        <small>${escapeHtml(s.city)} · ${Number(s.on_time || 0) > 0 ? Number(s.on_time).toFixed(0) + "% on-time" : "No delivery history recorded"}</small>
       </div>
-      <div class="rating">★ ${Number(s.rating || 0).toFixed(1)}</div>
+      <div class="rating">${Number(s.rating || 0) > 0 ? "★ " + Number(s.rating).toFixed(1) : "Not rated"}</div>
     </div>
   `).join("");
   const visibleSuppliers = filterRecords(suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]);
@@ -476,7 +476,7 @@ function renderDashboard() {
     <div class="supplier-card">
       <div class="supplier-card-top">
         <div class="supplier-logo">${escapeHtml(s.name.substring(0,2).toUpperCase())}</div>
-        <span class="rating">★ ${Number(s.rating || 0).toFixed(1)}</span>
+        <span class="rating">${Number(s.rating || 0) > 0 ? "★ " + Number(s.rating).toFixed(1) : "Not rated"}</span>
       </div>
       <h3>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO DATA</span>' : ''}</h3>
       <p>${escapeHtml(s.city)} · ${escapeHtml(s.phone || s.email || s.contact || "No contact supplied")}</p>
@@ -484,7 +484,7 @@ function renderDashboard() {
       <p class="supplier-capabilities">${escapeHtml([s.email,s.website,s.address].filter(Boolean).join(" · "))}</p>
       ${s.contact ? `<p class="supplier-source-note"><b>Source / verification note:</b> ${escapeHtml(s.contact)}</p>` : ""}
       <div class="supplier-stats">
-        <div><b>${s.on_time}%</b><small>On-time</small></div>
+        <div><b>${Number(s.on_time || 0) > 0 ? Number(s.on_time).toFixed(0) + "%" : "No history"}</b><small>On-time</small></div>
         <div><b>${escapeHtml(s.status)}</b><small>Status</small></div>
       </div>
       <div class="supplier-card-actions"><button type="button" class="action-btn edit-seller-btn" data-edit-seller="${s.id}" aria-label="Edit ${escapeHtml(s.name)}" title="Edit seller"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg><span>Edit details</span></button></div>
