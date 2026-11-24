@@ -424,7 +424,7 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
                     safe_alternatives.append(known_alternatives[candidate_id])
             ai["alternative_recommendations"] = safe_alternatives
             ai.setdefault("caveat", judgement["caveat"])
-            if not eligible:
+            if offers and not eligible:
                 ai["recommended_action"] = "Do not award yet — resolve budget, delivery, supplier and technical checks"
                 ai["overall_assessment"] = "No submitted quotation currently passes every mandatory procurement gate. AI commentary is advisory; no offer is award-eligible until the recorded checks pass."
                 ai["solution"] = "Resolve the specific gaps listed for each seller, record technical evidence, confirm the project budget and re-run the analysis before generating a purchase order."
