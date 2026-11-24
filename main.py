@@ -16,7 +16,7 @@ import urllib.error
 import urllib.parse
 from email.message import EmailMessage
 from email.utils import parseaddr
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -1382,6 +1382,102 @@ def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload):
 
 
 # Reuse the existing dashboard database and calculations; the browser UI is served by this API.
+
+def _ensure_invoice_table(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS invoices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL UNIQUE,
+        invoice_number TEXT NOT NULL UNIQUE,
+        issue_date TEXT NOT NULL,
+        due_date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Unpaid',
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )""")
+
+@app.get("/api/invoices")
+def dashboard_invoices():
+    with dashboard_module.connect() as db:
+        _ensure_invoice_table(db)
+        rows = db.execute("""SELECT i.id,i.order_id,i.invoice_number,i.issue_date,i.due_date,i.status,i.created_at,
+            o.code AS order_code,o.total,o.material,o.quantity,r.unit,s.name AS supplier
+            FROM invoices i JOIN orders o ON o.id=i.order_id
+            JOIN requests r ON r.id=o.request_id JOIN suppliers s ON s.id=o.supplier_id
+            ORDER BY i.id DESC""").fetchall()
+    return {"invoices": [dict(row) for row in rows]}
+
+@app.post("/api/orders/{order_id}/invoice", status_code=201)
+def dashboard_create_invoice(order_id: int, request: Request):
+    now = datetime.utcnow().isoformat()
+    with dashboard_module.connect() as db:
+        _ensure_invoice_table(db)
+        order = db.execute("SELECT id,code,status,payment_days FROM orders WHERE id=?", (order_id,)).fetchone()
+        if not order:
+            raise HTTPException(status_code=404, detail="Purchase order not found")
+        if order["status"] != "Approved":
+            raise HTTPException(status_code=409, detail="An invoice can only be generated from an approved purchase order.")
+        existing = db.execute("SELECT id,invoice_number FROM invoices WHERE order_id=?", (order_id,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Invoice {existing['invoice_number']} already exists for this purchase order.")
+        count = db.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+        issue_date = date.today()
+        due_date = issue_date + timedelta(days=max(0, int(order["payment_days"] or 0)))
+        invoice_number = f"INV-{datetime.utcnow():%y%m%d}-{count+1:03d}"
+        cur = db.execute("""INSERT INTO invoices
+            (order_id,invoice_number,issue_date,due_date,status,created_by,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?)""",
+            (order_id,invoice_number,issue_date.isoformat(),due_date.isoformat(),"Unpaid",
+             getattr(request.state,"auth_user",""),now,now))
+        invoice_id = cur.lastrowid
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state,"auth_user",""),"create","invoice",str(invoice_id),
+             json.dumps({"invoice_number":invoice_number,"order_code":order["code"],"total":None}),now))
+    return {"success":True,"invoice_id":invoice_id,"invoice_number":invoice_number,"status":"Unpaid"}
+
+@app.get("/api/invoices/{invoice_id}")
+def dashboard_invoice_detail(invoice_id: int):
+    with dashboard_module.connect() as db:
+        _ensure_invoice_table(db)
+        row = db.execute("""SELECT i.id AS invoice_id,i.invoice_number,i.issue_date,i.due_date,i.status AS invoice_status,
+            i.created_at AS invoice_created_at,o.id AS order_id,o.code AS order_code,o.quantity,o.unit_price,
+            o.freight,o.tax,o.total,o.required_by,o.status AS order_status,o.lead_days,o.payment_days,
+            s.name AS supplier,s.email AS supplier_email,s.phone AS supplier_phone,
+            s.contact AS supplier_contact,s.address AS supplier_address,s.city AS supplier_city,
+            r.code AS request_code,r.material,r.category,r.unit,r.site,r.priority,
+            COALESCE((SELECT company_name FROM company_profile WHERE id=1),'Gestro Global Consult Ltd') AS buyer_name
+            FROM invoices i JOIN orders o ON o.id=i.order_id
+            JOIN suppliers s ON s.id=o.supplier_id JOIN requests r ON r.id=o.request_id
+            WHERE i.id=?""",(invoice_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404,detail="Invoice not found")
+    return {"invoice":dict(row)}
+
+@app.post("/api/invoices/{invoice_id}/paid")
+def dashboard_mark_invoice_paid(invoice_id: int, request: Request):
+    now = datetime.utcnow().isoformat()
+    with dashboard_module.connect() as db:
+        _ensure_invoice_table(db)
+        cur = db.execute("UPDATE invoices SET status='Paid',updated_at=? WHERE id=? AND status!='Paid'",(now,invoice_id))
+        if cur.rowcount != 1:
+            row = db.execute("SELECT status FROM invoices WHERE id=?",(invoice_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404,detail="Invoice not found")
+            raise HTTPException(status_code=409,detail="This invoice is already marked as paid.")
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state,"auth_user",""),"mark_paid","invoice",str(invoice_id),"{}",now))
+    return {"success":True,"status":"Paid"}
+
 @app.get("/api/admin/company-profile")
 def get_company_profile():
     with connect() as db:
