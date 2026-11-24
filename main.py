@@ -474,6 +474,10 @@ async def upload_boq(project_id: str = Form(...), file: UploadFile = File(...)):
             VALUES(?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET
             summary=excluded.summary,status='boq_extracted',source_filename=excluded.source_filename,updated_at=excluded.updated_at""",
             (project_id, extracted["project_summary"], "boq_extracted", file.filename, now, now))
+        db.execute("""INSERT OR IGNORE INTO projects
+            (project_id,title,executive_summary,status,created_at,updated_at)
+            VALUES(?,?,?,'active',?,?)""",
+            (project_id, project_id, extracted["project_summary"], now, now))
         db.execute("DELETE FROM workflow_boq_items WHERE project_id=?", (project_id,))
         for item in extracted["items"]:
             db.execute("""INSERT INTO workflow_boq_items(project_id,item_code,item_name,specification,quantity,unit,category,created_at)
