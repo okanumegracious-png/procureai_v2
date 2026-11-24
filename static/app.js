@@ -16,6 +16,10 @@ async function apiFetch(url, options = {}) {
   }
   return window.fetch(url, { ...options, headers, credentials: "same-origin", cache: "no-store" });
 }
+function setFormSubmitLabel(form, label) {
+  const button = form?.querySelector('button[type="submit"], button:not([type])');
+  if (button) button.textContent = label;
+}
 function showLogin(message = "") {
   document.getElementById("loginScreen").hidden = false;
   document.getElementById("appShell").hidden = true;
@@ -219,7 +223,7 @@ document.addEventListener("click", event => {
   form.dataset.sellerId = String(seller.id);
   document.getElementById("supplierModalTitle").textContent = "Edit seller information";
   document.getElementById("supplierModalDescription").textContent = "Update this seller's contact details, technical capabilities and verification status.";
-  form.querySelector('button[type="submit"]').textContent = "Save changes";
+  setFormSubmitLabel(form, "Save changes");
   document.getElementById("supplierModal").classList.add("open");
 });
 
@@ -253,9 +257,9 @@ window.editQuote = async function(id) {
     document.getElementById("quoteSupplier").innerHTML = (dashboardData.suppliers || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
     ["request_id","supplier_id","unit_price","freight","tax_rate","lead_days","payment_days","note"].forEach(key => { if (form.elements[key]) form.elements[key].value = quote[key] ?? ""; });
     form.dataset.quoteId = String(id);
-    document.getElementById("quoteModalTitle").textContent = "Edit registered quotation";
-    document.getElementById("quoteModalDescription").textContent = "Any previous seller request email will be reset and must be sent again before PO generation.";
-    form.querySelector('button[type="submit"]').textContent = "Save changes";
+    { const node = document.getElementById("quoteModalTitle"); if (node) node.textContent = "Edit registered quotation"; }
+    { const node = document.getElementById("quoteModalDescription"); if (node) node.textContent = "Any previous seller request email will be reset and must be sent again before PO generation."; }
+    setFormSubmitLabel(form, "Save changes");
     document.getElementById("quoteDetailModal").classList.remove("open");
     document.getElementById("quoteModal").classList.add("open");
   } catch (error) { showToast(error.message, true); }
@@ -403,13 +407,25 @@ document.querySelector('[data-modal="supplierModal"]').addEventListener("click",
   form.reset(); delete form.dataset.sellerId;
   document.getElementById("supplierModalTitle").textContent = "Add seller information";
   document.getElementById("supplierModalDescription").textContent = "Capture the seller's identity and technical capabilities. New sellers start unverified.";
-  form.querySelector('button[type="submit"]').textContent = "Save seller";
+  setFormSubmitLabel(form, "Save seller");
 });
 document.querySelectorAll("[data-modal]").forEach(btn => {
   btn.addEventListener("click", () => document.getElementById(btn.dataset.modal).classList.add("open"));
 });
 document.querySelectorAll("[data-close]").forEach(btn => {
-  btn.addEventListener("click", () => btn.closest(".modal-backdrop").classList.remove("open"));
+  btn.addEventListener("click", () => {
+    const backdrop = btn.closest(".modal-backdrop");
+    if (!backdrop) return;
+    backdrop.classList.remove("open");
+    if (backdrop.id === "quoteModal") {
+      const form = document.getElementById("quoteForm");
+      if (form) { form.reset(); delete form.dataset.quoteId; setFormSubmitLabel(form, "Save quotation"); }
+      const title = document.getElementById("quoteModalTitle");
+      const description = document.getElementById("quoteModalDescription");
+      if (title) title.textContent = "Add supplier quotation";
+      if (description) description.textContent = "";
+    }
+  });
 });
 document.getElementById("requestForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -436,7 +452,7 @@ document.querySelector('[data-modal="quoteModal"]').addEventListener("click", ()
   form.reset();
   document.getElementById("quoteModalTitle").textContent = "Add supplier quotation";
   document.getElementById("quoteModalDescription").textContent = "";
-  form.querySelector('button[type="submit"]').textContent = "Save quotation";
+  setFormSubmitLabel(form, "Save quotation");
   document.getElementById("quoteRequest").innerHTML = dashboardData.requests.filter(r => r.status === "Open").map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
   document.getElementById("quoteSupplier").innerHTML = dashboardData.suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
 });
@@ -453,7 +469,7 @@ document.getElementById("quoteForm").addEventListener("submit", async (e) => {
     document.getElementById("quoteModal").classList.remove("open"); form.reset(); delete form.dataset.quoteId;
     document.getElementById("quoteModalTitle").textContent = "Add supplier quotation";
     document.getElementById("quoteModalDescription").textContent = "";
-    form.querySelector('button[type="submit"]').textContent = "Save quotation";
+    setFormSubmitLabel(form, "Save quotation");
     showToast(quoteId ? (result.supplier_email_reset ? "Quotation updated. Re-email the seller before generating a PO." : "Quotation updated") : "Quotation saved");
     await fetchDashboard();
   } else showToast(result.detail || "Could not save quotation", true);
@@ -484,7 +500,7 @@ document.getElementById("supplierForm").addEventListener("submit", async event =
     delete form.dataset.sellerId;
     document.getElementById("supplierModalTitle").textContent = "Add seller information";
     document.getElementById("supplierModalDescription").textContent = "Capture the seller's identity and technical capabilities. New sellers start unverified.";
-    form.querySelector('button[type="submit"]').textContent = "Save seller";
+    setFormSubmitLabel(form, "Save seller");
     showToast(sellerId ? "Seller details updated" : "Seller information saved");
     await fetchDashboard();
   } catch (error) { showToast(error.message, true); }
