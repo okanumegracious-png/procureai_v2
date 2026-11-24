@@ -41,7 +41,7 @@ CREATE TABLE project_updates (
 );
 ```
 
-Indexes support due-date sorting and reverse-chronological activity retrieval. Existing `workflow_projects` rows are backfilled into `projects` so older BOQ workspaces remain discoverable. Creating a project also creates its matching `workflow_projects` record, allowing BOQ extraction to use the same project ID.
+Indexes support due-date sorting and reverse-chronological activity retrieval. Existing `workflow_projects` rows are backfilled into `projects` so older BOQ workspaces remain discoverable. Creating a project also creates its matching `workflow_projects` record, allowing BOQ extraction to use the same project ID. If a BOQ upload arrives first from an existing integration, the API creates a minimal project workspace automatically so the workflow is still visible in the Projects register.
 
 ## Authenticated API
 
