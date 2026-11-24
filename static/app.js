@@ -132,20 +132,20 @@ function renderDashboard() {
   // Suppliers
   document.getElementById("topSuppliers").innerHTML = suppliers.slice(0, 4).map(s => `
     <div class="supplier-row">
-      <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
+      <div class="supplier-logo">${escapeHtml(s.name.substring(0,2).toUpperCase())}</div>
       <div class="supplier-info">
         <b>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
-        <small>${s.city} · ${s.on_time}% on-time</small>
+        <small>${escapeHtml(s.city)} · ${Number(s.on_time || 0)}% on-time</small>
       </div>
-      <div class="rating">★ ${s.rating}</div>
+      <div class="rating">★ ${Number(s.rating || 0).toFixed(1)}</div>
     </div>
   `).join("");
   const visibleSuppliers = filterRecords(suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]);
   document.getElementById("supplierCards").innerHTML = visibleSuppliers.map(s => `
     <div class="supplier-card">
       <div class="supplier-card-top">
-        <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
-        <span class="rating">★ ${s.rating}</span>
+        <div class="supplier-logo">${escapeHtml(s.name.substring(0,2).toUpperCase())}</div>
+        <span class="rating">★ ${Number(s.rating || 0).toFixed(1)}</span>
       </div>
       <h3>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO DATA</span>' : ''}</h3>
       <p>${escapeHtml(s.city)} · ${escapeHtml(s.phone || s.email || s.contact || "No contact supplied")}</p>
