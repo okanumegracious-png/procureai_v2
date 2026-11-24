@@ -485,6 +485,16 @@ def list_intake_requests():
     return {"requests":intake_store.list()}
 
 
+class CompanyProfilePayload(BaseModel):
+    company_name: str = Field(min_length=2, max_length=200)
+    registration_number: str = Field(default="", max_length=80)
+    industry: str = Field(default="", max_length=160)
+    services: List[str] = Field(default_factory=list)
+    service_modes: List[str] = Field(default_factory=list)
+    client_segments: List[str] = Field(default_factory=list)
+    currency: str = Field(default="NGN", min_length=3, max_length=3)
+
+
 class DashboardRequestPayload(BaseModel):
     material: str
     category: str
@@ -602,6 +612,51 @@ def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload):
 
 
 # Reuse the existing dashboard database and calculations; the browser UI is served by this API.
+@app.get("/api/admin/company-profile")
+def get_company_profile():
+    with connect() as db:
+        row = db.execute("SELECT * FROM company_profile WHERE id=1").fetchone()
+    if not row:
+        return {
+            "company_name": "", "registration_number": "", "industry": "",
+            "services": [], "service_modes": [], "client_segments": [], "currency": "NGN"
+        }
+    return {
+        "company_name": row["company_name"],
+        "registration_number": row["registration_number"],
+        "industry": row["industry"],
+        "services": json.loads(row["services_json"]),
+        "service_modes": json.loads(row["service_modes_json"]),
+        "client_segments": json.loads(row["client_segments_json"]),
+        "currency": row["currency"],
+        "updated_at": row["updated_at"],
+    }
+
+
+@app.put("/api/admin/company-profile")
+def save_company_profile(payload: CompanyProfilePayload):
+    now = _now()
+    with connect() as db:
+        db.execute("""INSERT INTO company_profile
+            (id,company_name,registration_number,industry,services_json,service_modes_json,client_segments_json,currency,updated_at)
+            VALUES(1,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET
+              company_name=excluded.company_name,
+              registration_number=excluded.registration_number,
+              industry=excluded.industry,
+              services_json=excluded.services_json,
+              service_modes_json=excluded.service_modes_json,
+              client_segments_json=excluded.client_segments_json,
+              currency=excluded.currency,
+              updated_at=excluded.updated_at""",
+            (payload.company_name.strip(), payload.registration_number.strip(), payload.industry.strip(),
+             json.dumps([x.strip() for x in payload.services if x.strip()]),
+             json.dumps([x.strip() for x in payload.service_modes if x.strip()]),
+             json.dumps([x.strip() for x in payload.client_segments if x.strip()]),
+             payload.currency.upper(), now))
+    return {"success": True, "profile": payload.model_dump(), "updated_at": now}
+
+
 @app.get("/api/dashboard")
 def get_dashboard():
     return dashboard_module.dashboard()
