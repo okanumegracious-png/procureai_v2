@@ -344,11 +344,11 @@ function renderProjectWorkspace(project) {
       </div>
     </article>`).join("") : '<div class="project-feed-empty">No daily updates yet. Record the first field or procurement update below.</div>';
   container.innerHTML = `
-    <section class="project-workspace-hero">
+    <section class="project-workspace-hero" data-project-status="${escapeHtml(project.status || "active")}">
       <div><div class="eyebrow">PROJECT WORKSPACE · ${escapeHtml(project.project_id)}</div><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.client_name || "Client not specified")} · Procurement lead: ${escapeHtml(project.procurement_lead || "Unassigned")}</p></div>
       <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project completed</span>' : project.status === "terminated" ? '<span class="project-closed-label">Archived / terminated</span>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
     </section>
-    ${projectLocked ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
+${project.status === "completed" ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
     ${project.status === "terminated" ? `<div class="project-closure-notice"><b>Project terminated and archived</b><span>Archived by ${escapeHtml(project.terminated_by || "Workspace user")} on ${projectDate((project.terminated_at || "").slice(0,10))}. Existing procurement records and reports are retained.</span>${project.termination_note ? `<p>${escapeHtml(project.termination_note)}</p>` : ""}</div>` : ""}
     <section class="project-intake-details">
       <div class="project-section-heading"><div><span class="eyebrow">PROJECT BRIEF</span><h2>Project requirements</h2></div></div>
