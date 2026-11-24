@@ -89,7 +89,7 @@ function renderDashboard() {
       <td>${r.required_by}</td>
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
       <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${r.status}</span></td>
-      <td></td>
+      <td><button class="action-btn reject" data-delete-request="${r.id}" data-request-code="${r.code}">Delete</button></td>
     </tr>
   `).join("");
   // Suppliers
@@ -119,7 +119,7 @@ function renderDashboard() {
   `).join("");
   // Recent Quotes
   document.getElementById("recentQuotes").innerHTML = recent_quotes.slice(0, 5).map(q => `
-    <div class="quote-item">
+    <div class="quote-item" role="button" tabindex="0" data-open-quote="${q.id}">
       <div>
         <b>${q.supplier} ${q.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
         <small>${q.material} (${q.request_code})</small>
@@ -137,6 +137,7 @@ function renderDashboard() {
       <td>${formatMoney(q.freight)}</td>
       <td>${q.lead_days} days</td>
       <td>Net ${q.payment_days}</td>
+      <td><button class="action-btn" data-open-quote="${q.id}">Open</button></td>
     </tr>
   `).join("");
   // Orders Table
@@ -164,6 +165,36 @@ function renderDashboard() {
     ).join("");
   }
 }
+// --- Administrator request and quotation controls ---
+document.addEventListener("click", event => {
+  const deleteButton = event.target.closest("[data-delete-request]");
+  if (deleteButton) window.deleteRequest(deleteButton.dataset.deleteRequest, deleteButton.dataset.requestCode);
+  const quoteButton = event.target.closest("[data-open-quote]");
+  if (quoteButton) window.openQuote(quoteButton.dataset.openQuote);
+});
+window.deleteRequest = async function(id, code) {
+  if (!confirm("Delete purchase request " + code + "? Linked quotations and purchase orders will also be deleted. This cannot be undone.")) return;
+  const response = await apiFetch(API + "/requests/" + id, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) return showToast(data.detail || data.error || "Could not delete request", true);
+  showToast("Request " + data.deleted_request + " deleted");
+  await fetchDashboard();
+};
+window.openQuote = async function(id) {
+  const modal = document.getElementById("quoteDetailModal");
+  const content = document.getElementById("quoteDetailContent");
+  document.getElementById("quoteDetailTitle").textContent = "Quotation #" + id;
+  content.textContent = "Loading quotation details…";
+  modal.classList.add("open");
+  try {
+    const response = await apiFetch(API + "/quotes/" + id);
+    const q = await response.json();
+    if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
+    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
+    content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + String(pair[1] ?? "—").replaceAll("<","&lt;").replaceAll(">","&gt;") + "</b></div>").join("") + "</div>";
+  } catch (error) { content.textContent = error.message; }
+};
+
 // --- Actions ---
 window.decideOrder = async function(id, action) {
   if (!confirm(`Are you sure you want to ${action} this order?`)) return;
