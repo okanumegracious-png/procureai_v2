@@ -87,7 +87,24 @@ document.getElementById("recalculateProject").addEventListener("click", async ()
   } catch(error) { showToast(error.message,true); }
   finally { button.disabled = false; }
 });
-document.getElementById("projectWorkspaceContent").addEventListener("click", event => {
+document.getElementById("projectWorkspaceContent").addEventListener("click", async event => {
+  const closeButton = event.target.closest("[data-close-project]");
+  if (closeButton && activeProjectId) {
+    if (!window.confirm("Close this project as completed? It will remain available for historical records and monthly trends.")) return;
+    closeButton.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/complete`, {
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({completion_note:"Marked complete by project administrator."})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not close project");
+      renderProjectWorkspace(data.project);
+      await loadProjects();
+      showToast("Project closed and added to completion trends");
+    } catch(error) { showToast(error.message,true); }
+    finally { if (closeButton.isConnected) closeButton.disabled = false; }
+    return;
+  }
   const button = event.target.closest("[data-add-project-request]");
   if (!button || !activeProjectId) return;
   const form = document.getElementById("requestForm");
@@ -179,8 +196,30 @@ async function loadProjects() {
     if (!response.ok) throw new Error(data.detail || "Could not load projects");
     projectRecords = data.projects || [];
     renderProjectCards();
+    loadProjectTrends();
   } catch (error) {
     grid.innerHTML = `<div class="project-empty"><h3>Projects could not be loaded</h3><p>${escapeHtml(error.message)}</p><button class="btn btn-ghost" id="retryProjects">Try again</button></div>`;
+  }
+}
+async function loadProjectTrends() {
+  const panel = document.getElementById("projectTrendsPanel");
+  if (!panel) return;
+  try {
+    const response = await apiFetch(`${API}/projects/trends`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load completion trends");
+    const months = data.months || [];
+    const maxCount = Math.max(1,...months.map(item=>Number(item.count||0)));
+    const featured = data.project_of_the_month;
+    panel.innerHTML = `
+      <div class="project-trends-head"><div><span class="eyebrow">DELIVERY PERFORMANCE</span><h2>Project completion trends</h2><p>Track projects formally closed as completed. Only closed projects count toward these figures.</p></div><div class="project-trends-total"><strong>${Number(data.completed_this_month||0)}</strong><span>completed in ${escapeHtml(data.current_month)}</span></div></div>
+      <div class="project-month-feature">${featured ? `
+        <div class="project-month-cup">✦</div><div class="project-month-copy"><span class="eyebrow">PROJECT OF THE MONTH · ${escapeHtml(data.current_month)}</span><h3>${escapeHtml(featured.title)}</h3><p>${escapeHtml(featured.client_name || "Client not specified")} · Completed ${new Date(featured.completed_at).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</p><small>Closed by ${escapeHtml(featured.closed_by || "Workspace user")}</small></div>
+      ` : `<div class="project-month-cup">✦</div><div class="project-month-copy"><span class="eyebrow">PROJECT OF THE MONTH</span><h3>No completed project yet</h3><p>Close a finished project to feature it here and include it in the monthly trends.</p></div>`}</div>
+      <div class="project-trend-chart"><div class="project-trend-chart-head"><b>Monthly completions</b><span>Last 12 months</span></div><div class="project-trend-bars">${months.map(item=>`<div class="project-trend-column" title="${escapeHtml(item.label)}: ${Number(item.count)} completed"><div class="project-trend-bar-track"><i style="height:${Math.max(item.count?8:0,Number(item.count||0)/maxCount*100)}%"></i></div><b>${Number(item.count||0)}</b><small>${escapeHtml(item.label.split(" ")[0])}</small></div>`).join("")}</div></div>
+      <div class="project-trend-history"><b>Completed projects by month</b><div>${months.filter(item=>item.count).slice().reverse().map(item=>`<span><strong>${escapeHtml(item.label)}</strong><small>${item.projects.map(p=>escapeHtml(p.title)).join(" · ")}</small><em>${item.count}</em></span>`).join("") || '<p class="project-muted">No projects have been closed yet.</p>'}</div></div>`;
+  } catch(error) {
+    panel.innerHTML = `<div class="project-empty"><h3>Trends unavailable</h3><p>${escapeHtml(error.message)}</p></div>`;
   }
 }
 function renderProjectCards() {
@@ -241,24 +280,25 @@ function renderProjectWorkspace(project) {
   container.innerHTML = `
     <section class="project-workspace-hero">
       <div><div class="eyebrow">PROJECT WORKSPACE · ${escapeHtml(project.project_id)}</div><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.client_name || "Client not specified")} · Procurement lead: ${escapeHtml(project.procurement_lead || "Unassigned")}</p></div>
-      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>Target completion · ${projectDate(project.due_date)}</small></div>
+      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project closed</span>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
     </section>
+    ${project.status === "completed" ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
     <section class="project-overview-grid">
       <article class="project-overview-card project-summary-card"><span class="eyebrow">PROJECT INTRODUCTION</span><h2>Overview & scope</h2><p>${escapeHtml(project.executive_summary || "No executive summary has been added.")}</p><div class="project-client-details"><b>Client / agency</b><span>${escapeHtml(project.client_name || "Not specified")}</span><b>Agency details</b><span>${escapeHtml(project.agency_details || "Not provided")}</span><b>Procurement lead</b><span>${escapeHtml(project.procurement_lead || "Unassigned")}</span></div></article>
       <article class="project-overview-card project-progress-card"><span class="eyebrow">DELIVERY HEALTH</span><h2>Project progress</h2><div class="project-progress-number">${progress.toFixed(0)}<small>%</small></div><div class="project-progress-track large"><i style="width:${progress}%"></i></div><div class="project-progress-legend"><span>Milestones <b>${Number(project.progress_breakdown?.milestones || 0).toFixed(0)}%</b></span><span>Daily updates <b>${Number(project.progress_breakdown?.daily_updates || 0).toFixed(0)}%</b></span></div><p>Calculated from 4 procurement milestones (60%) and the latest reported workstream progress (40%).</p></article>
     </section>
     <section class="project-overview-card project-timeline-card"><div class="project-section-heading"><div><span class="eyebrow">TIMELINE & DUE DATE TRACKER</span><h2>Procurement milestones</h2></div><div class="project-date-pair"><span>Start <b>${projectDate(project.start_date)}</b></span><span>Due <b>${projectDate(project.due_date)}</b></span></div></div><div class="project-milestones">${milestoneMarkup}</div></section>
     <section class="project-overview-card project-purchase-requests-card">
-      <div class="project-section-heading"><div><span class="eyebrow">PROJECT PROCUREMENT</span><h2>Purchase requests</h2><p>Manage multiple independent material and service requests under this project.</p></div><div class="project-request-actions"><span class="project-deliverable-count">${purchaseRequests.length} requests</span><button type="button" class="btn btn-primary" data-add-project-request>＋ Add request</button></div></div>
+      <div class="project-section-heading"><div><span class="eyebrow">PROJECT PROCUREMENT</span><h2>Purchase requests</h2><p>Manage multiple independent material and service requests under this project.</p></div><div class="project-request-actions"><span class="project-deliverable-count">${purchaseRequests.length} requests</span>${project.status === "completed" ? '<span class="project-closed-label">Project closed</span>' : '<button type="button" class="btn btn-primary" data-add-project-request>＋ Add request</button>'}</div></div>
       <div class="project-request-list">${purchaseRequestsMarkup}</div>
     </section>
     <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
     <section class="project-overview-card project-linked-quotes">
       <div class="project-section-heading"><div><span class="eyebrow">COMMERCIAL RECORDS</span><h2>Linked quotations</h2><p>Attach quotations already recorded in ProcureAI without changing their original purchase request.</p></div><span class="project-deliverable-count">${(project.linked_quotations || []).length} linked</span></div>
-      <form id="projectLinkQuotationForm" class="project-link-quote-form">
+      ${project.status === "completed" ? '<p class="project-muted">This project is closed. Linked quotations are retained as read-only records.</p>' : '<form id="projectLinkQuotationForm" class="project-link-quote-form">
         <label>Choose an existing quotation<select name="quote_id" id="projectQuotationSelect" required><option value="">Loading available quotations…</option></select></label>
         <button class="btn btn-primary" type="submit">Link quotation to project</button>
-      </form>
+      </form>'}
       <div class="project-linked-quote-list">${(project.linked_quotations || []).length ? project.linked_quotations.map(q=>`
         <article class="project-linked-quote-row">
           <div><b>#${q.id} · ${escapeHtml(q.supplier)}</b><span>${escapeHtml(q.request_code)} · ${escapeHtml(q.material)}</span></div>
@@ -268,8 +308,8 @@ function renderProjectWorkspace(project) {
     </section>
     <section class="project-activity-layout">
       <article class="project-overview-card project-feed-card"><div class="project-section-heading"><div><span class="eyebrow">TEAM JOURNAL</span><h2>Daily activity log</h2><p>Field notes, procurement updates, blockers and next actions.</p></div><span class="project-deliverable-count">${updates.length} entries</span></div><div class="project-update-feed">${updateMarkup}</div></article>
-      <article class="project-overview-card project-update-form-card"><span class="eyebrow">ADD AN ENTRY</span><h2>Submit daily update</h2><p class="project-muted">Your signed-in account is recorded automatically as the author.</p>
-        <form id="projectUpdateForm">
+      <article class="project-overview-card project-update-form-card"><span class="eyebrow">TEAM JOURNAL</span><h2>${project.status === "completed" ? "Project updates locked" : "Submit daily update"}</h2><p class="project-muted">${project.status === "completed" ? "This project is closed. Historical updates remain available above." : "Your signed-in account is recorded automatically as the author."}</p>
+        ${project.status === "completed" ? "" : '<form id="projectUpdateForm">
           <label>Update type<select name="update_type"><option value="daily">Daily update</option><option value="field_note">Field note</option><option value="blocker">Blocker / issue</option><option value="milestone">Milestone update</option></select></label>
           <label>Current status<input name="status" maxlength="80" value="In progress" required></label>
           <label>Reported workstream progress <strong id="projectReportedProgressValue">${latestReported}%</strong><input name="progress_percent" type="range" min="0" max="100" value="${latestReported}" step="5" id="projectReportedProgress"></label>
@@ -278,7 +318,7 @@ function renderProjectWorkspace(project) {
           <label>Next steps<textarea name="next_steps" rows="2" placeholder="Actions planned for the next work period"></textarea></label>
           <div class="project-milestone-checklist"><b>Mark milestones completed</b>${milestones.map(item=>`<label class="project-check-option"><input type="checkbox" name="completed_milestones" value="${escapeHtml(item.key)}" ${item.completed ? "disabled" : ""}><span>${escapeHtml(item.label)}${item.completed ? " · already complete" : ""}</span></label>`).join("")}</div>
           <button class="btn btn-primary project-submit-update" type="submit">Post project update</button>
-        </form>
+        </form>'}
       </article>
     </section>`;
   const progressInput = document.getElementById("projectReportedProgress");
