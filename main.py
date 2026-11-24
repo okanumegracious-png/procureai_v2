@@ -8,7 +8,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -336,6 +337,122 @@ def create_intake(payload: IntakePayload):
 @app.get("/api/agentic/requests")
 def list_intake_requests():
     return {"requests":intake_store.list()}
+
+
+class DashboardRequestPayload(BaseModel):
+    material: str
+    category: str
+    quantity: float = Field(gt=0)
+    unit: str
+    site: str
+    required_by: str
+    priority: str = "Normal"
+
+
+class DashboardQuotePayload(BaseModel):
+    supplier_id: int
+    request_id: int
+    unit_price: float = Field(gt=0)
+    freight: float = Field(ge=0)
+    tax_rate: float = Field(ge=0, le=100)
+    lead_days: int = Field(ge=0)
+    payment_days: int = Field(ge=0)
+    note: str = ""
+
+
+class DashboardOrderPayload(BaseModel):
+    request_id: int
+    supplier_id: int
+
+
+class DashboardDecisionPayload(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    note: str = ""
+
+
+@app.get("/api/requests")
+def dashboard_requests():
+    return {"requests": dashboard_module.rows("SELECT * FROM requests ORDER BY id DESC")}
+
+
+@app.get("/api/suppliers")
+def dashboard_suppliers():
+    return {"suppliers": dashboard_module.rows("SELECT * FROM suppliers ORDER BY rating DESC")}
+
+
+@app.get("/api/orders")
+def dashboard_orders():
+    return {"orders": dashboard_module.dashboard()["orders"]}
+
+
+@app.post("/api/requests", status_code=201)
+def dashboard_create_request(payload: DashboardRequestPayload):
+    try:
+        date.fromisoformat(payload.required_by)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="required_by must be an ISO date")
+    with dashboard_module.connect() as db:
+        next_id = db.execute("SELECT COALESCE(MAX(id),0)+1 FROM requests").fetchone()[0]
+        code = f"PR-{next_id+141:04d}"
+        cur = db.execute("""INSERT INTO requests(code,material,category,quantity,unit,site,required_by,priority,status,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (code,payload.material.strip(),payload.category,payload.quantity,payload.unit,payload.site.strip(),
+             payload.required_by,payload.priority,"Open",datetime.utcnow().isoformat()))
+    return {"success":True,"id":cur.lastrowid,"code":code}
+
+
+@app.post("/api/quotes", status_code=201)
+def dashboard_create_quote(payload: DashboardQuotePayload):
+    with dashboard_module.connect() as db:
+        if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Purchase request not found")
+        if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Supplier not found")
+        cur = db.execute("""INSERT INTO quotes(supplier_id,request_id,unit_price,freight,tax_rate,lead_days,payment_days,note,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?)""",
+            (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,
+             payload.lead_days,payload.payment_days,payload.note,datetime.utcnow().isoformat()))
+    return {"success":True,"id":cur.lastrowid}
+
+
+@app.post("/api/orders", status_code=201)
+def dashboard_create_order(payload: DashboardOrderPayload):
+    req = dashboard_module.one("SELECT * FROM requests WHERE id=?", (payload.request_id,))
+    quote = dashboard_module.one("SELECT * FROM quotes WHERE request_id=? AND supplier_id=? ORDER BY id DESC LIMIT 1",
+                                 (payload.request_id,payload.supplier_id))
+    supplier = dashboard_module.one("SELECT * FROM suppliers WHERE id=?", (payload.supplier_id,))
+    if not req or not quote or not supplier:
+        raise HTTPException(status_code=404, detail="A matching request, supplier and quotation are required")
+    qty, price = Decimal(str(req["quantity"])), Decimal(str(quote["unit_price"]))
+    tax = qty * price * Decimal(str(quote["tax_rate"])) / Decimal("100")
+    freight = Decimal(str(quote["freight"]))
+    total = qty * price + tax + freight
+    reasons = ["Human approval required before any purchase commitment"]
+    if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold")
+    if supplier["rating"] < 3.5: reasons.append("Supplier rating is below the preferred threshold")
+    if quote["lead_days"] > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
+        reasons.append("Quoted lead time misses the requested delivery date")
+    with dashboard_module.connect() as db:
+        count = db.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        code = f"PO-{datetime.utcnow():%y%m%d}-{count+1:03d}"
+        cur = db.execute("""INSERT INTO orders(code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,required_by,created_at,decision_note)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (code,payload.supplier_id,payload.request_id,float(qty),float(price),float(freight),float(tax),
+             float(total),"Pending approval",req["required_by"],datetime.utcnow().isoformat(),"; ".join(reasons)))
+    return {"success":True,"id":cur.lastrowid,"code":code,"status":"Pending approval","total":float(total),"reasons":reasons}
+
+
+@app.post("/api/orders/{order_id}/decision")
+def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload):
+    status = "Approved" if payload.action == "approve" else "Rejected"
+    with dashboard_module.connect() as db:
+        cur = db.execute("UPDATE orders SET status=?,decision_note=? WHERE id=? AND status='Pending approval'",
+                         (status,payload.note,order_id))
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=409, detail="Order is not awaiting approval")
+        if payload.action == "approve":
+            db.execute("UPDATE requests SET status='Awarded' WHERE id=(SELECT request_id FROM orders WHERE id=?)",(order_id,))
+    return {"success":True,"status":status}
 
 
 # Reuse the existing dashboard database and calculations; the browser UI is served by this API.
