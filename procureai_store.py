@@ -102,6 +102,10 @@ def init_store() -> None:
             line_items_json TEXT NOT NULL,
             total_amount REAL NOT NULL CHECK(total_amount >= 0),
             status TEXT NOT NULL DEFAULT 'submitted',
+            technical_status TEXT NOT NULL DEFAULT 'pending',
+            technical_notes TEXT NOT NULL DEFAULT '',
+            technical_reviewed_by TEXT NOT NULL DEFAULT '',
+            technical_reviewed_at TEXT,
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_workflow_quotes_project
@@ -133,6 +137,17 @@ def init_store() -> None:
             updated_at TEXT NOT NULL
         );
         """)
+        # Existing workflow quotations default to pending until an administrator records compliance.
+        quotation_columns = {row["name"] for row in db.execute("PRAGMA table_info(workflow_quotations)").fetchall()}
+        for column, definition in {
+            "technical_status": "TEXT NOT NULL DEFAULT 'pending'",
+            "technical_notes": "TEXT NOT NULL DEFAULT ''",
+            "technical_reviewed_by": "TEXT NOT NULL DEFAULT ''",
+            "technical_reviewed_at": "TEXT",
+        }.items():
+            if column not in quotation_columns:
+                db.execute(f"ALTER TABLE workflow_quotations ADD COLUMN {column} {definition}")
+
         # Backfill the workspace view for BOQ projects created before the project dashboard existed.
         db.execute("""INSERT OR IGNORE INTO projects
             (project_id,title,executive_summary,status,created_at,updated_at)
