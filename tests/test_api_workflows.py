@@ -57,6 +57,8 @@ def test_browser_api_requires_session_and_csrf(tmp_path, monkeypatch):
 
 def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authenticated_client):
     client = authenticated_client
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/static/styles.css").status_code == 200
     project_response = client.post("/api/projects", json={
         "title": "Integration test procurement",
         "start_date": "2026-11-25",
@@ -144,6 +146,11 @@ def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authen
     po_without_rfq = client.post("/api/orders/from-analysis", json={"quote_id": quote_id})
     assert po_without_rfq.status_code == 409
     assert "Email the purchase request" in po_without_rfq.json()["detail"]
+    legacy_po_without_rfq = client.post("/api/orders", json={
+        "request_id": request_id, "supplier_id": supplier_id
+    })
+    assert legacy_po_without_rfq.status_code == 409
+    assert "Email the purchase request" in legacy_po_without_rfq.json()["detail"]
 
 
 def test_technical_review_requires_evidence_notes(authenticated_client):
