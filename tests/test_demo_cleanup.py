@@ -1,14 +1,25 @@
-from datetime import date, timedelta
+from datetime import date
 
 import app as dashboard_app
 
 
-def test_fresh_workspace_has_no_fictional_seed_records(tmp_path, monkeypatch):
+def test_fresh_workspace_seed_suppliers_are_explicitly_unverified(tmp_path, monkeypatch):
     monkeypatch.setattr(dashboard_app, "DB", tmp_path / "fresh.db")
     dashboard_app.init_db()
-    assert dashboard_app.rows("SELECT * FROM suppliers") == []
+    suppliers = dashboard_app.rows("SELECT * FROM suppliers ORDER BY id")
+    assert len(suppliers) == 7
+
+    demo = [row for row in suppliers if "[FICTIONAL DEMO]" in row["name"]]
+    sourced = [row for row in suppliers if "[FICTIONAL DEMO]" not in row["name"]]
+    assert len(demo) == 1
+    assert demo[0]["status"] == "Demo / Unverified"
+    assert not demo[0]["email"] and not demo[0]["phone"]
+    assert len(sourced) == 6
+    assert all(row["status"] == "Pending verification" for row in sourced)
+    assert all("NOT VERIFIED" in row["contact"] for row in sourced)
     assert dashboard_app.rows("SELECT * FROM requests") == []
     assert dashboard_app.rows("SELECT * FROM quotes") == []
+    assert dashboard_app.rows("SELECT * FROM orders") == []
 
 
 def test_startup_removes_only_legacy_demo_rows(tmp_path, monkeypatch):
