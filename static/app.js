@@ -156,6 +156,15 @@ document.getElementById("projectForm").addEventListener("submit", async event =>
   const form = event.currentTarget;
   const payload = Object.fromEntries(new FormData(form).entries());
   payload.deliverables = String(payload.deliverables || "").split("\n").map(value=>value.trim()).filter(Boolean);
+  payload.estimated_budget = Number(payload.estimated_budget || 0);
+  payload.expected_duration_days = Number(payload.expected_duration_days || 30);
+  payload.planned_purchase_requests = Number(payload.planned_purchase_requests || 0);
+  const startDate = new Date(payload.start_date + "T00:00:00");
+  const durationDue = new Date(startDate); durationDue.setDate(durationDue.getDate() + payload.expected_duration_days);
+  const enteredDue = new Date(payload.due_date + "T00:00:00");
+  if (payload.expected_duration_days > 0 && (!payload.due_date || Math.abs((enteredDue-durationDue)/86400000) > 1)) {
+    payload.due_date = durationDue.toISOString().slice(0,10);
+  }
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
   try {
@@ -802,6 +811,8 @@ document.querySelectorAll("[data-modal]").forEach(btn => {
       const due = new Date(today); due.setDate(due.getDate()+30);
       if (!form.elements.start_date.value) form.elements.start_date.value = today.toISOString().slice(0,10);
       if (!form.elements.due_date.value) form.elements.due_date.value = due.toISOString().slice(0,10);
+      if (!form.elements.expected_duration_days.value) form.elements.expected_duration_days.value = "30";
+      if (!form.elements.planned_purchase_requests.value) form.elements.planned_purchase_requests.value = "1";
     }
   });
 });
