@@ -1,6 +1,6 @@
 # ProcureAI
 
-ProcureAI is a construction procurement workspace with a shared Python API, SQLite persistence, BOQ extraction, natural-language intake, supplier records, quotation comparison and human-controlled purchase approval.
+ProcureAI is an industrial operations and procurement workspace. Its shared Python API supports administrator-entered company configuration, procurement records, BOQ extraction, natural-language intake, supplier records, quotation comparison and human-controlled purchase approval.
 
 ## Run locally
 
@@ -18,7 +18,7 @@ Open http://127.0.0.1:8000. On Windows PowerShell, use `$env:NAME="value"` to se
 
 ## Docker
 
-Mount a durable volume at `/data`. The container stores its database at `/data/procureai.db`; the local tracked database is deliberately not copied into the image.
+Mount a durable volume at `/data`. The container stores its database at `/data/procureai.db`. Database files are runtime data and are not tracked in Git.
 
 Required production configuration:
 - `PROCUREAI_ADMIN_USERNAME`: the single administrator login name.
@@ -30,7 +30,7 @@ Required production configuration:
 
 Keep all API secrets in Railway server environment variables only. Never expose them in browser JavaScript.
 
-## Unified data
+## Company setup\n\nAfter signing in, open **Company setup** to enter the organisation name, registration number, industry, services, delivery modes, client segments and default currency. These values are stored in the shared application database; the workspace does not assume a particular customer or pre-populate fictional company information.\n\nThe application does not seed fictional suppliers, requests or quotations. On startup it removes only the exact legacy sample suppliers and purchase requests shipped by the earlier demo dataset, including their linked quotations and orders. Other records are retained.\n\n## Unified data
 
 The dashboard, BOQ workflow tables and agentic intake use the same SQLite file through `PROCUREAI_DB_PATH`. Back up that file and its WAL state using a SQLite-aware backup process. Do not commit production database files or secrets.
 
