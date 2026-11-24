@@ -24,6 +24,7 @@
     <div class="workspace-label">WORKSPACE</div>
     <nav class="nav">
       <button class="nav-item active" data-page="overview"><span>▦</span> Overview</button>
+      <button class="nav-item" data-page="projects"><span>▦</span> Projects</button>
       <button class="nav-item" data-page="requests"><span>▤</span> Purchase requests <i id="requestCount">0</i></button>
       <button class="nav-item" data-page="suppliers"><span>♧</span> Suppliers</button>
       <button class="nav-item" data-page="quotes"><span>⇄</span> RFQs & quotations</button>
@@ -71,6 +72,21 @@
       </div>
     </section>
 
+    <section class="page" id="page-projects">
+      <div class="page-heading project-page-heading">
+        <div><div class="eyebrow">PROJECT DELIVERY CONTROL</div><h1>Project workspaces</h1><p class="subheading">Manage client commitments, procurement milestones, due dates and daily field activity in one place.</p></div>
+        <button class="btn btn-primary" data-modal="projectModal">＋ Create project</button>
+      </div>
+      <div id="projectsListView">
+        <div class="project-list-toolbar"><div><h2>Managed projects</h2><p>Every project has its own overview, timeline and activity history.</p></div><span class="project-list-count" id="projectCount">0 projects</span></div>
+        <div class="project-cards-grid" id="projectCards"><div class="project-empty"><span>▦</span><h3>No project workspaces yet</h3><p>Create your first project to start tracking its procurement lifecycle and daily progress.</p><button class="btn btn-primary" data-modal="projectModal">Create first project</button></div></div>
+      </div>
+      <div id="projectWorkspaceView" hidden>
+        <div class="project-back-row"><button type="button" class="text-btn" id="backToProjects">← All projects</button><button type="button" class="btn btn-ghost" id="recalculateProject">↻ Recalculate progress</button></div>
+        <div id="projectWorkspaceContent"></div>
+      </div>
+    </section>
+
     <section class="page" id="page-requests">
       <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials, parts and services required for workshop or client jobs.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
       <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
@@ -112,6 +128,20 @@
   </main>
 </div>
 
+<div class="modal-backdrop" id="projectModal"><div class="modal project-create-modal">
+  <div class="modal-head"><div><span class="eyebrow">PROJECT SETUP</span><h2>Create project workspace</h2><p class="subheading">Add the client brief, accountable procurement lead and delivery dates.</p></div><button class="close" type="button" data-close aria-label="Close project form">×</button></div>
+  <form id="projectForm" class="form-grid">
+    <label class="wide">Project title<input name="title" required minlength="2" maxlength="220" placeholder="e.g. Industrial generator overhaul — Site A"></label>
+    <label>Client / agency name<input name="client_name" maxlength="200" placeholder="Client or commissioning agency"></label>
+    <label>Assigned procurement lead<input name="procurement_lead" maxlength="160" placeholder="Responsible lead"></label>
+    <label class="wide">Client / agency details<textarea name="agency_details" rows="2" maxlength="1200" placeholder="Client contact, department, location or engagement reference"></textarea></label>
+    <label class="wide">Executive summary & scope<textarea name="executive_summary" rows="3" maxlength="5000" placeholder="Describe the project objective, scope, operational context and expected outcome"></textarea></label>
+    <label>Project start date<input name="start_date" type="date" required></label>
+    <label>Target completion date<input name="due_date" type="date" required></label>
+    <label class="wide">Key deliverables <small>Enter one deliverable per line.</small><textarea name="deliverables" rows="3" placeholder="Approved BOQ and procurement schedule&#10;Verified supplier quotations&#10;Approved purchase order"></textarea></label>
+    <div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">Create workspace</button></div>
+  </form>
+</div></div>
 <div class="modal-backdrop" id="supplierModal"><div class="modal supplier-modal"><div class="modal-head"><div><span class="eyebrow">SUPPLIER NETWORK</span><h2 id="supplierModalTitle">Add seller information</h2><p class="subheading" id="supplierModalDescription">Capture the seller's identity and technical capabilities. New sellers start unverified.</p></div><button class="close" data-close>×</button></div>
 <form id="supplierForm" class="form-grid">
 <label class="wide">Business / seller name<input name="name" required minlength="2" maxlength="200" placeholder="Registered or trading name"></label>
