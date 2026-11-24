@@ -232,11 +232,8 @@ function renderProjectCards() {
   });
   document.getElementById("projectCount").textContent = `${filteredProjects.length} ${filteredProjects.length === 1 ? "project" : "projects"}`;
   if (!filteredProjects.length) {
-    const message = filter === "completed" ? "No completed projects yet." : filter === "uncompleted" ? "No uncompleted projects. Great work!" : "Create your first project to start tracking its procurement lifecycle and daily progress.";
-    grid.innerHTML = `<div class="project-empty"><span>▦</span><h3>${escapeHtml(message)}</h3><p>${filter === "all" ? "Create a project to get started." : "Try another filter or change the project status."}</p>${filter === "all" ? '<button class="btn btn-primary" data-modal="projectModal">Create first project</button>' : ""}</div>`;
-    return;
-  }
-    grid.innerHTML = '<div class="project-empty"><span>▦</span><h3>No project workspaces yet</h3><p>Create your first project to start tracking its procurement lifecycle and daily progress.</p><button class="btn btn-primary" data-modal="projectModal">Create first project</button></div>';
+    const message = filter === "completed" ? "No completed projects yet." : filter === "uncompleted" ? "No uncompleted projects. Great work!" : "No project workspaces yet.";
+    grid.innerHTML = `<div class="project-empty"><span>▦</span><h3>${escapeHtml(message)}</h3><p>${filter === "all" ? "Create your first project to get started." : "Try another filter or update a project's completion status."}</p>${filter === "all" ? '<button class="btn btn-primary" data-modal="projectModal">Create first project</button>' : ""}</div>`;
     return;
   }
   grid.innerHTML = filteredProjects.map(project => `
