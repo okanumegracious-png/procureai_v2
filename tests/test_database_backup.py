@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 import main as procureai_main
 
 
@@ -35,3 +37,29 @@ def test_database_backup_retention_keeps_seven_latest(tmp_path, monkeypatch):
     backups = list(backup_dir.glob("procureai-*.sqlite3"))
     assert len(backups) == 7
     assert len(procureai_main._list_database_backups()) == 7
+
+
+def test_restore_verification_uses_isolated_copy_and_preserves_live_database(tmp_path, monkeypatch):
+    database = tmp_path / "procureai.db"
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setenv("PROCUREAI_DB_PATH", str(database))
+    monkeypatch.setenv("PROCUREAI_BACKUP_DIR", str(backup_dir))
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE procurement_records (id INTEGER PRIMARY KEY, reference TEXT NOT NULL)")
+        db.execute("INSERT INTO procurement_records(reference) VALUES(?)", ("PR-LIVE-001",))
+    backup = procureai_main._create_database_backup()
+    with sqlite3.connect(database) as db:
+        db.execute("INSERT INTO procurement_records(reference) VALUES(?)", ("PR-LIVE-002",))
+
+    result = procureai_main._verify_database_backup(backup["filename"])
+    assert result["restore_test"] == "passed"
+    assert result["integrity"] == "ok"
+    assert result["live_database_changed"] is False
+    with sqlite3.connect(database) as db:
+        assert db.execute("SELECT COUNT(*) FROM procurement_records").fetchone()[0] == 2
+
+
+def test_backup_path_traversal_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("PROCUREAI_DB_PATH", str(tmp_path / "procureai.db"))
+    with pytest.raises(Exception):
+        procureai_main._resolve_database_backup("../secrets.sqlite3")
