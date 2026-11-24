@@ -1962,8 +1962,8 @@ def save_job_completion_report(project_id: str, payload: dict, request: Request)
     with connect() as db:
         project=db.execute("SELECT project_id,status FROM projects WHERE project_id=?",(project_id,)).fetchone()
         if not project: raise HTTPException(status_code=404,detail="Project not found")
-        if project["status"] in ("completed","terminated"):
-            raise HTTPException(status_code=409,detail="This project is closed or archived. Job completion reports are read-only.")
+        if project["status"] == "terminated":
+            raise HTTPException(status_code=409,detail="This project is archived. Job completion reports are read-only.")
         db.execute("""CREATE TABLE IF NOT EXISTS project_job_completion_reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL UNIQUE REFERENCES projects(project_id) ON DELETE CASCADE,
