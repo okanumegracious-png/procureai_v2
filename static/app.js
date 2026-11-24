@@ -187,6 +187,7 @@ function renderProjectWorkspace(project) {
   const updates = project.updates || [];
   const deliverables = project.deliverables || [];
   const progress = Math.max(0,Math.min(100,Number(project.progress_percent || 0)));
+  const latestReported = updates.length ? Number(updates[0].progress_percent || 0) : 0;
   const milestoneMarkup = milestones.map(item => `
     <div class="project-milestone ${item.completed ? "is-complete" : ""}">
       <span class="project-milestone-check">${item.completed ? "✓" : "○"}</span><div><b>${escapeHtml(item.label)}</b><small>${item.completed ? "Completed" + (item.completed_at ? " · " + projectDate(item.completed_at.slice(0,10)) : "") : "Awaiting completion"}</small></div><strong>${Number(item.weight || 0)}%</strong>
@@ -219,7 +220,7 @@ function renderProjectWorkspace(project) {
         <form id="projectUpdateForm">
           <label>Update type<select name="update_type"><option value="daily">Daily update</option><option value="field_note">Field note</option><option value="blocker">Blocker / issue</option><option value="milestone">Milestone update</option></select></label>
           <label>Current status<input name="status" maxlength="80" value="In progress" required></label>
-          <label>Reported workstream progress <strong id="projectReportedProgressValue">0%</strong><input name="progress_percent" type="range" min="0" max="100" value="0" step="5" id="projectReportedProgress"></label>
+          <label>Reported workstream progress <strong id="projectReportedProgressValue">${latestReported}%</strong><input name="progress_percent" type="range" min="0" max="100" value="${latestReported}" step="5" id="projectReportedProgress"></label>
           <label>Field notes<textarea name="field_notes" rows="4" placeholder="What was completed today? Include inspections, supplier contact, site findings…"></textarea></label>
           <label>Blockers / risks<textarea name="blockers" rows="2" placeholder="Delays, access issues, missing documents or dependencies"></textarea></label>
           <label>Next steps<textarea name="next_steps" rows="2" placeholder="Actions planned for the next work period"></textarea></label>
