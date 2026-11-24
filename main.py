@@ -79,13 +79,17 @@ class SupplierCreate(BaseModel):
     phone: Optional[str] = None
     website: Optional[str] = None
     address: Optional[str] = None
-    categories: List[str] = []
+    categories: List[str] = Field(default_factory=list)
 
 
 class SupplierRequest(BaseModel):
     project_id: str
     categories: List[str]
     dispatch_rfq: bool = False
+
+class SupplierVerificationPayload(BaseModel):
+    status: str = Field(pattern="^(verified|rejected|pending)$")
+    notes: str = ""
 
 
 class QuotationLineItem(BaseModel):
@@ -203,6 +207,17 @@ def add_supplier(payload: SupplierCreate):
             VALUES(?,?,?,?,?,?,?,'unverified',?,?)""",
             (sid,payload.name,payload.email,payload.phone,payload.website,payload.address,json.dumps(payload.categories),now,now))
     return {"success": True, "supplier_id": sid, "verification_status": "unverified"}
+
+
+@app.post("/api/v1/suppliers/{supplier_id}/verification", dependencies=[Depends(verify_api_key)])
+def set_supplier_verification(supplier_id: str, payload: SupplierVerificationPayload):
+    with connect() as db:
+        cur = db.execute("""UPDATE workflow_suppliers SET verification_status=?,verification_notes=?,updated_at=?
+            WHERE supplier_id=?""", (payload.status,payload.notes,_now(),supplier_id))
+        if cur.rowcount != 1:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+        row = db.execute("SELECT supplier_id,name,verification_status,verification_notes FROM workflow_suppliers WHERE supplier_id=?", (supplier_id,)).fetchone()
+    return {"success":True,"supplier":dict(row)}
 
 
 @app.get("/api/v1/suppliers", dependencies=[Depends(verify_api_key)])
