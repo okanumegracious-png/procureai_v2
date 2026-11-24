@@ -52,7 +52,7 @@ ProcureAI can create a consistent SQLite online backup, verify it with `PRAGMA i
 - `GET /api/admin/database/backups`
 - `POST /api/admin/database/backups`
 
-These backups are stored on the same Railway Volume as the live database. They protect against some application-level mistakes but **are not off-site disaster recovery**. Production operators should periodically copy a verified backup to independent storage and test restoring it to a separate database before relying on it.
+These backups are stored on the same Railway Volume as the live database. The Company setup page lets an administrator download a backup for independent storage and run an isolated restore verification. The verification copies the selected backup into a temporary database, checks SQLite integrity and foreign keys, and never overwrites the live database. Download a verified copy to independent storage regularly: same-volume copies are not off-site disaster recovery. A full operational restore into a replacement production service still requires a controlled maintenance procedure.
 
 ## Local development
 

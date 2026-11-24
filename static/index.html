@@ -120,6 +120,12 @@
           <div class="setup-save"><div><b>Ready to update your workspace?</b><span id="companyProfileStatus" role="status">Your changes are not saved until you select Save.</span></div><button class="btn btn-primary" type="submit">Save company profile</button></div>
         </form></section>
       </div>
+      <section class="panel database-backup-panel">
+        <div class="panel-heading"><div><h2>Database protection</h2><p>Create, verify and download database backups for independent storage.</p></div></div>
+        <div class="backup-toolbar"><p id="databaseBackupStatus" role="status">Loading backup status…</p><div class="toolbar-actions"><button class="btn btn-ghost" id="refreshDatabaseBackups" type="button">Refresh</button><button class="btn btn-primary" id="createDatabaseBackup" type="button">Create backup</button></div></div>
+        <div id="databaseBackupList" class="database-backup-list"><p class="muted">Loading available backups…</p></div>
+        <p class="backup-footnote">Backups stored on the Railway volume are not off-site. Download a verified copy and store it separately. Restore verification uses a temporary copy and never overwrites live data.</p>
+      </section>
     </section>
 
     <section class="page" id="page-orders">

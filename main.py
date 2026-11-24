@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import asyncio
 import sqlite3
+import shutil
+import tempfile
 import html
 import os
 import uuid
@@ -32,7 +34,7 @@ import re
 import secrets
 import time
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, Security, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -1676,6 +1678,63 @@ def list_database_backups():
     return {"backups": _list_database_backups(), "retention": 7,
             "automatic_backup": os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"),
             "storage_note": "Backups are stored beside the configured SQLite database on the Railway volume. Copy them off-volume for disaster recovery."}
+
+
+def _resolve_database_backup(filename: str) -> Path:
+    if (Path(filename).name != filename or not filename.startswith("procureai-")
+            or not filename.endswith(".sqlite3")):
+        raise HTTPException(status_code=404, detail="Database backup not found")
+    backup_dir = Path(os.getenv("PROCUREAI_BACKUP_DIR", str(_database_file().parent / "backups"))).resolve()
+    candidate = (backup_dir / filename).resolve()
+    if candidate.parent != backup_dir or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="Database backup not found")
+    return candidate
+
+
+def _verify_database_backup(filename: str) -> dict:
+    """Copy a backup to an isolated temporary location and exercise a read-only restore check."""
+    source = _resolve_database_backup(filename)
+    with tempfile.TemporaryDirectory(prefix="procureai-restore-check-") as temp_dir:
+        restored_path = Path(temp_dir) / "restore-test.sqlite3"
+        shutil.copy2(source, restored_path)
+        with sqlite3.connect(str(restored_path), timeout=30) as restored:
+            integrity = restored.execute("PRAGMA integrity_check").fetchone()
+            foreign_key_violations = restored.execute("PRAGMA foreign_key_check").fetchall()
+            tables = restored.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+            if not integrity or integrity[0] != "ok":
+                raise RuntimeError("Backup failed SQLite integrity verification")
+            if foreign_key_violations:
+                raise RuntimeError("Backup contains foreign-key violations")
+            row_count = 0
+            for (table_name,) in tables:
+                safe_name = table_name.replace('"', '""')
+                row_count += restored.execute(f'SELECT COUNT(*) FROM "{safe_name}"').fetchone()[0]
+        return {"filename": filename, "restore_test": "passed", "integrity": "ok",
+                "foreign_key_violations": 0, "table_count": len(tables),
+                "row_count": row_count, "live_database_changed": False}
+
+
+@app.get("/api/admin/database/backups/{filename}/download")
+def download_database_backup(filename: str):
+    path = _resolve_database_backup(filename)
+    return FileResponse(path, media_type="application/vnd.sqlite3", filename=filename)
+
+
+@app.post("/api/admin/database/backups/{filename}/verify-restore")
+def verify_database_backup_restore(filename: str, request: Request):
+    try:
+        result = _verify_database_backup(filename)
+    except (OSError, sqlite3.Error, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=f"Backup restore verification failed: {type(exc).__name__}")
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state,"auth_user",""), "verify_database_backup", "database_backup", filename,
+             json.dumps({"integrity":result["integrity"],"table_count":result["table_count"],
+                         "row_count":result["row_count"],"live_database_changed":False}), _now()))
+    return {"success": True, "verification": result}
 
 
 @app.post("/api/admin/database/backups", status_code=201)
