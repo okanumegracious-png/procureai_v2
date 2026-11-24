@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "outputDirectory": "static",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://procureaiv2-production.up.railway.app/api/:path*"
+    }
+  ]
+}
