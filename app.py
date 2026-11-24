@@ -376,7 +376,19 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
             # Keep deterministic seller review for any quote the model omitted.
             supplied = {int(x.get("quote_id")): x for x in ai.get("seller_reviews", []) if str(x.get("quote_id", "")).isdigit()}
             ai["seller_reviews"] = [supplied.get(int(x["quote_id"]), x) for x in fallback_reviews]
-            ai.setdefault("alternative_recommendations", [])
+            known_alternatives = {int(x["supplier_id"]): x for x in alternatives}
+            safe_alternatives = []
+            for candidate in ai.get("alternative_recommendations", []):
+                if not isinstance(candidate, dict):
+                    continue
+                try:
+                    candidate_id = int(candidate.get("supplier_id"))
+                except (TypeError, ValueError):
+                    continue
+                # Only recommend sellers already present in the supplier register.
+                if candidate_id in known_alternatives:
+                    safe_alternatives.append(known_alternatives[candidate_id])
+            ai["alternative_recommendations"] = safe_alternatives
             ai.setdefault("caveat", judgement["caveat"])
             return ai
     except Exception as exc:
