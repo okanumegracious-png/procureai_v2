@@ -344,6 +344,20 @@ function renderProjectWorkspace(project) {
       <div class="project-section-heading"><div><span class="eyebrow">PROJECT PROCUREMENT</span><h2>Purchase requests</h2><p>Manage multiple independent material and service requests under this project.</p></div><div class="project-request-actions"><span class="project-deliverable-count">${purchaseRequests.length} requests</span>${project.status === "completed" ? '<span class="project-closed-label">Project closed</span>' : '<button type="button" class="btn btn-primary" data-add-project-request>＋ Add request</button>'}</div></div>
       <div class="project-request-list">${purchaseRequestsMarkup}</div>
     </section>
+    <section class="project-overview-card project-buyer-confirmation-card">
+      <div class="project-section-heading"><div><span class="eyebrow">PROCUREMENT GATE · STAGE 3</span><h2>Buyer confirmation</h2><p>Record the buyer's response received by email, WhatsApp or phone. No buyer login or automated email link is required.</p></div><span class="project-deliverable-count" id="buyerConfirmationStatus">Loading status…</span></div>
+      <div id="buyerConfirmationHistory" class="project-linked-quote-list"><div class="project-feed-empty">Loading confirmation history…</div></div>
+      ${project.status === "completed" ? '<p class="project-muted">This project is closed. Buyer confirmation records are read-only.</p>' : `<form id="buyerConfirmationForm" class="project-link-quote-form buyer-confirmation-form">
+        <label>Buyer name<input name="buyer_name" required minlength="2" maxlength="200" placeholder="Name of the person who responded"></label>
+        <label>Buyer organisation<input name="organisation" maxlength="200" placeholder="Organisation / department (optional)"></label>
+        <label>Response received through<select name="channel" required><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="phone">Phone call</option></select></label>
+        <label>Buyer response<select name="status" required><option value="confirmed">Confirmed — requirements accepted</option><option value="changes_requested">Changes requested</option><option value="rejected">Rejected — do not proceed</option></select></label>
+        <label>Requirements confirmed / changes requested<textarea name="requirements_confirmed" rows="3" required placeholder="Record specifications, quantities, scope or requested amendments"></textarea></label>
+        <label>Budget and delivery acceptance<select name="budget_delivery_accepted" required><option value="yes">Accepted</option><option value="conditional">Accepted with conditions</option><option value="no">Not accepted</option><option value="not_discussed">Not discussed</option></select></label>
+        <label>Buyer comments / conditions<textarea name="comments" rows="2" placeholder="Optional additional instructions, conditions or reference to the email / call"></textarea></label>
+        <button class="btn btn-primary" type="submit">Save buyer confirmation</button>
+      </form>`}
+    </section>
     <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
     <section class="project-overview-card project-linked-quotes">
       <div class="project-section-heading"><div><span class="eyebrow">COMMERCIAL RECORDS</span><h2>Linked quotations</h2><p>Attach quotations already recorded in ProcureAI without changing their original purchase request.</p></div><span class="project-deliverable-count">${(project.linked_quotations || []).length} linked</span></div>
@@ -376,6 +390,47 @@ function renderProjectWorkspace(project) {
   const progressInput = document.getElementById("projectReportedProgress");
   progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
   loadProjectQuotationOptions(project.project_id);
+  loadBuyerConfirmations(project.project_id);
+  const buyerForm = document.getElementById("buyerConfirmationForm");
+  buyerForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = buyerForm.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const payload = Object.fromEntries(new FormData(buyerForm).entries());
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(project.project_id)}/buyer-confirmations`, {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not save buyer confirmation");
+      buyerForm.reset();
+      showToast("Buyer confirmation recorded in the project audit trail");
+      await loadBuyerConfirmations(project.project_id);
+    } catch(error) { showToast(error.message,true); }
+    finally { button.disabled = false; }
+  });
+}
+async function loadBuyerConfirmations(projectId) {
+  const status = document.getElementById("buyerConfirmationStatus");
+  const history = document.getElementById("buyerConfirmationHistory");
+  if (!status || !history) return;
+  try {
+    const response = await apiFetch(`${API}/projects/${encodeURIComponent(projectId)}/buyer-confirmations`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load buyer confirmation");
+    const latest = data.latest;
+    status.textContent = !latest ? "Not confirmed" : latest.status === "confirmed" ? "Buyer confirmed" : latest.status === "changes_requested" ? "Changes requested" : "Rejected";
+    status.className = "project-deliverable-count " + (!latest ? "buyer-status-pending" : latest.status === "confirmed" ? "buyer-status-confirmed" : "buyer-status-attention");
+    history.innerHTML = (data.confirmations || []).length ? data.confirmations.map(item => {
+      const channel = {email:"Email",whatsapp:"WhatsApp",phone:"Phone"}[item.channel] || item.channel;
+      const outcome = {confirmed:"Confirmed",changes_requested:"Changes requested",rejected:"Rejected"}[item.status] || item.status;
+      const acceptance = {yes:"Accepted",no:"Not accepted",conditional:"Accepted with conditions",not_discussed:"Not discussed"}[item.budget_delivery_accepted] || item.budget_delivery_accepted;
+      return `<article class="project-linked-quote-row buyer-confirmation-record"><div><b>${escapeHtml(item.buyer_name)} · ${escapeHtml(outcome)}</b><span>${escapeHtml(item.organisation || "Organisation not specified")} · ${escapeHtml(channel)} · Budget / delivery: ${escapeHtml(acceptance)}</span><p>${escapeHtml(item.requirements_confirmed)}</p>${item.comments ? `<small>${escapeHtml(item.comments)}</small>` : ""}</div><div><b>${new Date(item.recorded_at).toLocaleString("en-GB")}</b><span>Recorded by ${escapeHtml(item.recorded_by)}</span></div></article>`;
+    }).join("") : '<div class="project-feed-empty">No buyer response recorded yet. Record the buyer’s email, WhatsApp or phone confirmation above.</div>';
+  } catch(error) {
+    status.textContent = "Unavailable";
+    history.innerHTML = `<div class="project-feed-empty">${escapeHtml(error.message)}</div>`;
+  }
 }
 async function loadProjectQuotationOptions(projectId) {
   const select = document.getElementById("projectQuotationSelect");

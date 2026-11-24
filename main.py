@@ -480,6 +480,25 @@ class ProjectCompletionPayload(BaseModel):
     completion_note: str = Field(default="", max_length=3000)
 
 
+class BuyerConfirmationPayload(BaseModel):
+    buyer_name: str = Field(min_length=2, max_length=200)
+    organisation: str = Field(default="", max_length=200)
+    channel: str = Field(pattern="^(email|whatsapp|phone)$")
+    status: str = Field(pattern="^(confirmed|changes_requested|rejected)$")
+    requirements_confirmed: str = Field(min_length=2, max_length=5000)
+    budget_delivery_accepted: str = Field(pattern="^(yes|no|conditional|not_discussed)$")
+    comments: str = Field(default="", max_length=5000)
+
+
+def _require_buyer_confirmation(db, project_id: str):
+    table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='buyer_confirmations'").fetchone()
+    if not table:
+        raise HTTPException(status_code=409, detail="Buyer confirmation is required before AI bid analysis or PO creation.")
+    latest = db.execute("SELECT status FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+    if not latest or latest["status"] != "confirmed":
+        raise HTTPException(status_code=409, detail="Buyer confirmation is required. Record the buyer's confirmation in the Project Workspace before proceeding.")
+
+
 def _now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
@@ -837,6 +856,8 @@ def compare_offers(project_id: str):
 
 @app.post("/api/v1/workflows/recommend-supplier", dependencies=[Depends(verify_api_key)])
 def recommend_supplier(payload: RecommendationRequest):
+    with connect() as db:
+        _require_buyer_confirmation(db, payload.project_id)
     comparison = compare_offers(payload.project_id)
     offers = comparison["comparison_report"]
     min_price = min(q["total_amount"] for q in offers)
@@ -862,6 +883,7 @@ def create_award_proposal(quotation_id: str, requested_by: str = Form(...)):
         quote = db.execute("SELECT * FROM workflow_quotations WHERE quotation_id=?", (quotation_id,)).fetchone()
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
+        _require_buyer_confirmation(db, quote["project_id"])
         db.execute("""INSERT INTO workflow_purchase_orders
             (po_number,project_id,quotation_id,supplier_id,total_amount,currency,status,requested_by,created_at)
             VALUES(?,?,?,?,?,?,'pending_approval',?,?)""",
@@ -1582,6 +1604,69 @@ def unlink_quotation_from_project(project_id: str, quote_id: int, request: Reque
 def get_project_workspace(project_id: str):
     with connect() as db:
         return {"project": _project_overview(db, project_id)}
+
+
+@app.get("/api/projects/{project_id}/buyer-confirmations")
+def list_buyer_confirmations(project_id: str):
+    with connect() as db:
+        project = db.execute("SELECT project_id FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        db.execute("""CREATE TABLE IF NOT EXISTS buyer_confirmations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            buyer_name TEXT NOT NULL, organisation TEXT NOT NULL DEFAULT '',
+            channel TEXT NOT NULL, status TEXT NOT NULL,
+            requirements_confirmed TEXT NOT NULL,
+            budget_delivery_accepted TEXT NOT NULL,
+            comments TEXT NOT NULL DEFAULT '', recorded_by TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
+        )""")
+        records = [dict(row) for row in db.execute(
+            "SELECT * FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC", (project_id,)
+        ).fetchall()]
+    return {"confirmations": records, "latest": records[0] if records else None}
+
+
+@app.post("/api/projects/{project_id}/buyer-confirmations", status_code=201)
+def record_buyer_confirmation(project_id: str, payload: BuyerConfirmationPayload, request: Request):
+    now = _now()
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    with connect() as db:
+        project = db.execute("SELECT project_id,title,status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] == "completed":
+            raise HTTPException(status_code=409, detail="This project is closed. Buyer confirmations are read-only.")
+        db.execute("""CREATE TABLE IF NOT EXISTS buyer_confirmations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            buyer_name TEXT NOT NULL, organisation TEXT NOT NULL DEFAULT '',
+            channel TEXT NOT NULL, status TEXT NOT NULL,
+            requirements_confirmed TEXT NOT NULL,
+            budget_delivery_accepted TEXT NOT NULL,
+            comments TEXT NOT NULL DEFAULT '', recorded_by TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
+        )""")
+        cur = db.execute("""INSERT INTO buyer_confirmations
+            (project_id,buyer_name,organisation,channel,status,requirements_confirmed,
+             budget_delivery_accepted,comments,recorded_by,recorded_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (project_id,payload.buyer_name.strip(),payload.organisation.strip(),payload.channel,
+             payload.status,payload.requirements_confirmed.strip(),payload.budget_delivery_accepted,
+             payload.comments.strip(),actor,now))
+        confirmation_id = cur.lastrowid
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor,"record_buyer_confirmation","project",project_id,json.dumps({
+                "confirmation_id":confirmation_id,"buyer_name":payload.buyer_name.strip(),
+                "channel":payload.channel,"status":payload.status,
+                "budget_delivery_accepted":payload.budget_delivery_accepted
+            }),now))
+        records = [dict(row) for row in db.execute(
+            "SELECT * FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC", (project_id,)
+        ).fetchall()]
+    return {"success":True,"confirmation":records[0],"confirmations":records}
 
 
 @app.post("/api/projects/{project_id}/updates", status_code=201)
