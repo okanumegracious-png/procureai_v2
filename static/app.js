@@ -300,7 +300,7 @@ function renderProjectWorkspace(project) {
   const progress = Math.max(0,Math.min(100,Number(project.progress_percent || 0)));
   const latestReported = updates.length ? Number(updates[0].progress_percent || 0) : 0;
   const purchaseRequests = project.purchase_requests || [];
-  const purchaseRequestsMarkup = purchaseRequests.length ? `<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th>DETAILS</th></tr></thead><tbody>${purchaseRequests.map(r => `<tr><td><b>${escapeHtml(r.code)}</b></td><td><b>${escapeHtml(r.material)}</b><small>${escapeHtml(r.category)}</small></td><td>${escapeHtml(r.quantity)} ${escapeHtml(r.unit)}</td><td>${projectDate(r.required_by)}</td><td><span class="project-request-priority ${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">${escapeHtml(r.status)}</span></td><td><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>';
+  const purchaseRequestsMarkup = purchaseRequests.length ? `<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody>${purchaseRequests.map(r => `<tr><td><b>${escapeHtml(r.code)}</b></td><td><b>${escapeHtml(r.material)}</b><small>${escapeHtml(r.category)}</small></td><td>${escapeHtml(r.quantity)} ${escapeHtml(r.unit)}</td><td>${projectDate(r.required_by)}</td><td><span class="project-request-priority ${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">${escapeHtml(r.status)}</span></td></tr>`).join("")}</tbody></table></div>` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>';
   const milestoneMarkup = milestones.map(item => `
     <div class="project-milestone ${item.completed ? "is-complete" : ""}">
       <span class="project-milestone-check">${item.completed ? "✓" : "○"}</span><div><b>${escapeHtml(item.label)}</b><small>${item.completed ? "Completed" + (item.completed_at ? " · " + projectDate(item.completed_at.slice(0,10)) : "") : "Awaiting completion"}</small></div><strong>${Number(item.weight || 0)}%</strong>
@@ -519,10 +519,6 @@ async function openPurchaseRequestDetails(requestId) {
   }
 }
 document.getElementById("allRequests")?.addEventListener("click", event => {
-  const open = event.target.closest("[data-open-request]");
-  if (open) openPurchaseRequestDetails(open.dataset.openRequest);
-});
-document.getElementById("projectWorkspaceContent")?.addEventListener("click", event => {
   const open = event.target.closest("[data-open-request]");
   if (open) openPurchaseRequestDetails(open.dataset.openRequest);
 });
