@@ -709,7 +709,7 @@ def _project_overview(db, project_id: str) -> dict:
         FROM project_purchase_requests pr JOIN requests r ON r.id=pr.request_id
         WHERE pr.project_id=? ORDER BY pr.linked_at DESC""", (project_id,)).fetchall()]
     project["purchase_requests_count"] = len(project["purchase_requests"])
-    linked_quotes = db.execute("""SELECT q.id,q.unit_price,q.freight,q.tax_rate,q.lead_days,q.payment_days,q.note,q.created_at,
+    linked_quotes = db.execute("""SELECT q.id,q.unit_price,q.freight,q.tax_rate,q.lead_days,q.payment_days,q.technical_status,q.stock_status,q.compliance_status,q.note,q.created_at,
         s.name AS supplier,s.email AS supplier_email,r.code AS request_code,r.material,r.category,r.quantity,r.unit
         FROM project_quotations pq JOIN quotes q ON q.id=pq.quote_id
         JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id
