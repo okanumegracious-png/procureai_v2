@@ -15,7 +15,14 @@ from typing import Dict, List, Optional
 
 import pypdf
 import io
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Security, UploadFile
+import base64
+import hashlib
+import hmac
+import re
+import secrets
+import time
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, Security, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -32,14 +39,84 @@ MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="ProcureAI Unified API", version="3.0.0")
-allowed_origins = [v.strip() for v in os.getenv("FRONTEND_URL", "http://localhost:3000").split(",") if v.strip()]
+allowed_origins = [v.strip().rstrip("/") for v in os.getenv("FRONTEND_URL", "http://localhost:3000,http://127.0.0.1:3000").split(",") if v.strip()]
+VERCEL_ORIGIN_RE = r"https://[a-z0-9-]+\.vercel\.app"
+SESSION_COOKIE = "procureai_session"
+CSRF_COOKIE = "procureai_csrf"
+SESSION_TTL_SECONDS = 12 * 60 * 60
+COOKIE_SECURE = os.getenv("PROCUREAI_COOKIE_SECURE", "true").lower() == "true"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=VERCEL_ORIGIN_RE,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", API_KEY_NAME],
+    allow_headers=["Content-Type", API_KEY_NAME, "X-CSRF-Token"],
 )
+
+def _init_auth_store():
+    with connect() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS auth_sessions (
+            token_hash TEXT PRIMARY KEY, username TEXT NOT NULL, csrf_hash TEXT NOT NULL,
+            expires_at INTEGER NOT NULL, created_at TEXT NOT NULL
+        )""")
+        db.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (int(time.time()),))
+
+def _password_matches(password: str) -> bool:
+    encoded = os.getenv("PROCUREAI_ADMIN_PASSWORD_HASH", "")
+    try:
+        algorithm, rounds, salt_text, digest_text = encoded.split("$", 3)
+        if algorithm != "pbkdf2_sha256":
+            return False
+        salt = base64.urlsafe_b64decode(salt_text + "=" * (-len(salt_text) % 4))
+        expected = base64.urlsafe_b64decode(digest_text + "=" * (-len(digest_text) % 4))
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, int(rounds))
+        return hmac.compare_digest(actual, expected)
+    except (ValueError, TypeError):
+        return False
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+def _session_record(token: str):
+    if not token:
+        return None
+    with connect() as db:
+        return db.execute(
+            "SELECT username,csrf_hash,expires_at FROM auth_sessions WHERE token_hash=? AND expires_at>?",
+            (_token_hash(token), int(time.time())),
+        ).fetchone()
+
+def _origin_allowed(origin: str | None) -> bool:
+    if not origin:
+        return True
+    normalized = origin.rstrip("/")
+    return normalized in allowed_origins or bool(re.fullmatch(VERCEL_ORIGIN_RE, normalized))
+
+@app.middleware("http")
+async def require_browser_session(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and not path.startswith("/api/v1/") and path != "/api/auth/login" and request.method != "OPTIONS":
+        token = request.cookies.get(SESSION_COOKIE, "")
+        session = _session_record(token)
+        if not session:
+            return JSONResponse({"detail": "Authentication required"}, status_code=401, headers={"Cache-Control": "no-store"})
+        request.state.auth_user = session["username"]
+        if request.method not in ("GET", "HEAD"):
+            csrf_cookie = request.cookies.get(CSRF_COOKIE, "")
+            csrf_header = request.headers.get("X-CSRF-Token", "")
+            if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+                return JSONResponse({"detail": "CSRF validation failed"}, status_code=403, headers={"Cache-Control": "no-store"})
+            supplied_hash = hashlib.sha256(csrf_header.encode("utf-8")).hexdigest()
+            if not hmac.compare_digest(supplied_hash, session["csrf_hash"]):
+                return JSONResponse({"detail": "CSRF validation failed"}, status_code=403, headers={"Cache-Control": "no-store"})
+    elif path == "/api/auth/login" and request.method == "POST":
+        if not _origin_allowed(request.headers.get("origin")):
+            return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
+    response = await call_next(request)
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 async def verify_api_key(api_key: Optional[str] = Security(api_key_header)):
@@ -54,6 +131,7 @@ async def verify_api_key(api_key: Optional[str] = Security(api_key_header)):
 def startup():
     dashboard_module.init_db()
     init_store()
+    _init_auth_store()
 
 
 class BOQItem(BaseModel):
@@ -151,6 +229,43 @@ def _parse_boq(raw_text: str) -> dict:
         raise HTTPException(status_code=422, detail="The document could not be converted into structured BOQ data")
     return parsed.model_dump()
 
+
+class LoginPayload(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=256)
+
+@app.post("/api/auth/login")
+def login(payload: LoginPayload, request: Request, response: Response):
+    configured_username = os.getenv("PROCUREAI_ADMIN_USERNAME", "").strip()
+    if not configured_username or not os.getenv("PROCUREAI_ADMIN_PASSWORD_HASH"):
+        raise HTTPException(status_code=503, detail="Administrator login is not configured")
+    if not hmac.compare_digest(payload.username, configured_username) or not _password_matches(payload.password):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    token = secrets.token_urlsafe(48)
+    csrf = secrets.token_urlsafe(32)
+    expires = int(time.time()) + SESSION_TTL_SECONDS
+    with connect() as db:
+        db.execute("INSERT INTO auth_sessions(token_hash,username,csrf_hash,expires_at,created_at) VALUES(?,?,?,?,?)",
+                   (_token_hash(token), configured_username, hashlib.sha256(csrf.encode()).hexdigest(), expires, _now()))
+    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL_SECONDS, httponly=True,
+                        secure=COOKIE_SECURE, samesite="lax", path="/")
+    response.set_cookie(CSRF_COOKIE, csrf, max_age=SESSION_TTL_SECONDS, httponly=False,
+                        secure=COOKIE_SECURE, samesite="lax", path="/")
+    return {"success": True, "username": configured_username, "expires_in": SESSION_TTL_SECONDS}
+
+@app.get("/api/auth/me")
+def auth_me(request: Request):
+    return {"authenticated": True, "username": getattr(request.state, "auth_user", "")}
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if token:
+        with connect() as db:
+            db.execute("DELETE FROM auth_sessions WHERE token_hash=?", (_token_hash(token),))
+    response.delete_cookie(SESSION_COOKIE, path="/", secure=COOKIE_SECURE, httponly=True, samesite="lax")
+    response.delete_cookie(CSRF_COOKIE, path="/", secure=COOKIE_SECURE, httponly=False, samesite="lax")
+    return {"success": True}
 
 @app.get("/health")
 def health():
