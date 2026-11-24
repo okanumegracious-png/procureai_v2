@@ -1973,6 +1973,28 @@ def delete_completed_project(project_id: str, request: Request):
             "message": "Completed project removed from the workspace. Historical procurement and audit records were retained."}
 
 
+@app.post("/api/projects/{project_id}/unarchive")
+def unarchive_project(project_id: str, request: Request):
+    """Restore a terminated project to active status without discarding its closure history."""
+    now = _now()
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    with connect() as db:
+        project = db.execute("SELECT project_id,title,status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] != "terminated":
+            raise HTTPException(status_code=409, detail="Only archived (terminated) projects can be unarchived.")
+        db.execute("UPDATE projects SET status='active',updated_at=? WHERE project_id=?", (now, project_id))
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor, "unarchive", "project", project_id,
+             json.dumps({"project_title": project["title"], "previous_status": "terminated",
+                         "restored_status": "active", "termination_history_retained": True}), now))
+        overview = _project_overview(db, project_id)
+    return {"success": True, "project": overview,
+            "message": "Project unarchived and restored to the active workspace. Previous termination history was retained."}
+
+
 @app.post("/api/projects", status_code=201)
 def create_project_workspace(payload: ProjectCreatePayload, request: Request):
     try:
