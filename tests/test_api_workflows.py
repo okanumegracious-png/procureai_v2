@@ -155,9 +155,106 @@ def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authen
     assert legacy_po_without_rfq.status_code == 409
     assert "Email the purchase request" in legacy_po_without_rfq.json()["detail"]
 
+    # Simulate a successfully dispatched RFQ record; no external email is sent in CI.
+    with dashboard_module.connect() as db:
+        procureai_main._ensure_supplier_request_email_table(db)
+        db.execute("""INSERT INTO supplier_request_emails
+            (quote_id,supplier_id,request_id,recipient,sent_by,sent_at)
+            VALUES(?,?,?,?,?,?)""",
+            (quote_id,supplier_id,request_id,"supplier@example.test","test-admin","2026-11-25T12:00:00"))
+    po_created = client.post("/api/orders/from-analysis", json={"quote_id": quote_id})
+    assert po_created.status_code == 201, po_created.text
+    order_id = po_created.json()["id"]
+    approval = client.post(f"/api/orders/{order_id}/decision", json={"action":"approve","note":"Integration approval"})
+    assert approval.status_code == 200, approval.text
+
+    invoice_created = client.post(f"/api/orders/{order_id}/invoice")
+    assert invoice_created.status_code == 201, invoice_created.text
+    invoice_id = invoice_created.json()["invoice_id"]
+    invoice_detail = client.get(f"/api/invoices/{invoice_id}")
+    assert invoice_detail.status_code == 200
+    assert invoice_detail.json()["invoice"]["invoice_status"] == "Unpaid"
+    paid = client.post(f"/api/invoices/{invoice_id}/paid")
+    assert paid.status_code == 200
+    invoice_list = client.get("/api/invoices")
+    assert invoice_list.status_code == 200
+    assert invoice_list.json()["invoices"][0]["status"] == "Paid"
+
 
 def test_technical_review_requires_evidence_notes(authenticated_client):
     response = authenticated_client.post("/api/quotes/999999/technical-review", json={
         "status": "compliant", "notes": "short"
     })
     assert response.status_code == 422
+
+
+def test_job_completion_project_closure_and_termination(authenticated_client):
+    client = authenticated_client
+    project = client.post("/api/projects", json={
+        "title":"Job report and closure test",
+        "start_date":"2026-11-25",
+        "due_date":"2026-12-25",
+        "project_location":"Oyigbo, Rivers State",
+        "project_category":"Maintenance",
+        "estimated_budget":250000,
+        "expected_duration_days":30,
+        "priority":"medium",
+        "planned_purchase_requests":0,
+    })
+    assert project.status_code == 201, project.text
+    project_id = project.json()["project"]["project_id"]
+
+    report = client.post(f"/api/projects/{project_id}/job-completion-report", json={
+        "status":"Submitted",
+        "job":"Workshop distribution panel repair",
+        "job_date":"2026-11-25",
+        "location":"Oyigbo workshop",
+        "equipment":"Main distribution panel",
+        "purpose":"Restore safe and reliable power distribution.",
+        "initial_condition":"Panel had a damaged breaker and loose termination.",
+        "work_carried_out":"Replaced breaker, tightened terminations and tested circuits.",
+        "final_condition":"Panel operational after inspection and testing.",
+        "technician":"Test Technician",
+        "supervisor":"Test Supervisor",
+        "before_photo":{"name":"before.png","mime_type":"image/png","data_url":"data:image/png;base64,iVBORw0KGgo="},
+        "after_photo":{"name":"after.png","mime_type":"image/png","data_url":"data:image/png;base64,iVBORw0KGgo="},
+    })
+    assert report.status_code == 200, report.text
+    assert report.json()["report"]["status"] == "Submitted"
+    saved_report = client.get(f"/api/projects/{project_id}/job-completion-report")
+    assert saved_report.status_code == 200
+    assert saved_report.json()["report"]["before_photo"] is not None
+    assert saved_report.json()["report"]["after_photo"] is not None
+
+    completed = client.post(f"/api/projects/{project_id}/complete", json={
+        "completion_note":"Work completed and documented."
+    })
+    assert completed.status_code == 200, completed.text
+    project_detail = client.get(f"/api/projects/{project_id}/overview")
+    assert project_detail.status_code == 200
+    assert project_detail.json()["project"]["status"] == "completed"
+
+    second = client.post("/api/projects", json={
+        "title":"Project termination test",
+        "start_date":"2026-11-25",
+        "due_date":"2026-12-25",
+        "project_location":"Oyigbo, Rivers State",
+        "project_category":"Maintenance",
+        "estimated_budget":100000,
+        "expected_duration_days":30,
+        "priority":"low",
+        "planned_purchase_requests":0,
+    })
+    assert second.status_code == 201, second.text
+    terminated_id = second.json()["project"]["project_id"]
+    terminated = client.post(f"/api/projects/{terminated_id}/terminate", json={
+        "termination_note":"Client cancelled the project before mobilisation."
+    })
+    assert terminated.status_code == 200, terminated.text
+    terminated_detail = client.get(f"/api/projects/{terminated_id}/overview")
+    assert terminated_detail.status_code == 200
+    assert terminated_detail.json()["project"]["status"] == "terminated"
+    report_after_termination = client.post(f"/api/projects/{terminated_id}/job-completion-report", json={
+        "status":"Draft","job":"Should be blocked"
+    })
+    assert report_after_termination.status_code == 409

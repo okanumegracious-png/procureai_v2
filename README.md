@@ -83,4 +83,4 @@ The dashboard procurement register and the namespaced BOQ/workflow API currently
 
 ## Continuous integration
 
-GitHub Actions runs Python compilation and the regression suite on pull requests and pushes to `main`. The suite covers database backup integrity/restore checks, procurement approval gates, technical-review migrations, multi-line supplier quotation parsing, authenticated API/CSRF behaviour, and the main buyer → quotation → technical review → RFQ dispatch gate sequence. Integration tests use temporary SQLite databases and do not connect to production data.
+GitHub Actions runs Python compilation and the regression suite on pull requests and pushes to `main`. The suite covers database backup integrity/restore checks, procurement approval gates, technical-review migrations, multi-line supplier quotation parsing, authenticated API/CSRF behaviour, the main buyer → quotation → technical review → RFQ dispatch gate sequence, invoice generation/payment, job completion reports with before/after evidence, project completion and project termination. Integration tests use temporary SQLite databases and do not connect to production data.
