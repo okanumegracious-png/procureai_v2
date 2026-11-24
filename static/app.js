@@ -300,6 +300,19 @@ function renderProjectWorkspace(project) {
       <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project closed</span>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
     </section>
     ${project.status === "completed" ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
+    <section class="project-intake-details">
+      <div class="project-section-heading"><div><span class="eyebrow">PROJECT BRIEF</span><h2>Project requirements</h2></div></div>
+      <div class="project-intake-grid">
+        <div><span>Location</span><b>${escapeHtml(project.project_location || "Not provided")}</b></div>
+        <div><span>Category</span><b>${escapeHtml(project.project_category || "Not provided")}</b></div>
+        <div><span>Estimated budget</span><b>${Number(project.estimated_budget || 0).toLocaleString("en-NG",{style:"currency",currency:"NGN",maximumFractionDigits:0})}</b></div>
+        <div><span>Expected duration</span><b>${Number(project.expected_duration_days || 0)} days</b></div>
+        <div><span>Priority</span><b>${escapeHtml((project.priority || "medium").toUpperCase())}</b></div>
+        <div><span>Status</span><b>${escapeHtml((project.status || "active").replace("_"," ").toUpperCase())}</b></div>
+        <div><span>Planned purchase requests</span><b>${Number(project.planned_purchase_requests || 0)}</b></div>
+        <div><span>Requests created</span><b>${Number(project.purchase_requests_count || 0)}</b></div>
+      </div>
+    </section>
     <section class="project-overview-grid">
       <article class="project-overview-card project-summary-card"><span class="eyebrow">PROJECT INTRODUCTION</span><h2>Overview & scope</h2><p>${escapeHtml(project.executive_summary || "No executive summary has been added.")}</p><div class="project-client-details"><b>Client / agency</b><span>${escapeHtml(project.client_name || "Not specified")}</span><b>Agency details</b><span>${escapeHtml(project.agency_details || "Not provided")}</span><b>Procurement lead</b><span>${escapeHtml(project.procurement_lead || "Unassigned")}</span></div></article>
       <article class="project-overview-card project-progress-card"><span class="eyebrow">DELIVERY HEALTH</span><h2>Project progress</h2><div class="project-progress-number">${progress.toFixed(0)}<small>%</small></div><div class="project-progress-track large"><i style="width:${progress}%"></i></div><div class="project-progress-legend"><span>Milestones <b>${Number(project.progress_breakdown?.milestones || 0).toFixed(0)}%</b></span><span>Daily updates <b>${Number(project.progress_breakdown?.daily_updates || 0).toFixed(0)}%</b></span></div><p>Calculated from 4 procurement milestones (60%) and the latest reported workstream progress (40%).</p></article>
