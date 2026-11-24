@@ -8,6 +8,10 @@ from __future__ import annotations
 import json
 import os
 import uuid
+import smtplib
+import ssl
+from email.message import EmailMessage
+from email.utils import parseaddr
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -77,6 +81,40 @@ def _password_matches(password: str) -> bool:
         return hmac.compare_digest(actual, expected)
     except (ValueError, TypeError):
         return False
+
+def _ensure_supplier_request_email_table(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS supplier_request_emails (id INTEGER PRIMARY KEY AUTOINCREMENT, quote_id INTEGER NOT NULL UNIQUE, supplier_id INTEGER NOT NULL, request_id INTEGER NOT NULL, recipient TEXT NOT NULL, sent_by TEXT NOT NULL DEFAULT '', sent_at TEXT NOT NULL)""")
+
+def _send_supplier_request_email(quote):
+    host = os.getenv("SMTP_HOST", "").strip()
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    sender = os.getenv("SMTP_FROM_EMAIL", username).strip()
+    if not all((host, username, password, sender)):
+        raise HTTPException(status_code=503, detail="Supplier email is not configured. Add SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_EMAIL to Railway Variables.")
+    recipient = (quote["supplier_email"] or "").strip()
+    parsed = parseaddr(recipient)[1]
+    if not parsed or parsed != recipient or "@" not in parsed:
+        raise HTTPException(status_code=409, detail="This seller has no valid email address. Update the seller record before sending the request.")
+    message = EmailMessage()
+    message["Subject"] = f"Purchase request {quote['request_code']} – {quote['material']}"
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(f"Dear {quote['supplier_name']},\n\nGestro Global Consult Ltd is requesting your acknowledgement of this purchase requirement before we prepare our internal purchase-order report.\n\nRequest reference: {quote['request_code']}\nEquipment / material: {quote['material']}\nCategory: {quote['category']}\nQuantity: {quote['quantity']} {quote['unit']}\nDelivery location: {quote['site']}\nRequired by: {quote['required_by']}\n\nPlease acknowledge receipt and confirm that your quoted price, delivery lead time and payment terms remain valid. If anything has changed, reply with revised details.\n\nThis is a request for confirmation only. It is not a purchase order, award notice or authority to commence work or supply goods.\n\nRegards,\nProcurement Team\nGestro Global Consult Ltd")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port, timeout=25, context=ssl.create_default_context()) as server:
+                server.login(username, password); server.send_message(message)
+        else:
+            with smtplib.SMTP(host, port, timeout=25) as server:
+                server.ehlo()
+                if use_tls: server.starttls(context=ssl.create_default_context()); server.ehlo()
+                server.login(username, password); server.send_message(message)
+    except (smtplib.SMTPException, OSError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"Could not send supplier email: {exc.__class__.__name__}. Check SMTP settings and try again.")
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -628,7 +666,8 @@ def dashboard_create_request(payload: DashboardRequestPayload):
 @app.get("/api/quotes/{quote_id}")
 def dashboard_quote_detail(quote_id: int):
     with dashboard_module.connect() as db:
-        row = db.execute("SELECT q.*, s.name AS supplier, s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.priority, r.status AS request_status FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?", (quote_id,)).fetchone()
+        _ensure_supplier_request_email_table(db)
+        row = db.execute("SELECT q.*, s.name AS supplier, s.email AS supplier_email, s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.priority, r.status AS request_status, EXISTS(SELECT 1 FROM supplier_request_emails e WHERE e.quote_id=q.id) AS request_email_sent FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?", (quote_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Quotation not found")
     quote = dict(row)
@@ -639,6 +678,24 @@ def dashboard_quote_detail(quote_id: int):
     quote["tax_amount"] = float(tax)
     quote["total_landed"] = float(subtotal + tax + Decimal(str(quote["freight"])))
     return quote
+
+@app.post("/api/quotes/{quote_id}/send-request")
+def dashboard_send_supplier_request(quote_id: int, request: Request):
+    with dashboard_module.connect() as db:
+        _ensure_supplier_request_email_table(db)
+        quote = db.execute("""SELECT q.id AS quote_id, q.supplier_id, q.request_id, s.name AS supplier_name, s.email AS supplier_email, s.status AS supplier_status, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.status AS request_status FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?""", (quote_id,)).fetchone()
+        if not quote: raise HTTPException(status_code=404, detail="Quotation not found")
+        if (quote["supplier_status"] or "").strip().casefold() not in {"verified", "active"} or "[fictional demo]" in quote["supplier_name"].casefold():
+            raise HTTPException(status_code=409, detail="Only verified or active real sellers can receive purchase requests.")
+        if quote["request_status"] != "Open": raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
+        existing = db.execute("SELECT sent_at,recipient FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).fetchone()
+        if existing: return {"success": True, "already_sent": True, "sent_at": existing["sent_at"], "recipient": existing["recipient"]}
+        _send_supplier_request_email(quote)
+        sent_at = datetime.utcnow().isoformat(); recipient = quote["supplier_email"].strip()
+        db.execute("INSERT INTO supplier_request_emails(quote_id,supplier_id,request_id,recipient,sent_by,sent_at) VALUES(?,?,?,?,?,?)", (quote_id, quote["supplier_id"], quote["request_id"], recipient, getattr(request.state, "auth_user", ""), sent_at))
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)", (getattr(request.state, "auth_user", ""), "send_supplier_request_email", "quotation", str(quote_id), json.dumps({"recipient": recipient, "request_code": quote["request_code"]}), sent_at))
+    return {"success": True, "already_sent": False, "recipient": recipient, "sent_at": sent_at}
 
 @app.post("/api/quotes", status_code=201)
 def dashboard_create_quote(payload: DashboardQuotePayload):
@@ -671,6 +728,10 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
             raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation. Verify the seller first.")
         if quote["request_status"] != "Open":
             raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
+        _ensure_supplier_request_email_table(db)
+        email_record = db.execute("SELECT recipient,sent_at FROM supplier_request_emails WHERE quote_id=?", (payload.quote_id,)).fetchone()
+        if not email_record:
+            raise HTTPException(status_code=409, detail="Email the purchase request to this seller and receive a successful send confirmation before generating the PO proposal.")
         existing = db.execute("SELECT code,status FROM orders WHERE quote_id=?", (payload.quote_id,)).fetchone()
         if existing:
             raise HTTPException(status_code=409, detail=f"A purchase order proposal ({existing['code']}) already exists for this quotation.")

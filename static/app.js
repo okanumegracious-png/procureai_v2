@@ -72,26 +72,23 @@ function filterRecords(records, search, status, fields) {
     return matchesText && matchesStatus;
   });
 }
-function csvCell(value) {
-  const text = String(value ?? "");
-  return '"' + text.replace(/"/g, '""') + '"';
-}
-function exportCsv(type) {
+function escapePdfHtml(value) { return String(value ?? "").replace(/[&<>\"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;","'":"&#39;"}[char])); }
+function exportPdf(type) {
   const datasets = {
     requests: { rows: filterRecords(dashboardData.requests, document.getElementById("requestSearch")?.value, document.getElementById("requestStatusFilter")?.value, ["code","material","category","site","status"]), fields: ["code","material","category","quantity","unit","site","required_by","priority","status"] },
-    suppliers: { rows: filterRecords(dashboardData.suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]), fields: ["name","city","contact","email","phone","website","address","services","rating","on_time","status"] },
+    suppliers: { rows: filterRecords(dashboardData.suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]), fields: ["name","city","email","phone","website","address","services","rating","on_time","status"] },
     quotes: { rows: filterRecords(quoteRecords, document.getElementById("quoteSearch")?.value, "", ["supplier","request_code","material","category","note"]), fields: ["supplier","request_code","material","unit_price","freight","tax_rate","lead_days","payment_days","note","created_at"] },
     orders: { rows: filterRecords(dashboardData.orders, document.getElementById("orderSearch")?.value, document.getElementById("orderStatusFilter")?.value, ["code","supplier","material","status"]), fields: ["code","supplier","material","quantity","unit_price","freight","tax","total","required_by","status","decision_note"] }
   };
-  const dataset = datasets[type];
-  if (!dataset) return;
-  const csv = [dataset.fields, ...dataset.rows.map(row => dataset.fields.map(field => row[field]))]
-    .map(row => row.map(csvCell).join(",")).join("\r\n");
-  const blob = new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url; link.download = `procureai-${type}-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  const dataset = datasets[type]; if (!dataset) return;
+  const popup = window.open("", "_blank"); if (!popup) return showToast("Allow pop-ups to create the PDF report.", true);
+  const title = ({requests:"Purchase Requests",suppliers:"Seller Directory",quotes:"Received Quotations",orders:"Purchase Orders"})[type] || "ProcureAI Report";
+  const heading = value => String(value).replace(/_/g," ").replace(/\b\w/g, char => char.toUpperCase());
+  const tableHead = dataset.fields.map(field => "<th>"+escapePdfHtml(heading(field))+"</th>").join("");
+  const tableRows = dataset.rows.map(row => "<tr>"+dataset.fields.map(field => "<td>"+escapePdfHtml(row[field] ?? "—")+"</td>").join("")+"</tr>").join("");
+  const generated = new Date().toLocaleString();
+  const html = "<!doctype html><html><head><meta charset='utf-8'><title>"+escapePdfHtml(title)+" - ProcureAI</title><style>@page{size:A4 landscape;margin:14mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#17251f;margin:0}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #203c32;padding-bottom:12px;margin-bottom:18px}h1{font-size:22px;margin:0 0 5px}p{margin:0;color:#64736c}.meta{text-align:right;font-size:10px;color:#64736c}table{width:100%;border-collapse:collapse;table-layout:auto}th{background:#edf2ef;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em}th,td{border:1px solid #d9e1dc;padding:7px 6px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8faf9}.empty{padding:24px;text-align:center;color:#64736c;border:1px dashed #cbd5cf;margin-top:12px}footer{margin-top:18px;padding-top:8px;border-top:1px solid #d9e1dc;color:#64736c;font-size:9px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><header><div><h1>"+escapePdfHtml(title)+"</h1><p>Gestro Global Consult Ltd · ProcureAI</p></div><div class='meta'>Generated: "+escapePdfHtml(generated)+"<br>Records: "+dataset.rows.length+"</div></header>"+(dataset.rows.length?"<table><thead><tr>"+tableHead+"</tr></thead><tbody>"+tableRows+"</tbody></table>":"<div class='empty'>No records match the current filters.</div>")+"<footer>Internal procurement report · Handle supplier and commercial information confidentially.</footer><script>window.onload=function(){window.print();};<\/script></body></html>";
+  popup.document.open(); popup.document.write(html); popup.document.close();
 }
 function renderDashboard() {
   const { metrics, requests, suppliers, orders, recent_quotes } = dashboardData;
@@ -255,28 +252,51 @@ window.decideOrder = async function(id, action) {
 };
 let latestAnalysis = null;
 let selectedPoQuoteId = null;
-function openPoPreview(quoteId) {
+let supplierRequestEmailSent = false;
+function setPoEmailState(sent, recipient) {
+  supplierRequestEmailSent = Boolean(sent);
+  const sendButton = document.getElementById("sendSupplierRequest");
+  const generateButton = document.getElementById("confirmGeneratePo");
+  const status = document.getElementById("supplierEmailStatus");
+  if (sendButton) { sendButton.disabled = supplierRequestEmailSent; sendButton.textContent = supplierRequestEmailSent ? "Request emailed" : "Email request to seller"; }
+  if (generateButton) generateButton.disabled = !supplierRequestEmailSent;
+  if (status) status.textContent = supplierRequestEmailSent ? "Request email sent to " + recipient + ". You can now generate the PO proposal." : "The seller must receive this request email before a PO proposal can be generated.";
+}
+async function openPoPreview(quoteId) {
   const offer = latestAnalysis?.offers?.find(item => Number(item.id) === Number(quoteId));
   if (!offer) return showToast("Run the analysis again before generating a PO.", true);
-  if (!["verified", "active"].includes(String(offer.supplier_status || "").toLowerCase()) || String(offer.supplier || "").toLowerCase().includes("[fictional demo]")) return showToast("Verify this seller before generating a purchase order.", true);
-  selectedPoQuoteId = Number(quoteId);
+  if (!["verified", "active"].includes(String(offer.supplier_status || "").toLowerCase()) || String(offer.supplier || "").toLowerCase().includes("[fictional demo]")) return showToast("Verify this seller before sending a request or generating a purchase order.", true);
+  selectedPoQuoteId = Number(quoteId); setPoEmailState(false, "");
   const req = latestAnalysis.request, qty = Number(req.quantity);
   const subtotal = qty * Number(offer.unit_price), tax = subtotal * Number(offer.tax_rate) / 100, freight = Number(offer.freight);
   const items = [["Purchase request",req.code],["Equipment / material",req.material],["Category",req.category],["Quantity",qty.toLocaleString()+" "+req.unit],["Project / site",req.site],["Required by",req.required_by],["Selected supplier",offer.supplier],["Unit price",formatMoney(offer.unit_price)],["Subtotal",formatMoney(subtotal)],["Tax ("+offer.tax_rate+"%)",formatMoney(tax)],["Freight",formatMoney(freight)],["Commercial PO total",formatMoney(subtotal+tax+freight)],["Analysis estimated total",formatMoney(offer.estimated_total)],["Delivery lead time",offer.lead_days+" days"],["Payment terms","Net "+offer.payment_days+" days"]];
-  document.getElementById("poPreviewContent").innerHTML = '<div class="po-preview-grid">'+items.map(([k,v])=>'<div class="po-preview-field"><small>'+escapeHtml(k)+'</small><b>'+escapeHtml(v)+'</b></div>').join("")+'</div><p class="po-preview-note">The commercial PO total uses the supplier’s quoted price, tax and freight. The analysis estimate is shown separately for decision support.</p><div class="po-approval-note"><span>Approval control</span><b>This proposal will be created as Pending approval. It will not be sent to the supplier or treated as an approved order.</b></div>';
+  document.getElementById("poPreviewContent").innerHTML = '<div class="po-preview-grid">'+items.map(([k,v])=>'<div class="po-preview-field"><small>'+escapeHtml(k)+'</small><b>'+escapeHtml(v)+'</b></div>').join("")+'</div><p class="po-preview-note">The commercial PO total uses the supplier’s quoted price, tax and freight. The analysis estimate is shown separately for decision support.</p><div class="po-email-step"><b>Step 1 · Send request to seller</b><p id="supplierEmailStatus">Checking seller email status…</p><button type="button" class="btn btn-ghost" id="sendSupplierRequest">Email request to seller</button></div><div class="po-approval-note"><span>Step 2 · Internal approval</span><b>The proposal will remain Pending approval. Emailing the request does not create a purchase commitment or authorize supply.</b></div>';
   document.getElementById("poPreviewModal").classList.add("open");
+  try {
+    const response = await apiFetch(API + "/quotes/" + selectedPoQuoteId); const detail = await response.json();
+    if (!response.ok) throw new Error(detail.detail || "Could not check seller email status");
+    setPoEmailState(detail.request_email_sent, detail.supplier_email || "seller");
+    if (!detail.supplier_email) document.getElementById("supplierEmailStatus").textContent = "No seller email is saved. Update the seller record before sending.";
+  } catch (error) { document.getElementById("supplierEmailStatus").textContent = error.message; }
+  document.getElementById("sendSupplierRequest")?.addEventListener("click", async () => {
+    const sendButton = document.getElementById("sendSupplierRequest"); sendButton.disabled = true; sendButton.textContent = "Sending request…";
+    try {
+      const sent = await apiFetch(API + "/quotes/" + selectedPoQuoteId + "/send-request", {method:"POST"}); const result = await sent.json();
+      if (!sent.ok) throw new Error(result.detail || "Could not email the seller");
+      setPoEmailState(true, result.recipient || "seller"); showToast(result.already_sent ? "Request email was already sent." : "Purchase request emailed to seller.");
+    } catch (error) { sendButton.disabled = false; sendButton.textContent = "Email request to seller"; showToast(error.message, true); }
+  }, { once:true });
 }
 document.getElementById("confirmGeneratePo").addEventListener("click", async () => {
-  if (!selectedPoQuoteId) return;
+  if (!selectedPoQuoteId || !supplierRequestEmailSent) return;
   const button=document.getElementById("confirmGeneratePo"); button.disabled=true; button.textContent="Creating proposal…";
   try {
     const response=await apiFetch(API+"/orders/from-analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quote_id:selectedPoQuoteId})});
     const data=await response.json(); if(!response.ok) throw new Error(data.detail||"Could not generate purchase order");
     document.getElementById("poPreviewModal").classList.remove("open"); selectedPoQuoteId=null;
-    showToast("PO proposal "+data.code+" created — pending approval");
-    await fetchDashboard(); document.querySelector('[data-page="orders"]')?.click();
+    showToast("PO proposal "+data.code+" created — pending approval"); await fetchDashboard(); document.querySelector('[data-page="orders"]')?.click();
   } catch(error){showToast(error.message,true)}
-  finally{button.disabled=false;button.textContent="Generate PO proposal"}
+  finally{button.textContent="Generate PO proposal";button.disabled=!supplierRequestEmailSent}
 });
 document.getElementById("runAnalysis").addEventListener("click", async () => {
   const rid = document.getElementById("analysisRequest").value;
@@ -379,13 +399,13 @@ document.getElementById("quoteForm").addEventListener("submit", async (e) => {
     showToast(err.error, true);
   }
 });
-// Register search/filter controls and CSV exports.
+// Register search/filter controls and PDF exports.
 ["requestSearch","requestStatusFilter","supplierSearch","supplierStatusFilter","quoteSearch","orderSearch","orderStatusFilter"].forEach(id => {
   const control = document.getElementById(id);
   if (control) control.addEventListener("input", renderDashboard);
   if (control && control.tagName === "SELECT") control.addEventListener("change", renderDashboard);
 });
-document.querySelectorAll("[data-export]").forEach(button => button.addEventListener("click", () => exportCsv(button.dataset.export)));
+document.querySelectorAll("[data-export]").forEach(button => button.addEventListener("click", () => exportPdf(button.dataset.export)));
 
 // Add seller information to the shared supplier register.
 document.getElementById("supplierForm").addEventListener("submit", async event => {

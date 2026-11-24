@@ -53,3 +53,19 @@ Run the current intake tests with:
 ```bash
 pytest -q
 ``
+
+### Supplier request email (SMTP)
+
+To enable the mandatory seller-email step before generating a PO proposal, configure these Railway service variables:
+
+- `SMTP_HOST`: SMTP server hostname
+- `SMTP_PORT`: usually `587` for STARTTLS or `465` for SSL
+- `SMTP_USERNAME`: SMTP login username
+- `SMTP_PASSWORD`: SMTP credential or app password
+- `SMTP_FROM_EMAIL`: approved sender address
+- `SMTP_USE_TLS`: `true` for STARTTLS (default)
+- `SMTP_USE_SSL`: `true` only for implicit SSL on port 465
+
+A real verified seller must have an email address saved. The application records a successful send and blocks PO proposal generation until the request email has been sent. Configure the SMTP variables before using this feature in production.
+
+PDF exports open the browser print dialog; choose **Save as PDF** to save the currently filtered register.
