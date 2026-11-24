@@ -279,3 +279,47 @@ def test_administrator_can_create_verify_and_download_database_backup(authentica
     downloaded = client.get(f"/api/admin/database/backups/{filename}/download")
     assert downloaded.status_code == 200
     assert downloaded.content[:16] == b"SQLite format 3\x00"
+
+
+def test_only_completed_projects_can_be_removed_and_records_are_retained(authenticated_client):
+    client = authenticated_client
+    created = client.post("/api/projects", json={
+        "title": "Completed project deletion test",
+        "start_date": "2026-11-25",
+        "due_date": "2026-12-25",
+        "project_location": "Oyigbo, Rivers State",
+        "project_category": "Maintenance",
+        "estimated_budget": 100000,
+        "expected_duration_days": 30,
+        "priority": "medium",
+        "planned_purchase_requests": 0,
+    })
+    assert created.status_code == 201, created.text
+    project_id = created.json()["project"]["project_id"]
+
+    blocked = client.delete(f"/api/projects/{project_id}")
+    assert blocked.status_code == 409
+    assert "Only completed projects" in blocked.json()["detail"]
+
+    completed = client.post(f"/api/projects/{project_id}/complete", json={
+        "completion_note": "Test project completed."
+    })
+    assert completed.status_code == 200, completed.text
+
+    removed = client.delete(f"/api/projects/{project_id}")
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["success"] is True
+
+    listing = client.get("/api/projects")
+    assert listing.status_code == 200
+    assert all(item["project_id"] != project_id for item in listing.json()["projects"])
+
+    # The project row and audit trail remain available for historical retention.
+    with dashboard_module.connect() as db:
+        retained = db.execute("SELECT title,status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        deletion = db.execute("SELECT deleted_by FROM project_deletions WHERE project_id=?", (project_id,)).fetchone()
+        audit = db.execute("SELECT action FROM audit_events WHERE entity_type='project' AND entity_id=? AND action='delete'", (project_id,)).fetchone()
+    assert retained and retained["status"] == "completed"
+    assert deletion and deletion["deleted_by"] == "test-admin"
+    assert audit and audit["action"] == "delete"
+    assert client.delete(f"/api/projects/{project_id}").status_code == 404

@@ -1926,9 +1926,51 @@ def save_company_profile(payload: CompanyProfilePayload):
 @app.get("/api/projects")
 def list_project_workspaces():
     with connect() as db:
-        records = db.execute("SELECT project_id FROM projects ORDER BY updated_at DESC").fetchall()
+        db.execute("""CREATE TABLE IF NOT EXISTS project_deletions (
+            project_id TEXT PRIMARY KEY,
+            deleted_at TEXT NOT NULL,
+            deleted_by TEXT NOT NULL,
+            deletion_note TEXT NOT NULL DEFAULT ''
+        )""")
+        records = db.execute("""SELECT p.project_id FROM projects p
+            LEFT JOIN project_deletions d ON d.project_id=p.project_id
+            WHERE d.project_id IS NULL ORDER BY p.updated_at DESC""").fetchall()
         projects = [_project_overview(db, row["project_id"]) for row in records]
     return {"projects": projects}
+
+
+@app.delete("/api/projects/{project_id}")
+def delete_completed_project(project_id: str, request: Request):
+    """Hide a completed project from the workspace while retaining its audit and finance records."""
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    now = _now()
+    with connect() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS project_deletions (
+            project_id TEXT PRIMARY KEY,
+            deleted_at TEXT NOT NULL,
+            deleted_by TEXT NOT NULL,
+            deletion_note TEXT NOT NULL DEFAULT ''
+        )""")
+        project = db.execute(
+            "SELECT project_id,title,status FROM projects WHERE project_id=?", (project_id,)
+        ).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] != "completed":
+            raise HTTPException(status_code=409, detail="Only completed projects can be deleted. Close the project first.")
+        if db.execute("SELECT 1 FROM project_deletions WHERE project_id=?", (project_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Project not found")
+        db.execute(
+            "INSERT INTO project_deletions(project_id,deleted_at,deleted_by,deletion_note) VALUES(?,?,?,?)",
+            (project_id, now, actor, "Removed from the project workspace by an administrator.")
+        )
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor, "delete", "project", project_id,
+             json.dumps({"project_title": project["title"], "deletion_type": "soft_delete",
+                         "records_retained": True}), now))
+    return {"success": True, "project_id": project_id,
+            "message": "Completed project removed from the workspace. Historical procurement and audit records were retained."}
 
 
 @app.post("/api/projects", status_code=201)
