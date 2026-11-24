@@ -1233,6 +1233,9 @@ document.querySelector('[data-modal="quoteModal"]').addEventListener("click", ()
   document.getElementById("quoteParseStatus").textContent = "Review all extracted values before saving.";
   document.getElementById("quoteParseReview").hidden = true;
   document.getElementById("quoteParseReview").innerHTML = "";
+  document.getElementById("quoteExtractedLineItemLabel").hidden = true;
+  document.getElementById("quoteExtractedLineItem").replaceChildren();
+  parsedQuoteLineItems = [];
   setFormSubmitLabel(form, "Save quotation");
   document.getElementById("quoteRequest").innerHTML = dashboardData.requests.filter(r => r.status === "Open").map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
   document.getElementById("quoteSupplier").innerHTML = dashboardData.suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
