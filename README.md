@@ -26,7 +26,7 @@ ProcureAI does not treat an AI recommendation or an emailed request for quotatio
 2. Add one or more purchase requests to the project.
 3. Source suppliers and complete supplier verification.
 4. Send a formal RFQ and record supplier quotations.
-5. Capture structured quotations manually or parse a supplier message with Magic Extraction.
+5. Capture structured quotations manually or parse a supplier message with Magic Extraction. Multi-line supplier messages can be split into independently priced line items for administrator selection.
 6. Record buyer confirmation of requirements, budget and delivery.
 7. Run bid analysis and review commercial, delivery and supplier risks.
 8. Generate a purchase-order proposal and obtain human approval.
@@ -40,6 +40,8 @@ ProcureAI does not treat an AI recommendation or an emailed request for quotatio
 - Buyer confirmation must be recorded as confirmed, with explicit budget and delivery acceptance.
 - Supplier verification and successful RFQ dispatch are checked before dashboard PO creation.
 - Buyer confirmation and supplier verification are rechecked at approval time.
+- Each quotation starts with technical compliance set to pending; an administrator must record evidence and mark it compliant before a PO proposal or approval.
+- Bid analysis separates project budget, existing approved/pending commitments, delivery, supplier verification and technical compliance. A missing project budget is explicitly reported rather than treated as a pass.
 - AI recommendations never approve or award a supplier automatically.
 - Completed, cancelled and terminated projects cannot progress through procurement.
 
@@ -62,6 +64,10 @@ uvicorn main:app --reload
 ```
 
 Configure the required administrator credentials and email settings in environment variables. Never commit API keys, OAuth secrets, passwords, production databases or backup files.
+
+## Technical compliance review
+
+Dashboard quotations can be reviewed through `POST /api/quotes/{quote_id}/technical-review` with `status` set to `compliant`, `deviation`, `non_compliant` or `pending`, plus evidence notes. Workflow API quotations use `POST /api/v1/workflows/quotations/{quotation_id}/technical-review` with the API key. Marking a quote compliant requires written notes; editing its commercial quotation resets the review to pending. The purchase-order creation and approval paths recheck the review status.
 
 ## Automated checks
 
