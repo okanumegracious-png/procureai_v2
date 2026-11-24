@@ -615,6 +615,30 @@ def dashboard_create_supplier(payload: DashboardSupplierPayload, request: Reques
     return {"success": True, "supplier_id": supplier_id, "status": payload.status}
 
 
+
+@app.put("/api/suppliers/{supplier_id}")
+def dashboard_update_supplier(supplier_id: int, payload: DashboardSupplierPayload, request: Request):
+    now = _now()
+    with dashboard_module.connect() as db:
+        existing = db.execute("SELECT id FROM suppliers WHERE id=?", (supplier_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Seller not found")
+        db.execute("""UPDATE suppliers SET name=?,city=?,rating=?,on_time=?,contact=?,status=?,email=?,phone=?,website=?,address=?,services=? WHERE id=?""",
+            (payload.name.strip(), payload.city.strip(), payload.rating, payload.on_time,
+             payload.contact.strip(), payload.status.strip(), payload.email.strip(),
+             payload.phone.strip(), payload.website.strip(), payload.address.strip(),
+             payload.services.strip(), supplier_id))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state, "auth_user", ""), "update", "supplier", str(supplier_id),
+             json.dumps({"name": payload.name, "city": payload.city}), now))
+    return {"success": True, "supplier_id": supplier_id, "status": payload.status}
+
+
 @app.get("/api/quotes")
 def dashboard_quotes():
     quotes = dashboard_module.rows("""SELECT q.*,s.name supplier,s.city supplier_city,
