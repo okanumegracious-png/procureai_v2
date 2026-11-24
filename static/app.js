@@ -365,6 +365,22 @@ function filterRecords(records, search, status, fields) {
     return matchesText && matchesStatus;
   });
 }
+function supplierServiceCategories(supplier) {
+  const services = String(supplier.services || "").toLowerCase();
+  const contact = String(supplier.contact || "").toLowerCase();
+  const text = services + " " + contact;
+  const categories = [];
+  if (/panel|switchboard|distribution board|power distribution/.test(text)) categories.push("panels");
+  if (/breaker|protection|switchgear|fuse|circuit/.test(text)) categories.push("protection");
+  if (/light|led|luminaire|lighting/.test(text)) categories.push("lighting");
+  if (/cable|wiring|termination|conductor/.test(text)) categories.push("cables");
+  if (/install|commission|maintenance|ground|automation|testing/.test(text)) categories.push("installation");
+  if (!categories.length || /electrical (products|accessories|materials)|project supply|distribution/.test(text)) categories.push("supplies");
+  return [...new Set(categories)];
+}
+function supplierMatchesCategory(supplier, category) {
+  return !category || supplierServiceCategories(supplier).includes(category);
+}
 function escapePdfHtml(value) { return String(value ?? "").replace(/[&<>\"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;","'":"&#39;"}[char])); }
 function exportPdf(type) {
   const datasets = {
@@ -471,7 +487,9 @@ function renderDashboard() {
       <div class="rating">${Number(s.rating || 0) > 0 ? "★ " + Number(s.rating).toFixed(1) : "Not rated"}</div>
     </div>
   `).join("");
-  const visibleSuppliers = filterRecords(suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]);
+  const selectedSupplierCategory = document.getElementById("supplierCategoryFilter")?.value || "";
+  const visibleSuppliers = filterRecords(suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"])
+    .filter(s => supplierMatchesCategory(s, selectedSupplierCategory));
   document.getElementById("supplierCards").innerHTML = visibleSuppliers.map(s => `
     <div class="supplier-card">
       <div class="supplier-card-top">
@@ -487,7 +505,7 @@ function renderDashboard() {
         <div><b>${Number(s.on_time || 0) > 0 ? Number(s.on_time).toFixed(0) + "%" : "No history"}</b><small>On-time</small></div>
         <div><b>${escapeHtml(s.status)}</b><small>Status</small></div>
       </div>
-      <div class="supplier-card-actions"><button type="button" class="action-btn edit-seller-btn" data-edit-seller="${s.id}" aria-label="Edit ${escapeHtml(s.name)}" title="Edit seller"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg><span>Edit details</span></button></div>
+      <div class="supplier-card-actions"><button type="button" class="action-btn edit-seller-btn" data-edit-seller="${s.id}" aria-label="Edit ${escapeHtml(s.name)}" title="Edit seller"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg><span>Edit details</span></button><button type="button" class="action-btn reject" data-delete-seller="${s.id}" aria-label="Delete ${escapeHtml(s.name)}"><span>Delete seller</span></button></div>
     </div>
   `).join("");
   // Recent Quotes
@@ -552,6 +570,20 @@ document.addEventListener("click", async event => {
       if (!response.ok) throw new Error(data.detail || "Could not unlink quotation");
       renderProjectWorkspace(data.project);
       showToast("Quotation unlinked from project");
+    } catch (error) { showToast(error.message, true); }
+    return;
+  }
+  const deleteSellerButton = event.target.closest("[data-delete-seller]");
+  if (deleteSellerButton) {
+    const seller = (dashboardData.suppliers || []).find(item => Number(item.id) === Number(deleteSellerButton.dataset.deleteSeller));
+    if (!seller) return showToast("Seller record could not be found. Refresh and try again.", true);
+    if (!confirm("Delete seller " + seller.name + "? This is only allowed when no quotations or purchase orders are linked. This action cannot be undone.")) return;
+    try {
+      const response = await apiFetch(API + "/suppliers/" + encodeURIComponent(seller.id), {method:"DELETE"});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not delete seller");
+      showToast("Seller " + result.deleted_supplier + " deleted");
+      await fetchDashboard();
     } catch (error) { showToast(error.message, true); }
     return;
   }
@@ -848,7 +880,7 @@ document.getElementById("quoteForm").addEventListener("submit", async (e) => {
   } else showToast(result.detail || "Could not save quotation", true);
 });
 // Register search/filter controls and PDF exports.
-["requestSearch","requestStatusFilter","supplierSearch","supplierStatusFilter","quoteSearch","orderSearch","orderStatusFilter"].forEach(id => {
+["requestSearch","requestStatusFilter","supplierSearch","supplierStatusFilter","supplierCategoryFilter","quoteSearch","orderSearch","orderStatusFilter"].forEach(id => {
   const control = document.getElementById(id);
   if (control) control.addEventListener("input", renderDashboard);
   if (control && control.tagName === "SELECT") control.addEventListener("change", renderDashboard);
