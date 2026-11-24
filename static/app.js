@@ -520,7 +520,7 @@ function supplierServiceCategories(supplier) {
 function supplierMatchesCategory(supplier, category) {
   return !category || supplierServiceCategories(supplier).includes(category);
 }
-function escapePdfHtml(value) { return String(value ?? "").replace(/[&<>\"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'\"':"&quot;","'":"&#39;"}[char])); }
+function escapePdfHtml(value) { return String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char])); }
 function exportPdf(type) {
   const datasets = {
     requests: { rows: filterRecords(dashboardData.requests, document.getElementById("requestSearch")?.value, document.getElementById("requestStatusFilter")?.value, ["code","material","category","site","status"]), fields: ["code","material","category","quantity","unit","site","required_by","priority","status"] },
@@ -530,13 +530,25 @@ function exportPdf(type) {
   };
   const dataset = datasets[type]; if (!dataset) return;
   const popup = window.open("", "_blank"); if (!popup) return showToast("Allow pop-ups to create the PDF report.", true);
-  const title = ({requests:"Purchase Requests",suppliers:"Seller Directory",quotes:"Received Quotations",orders:"Purchase Orders"})[type] || "ProcureAI Report";
-  const heading = value => String(value).replace(/_/g," ").replace(/\b\w/g, char => char.toUpperCase());
-  const tableHead = dataset.fields.map(field => "<th>"+escapePdfHtml(heading(field))+"</th>").join("");
-  const tableRows = dataset.rows.map(row => "<tr>"+dataset.fields.map(field => "<td>"+escapePdfHtml(row[field] ?? "—")+"</td>").join("")+"</tr>").join("");
-  const generated = new Date().toLocaleString();
-  const html = "<!doctype html><html><head><meta charset='utf-8'><title>"+escapePdfHtml(title)+" - ProcureAI</title><style>@page{size:A4 landscape;margin:14mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#17251f;margin:0}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #203c32;padding-bottom:12px;margin-bottom:18px}h1{font-size:22px;margin:0 0 5px}p{margin:0;color:#64736c}.meta{text-align:right;font-size:10px;color:#64736c}table{width:100%;border-collapse:collapse;table-layout:auto}th{background:#edf2ef;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em}th,td{border:1px solid #d9e1dc;padding:7px 6px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8faf9}.empty{padding:24px;text-align:center;color:#64736c;border:1px dashed #cbd5cf;margin-top:12px}footer{margin-top:18px;padding-top:8px;border-top:1px solid #d9e1dc;color:#64736c;font-size:9px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><header><div><h1>"+escapePdfHtml(title)+"</h1><p>Gestro Global Consult Ltd · ProcureAI</p></div><div class='meta'>Generated: "+escapePdfHtml(generated)+"<br>Records: "+dataset.rows.length+"</div></header>"+(dataset.rows.length?"<table><thead><tr>"+tableHead+"</tr></thead><tbody>"+tableRows+"</tbody></table>":"<div class='empty'>No records match the current filters.</div>")+"<footer>Internal procurement report · Handle supplier and commercial information confidentially.</footer><script>window.onload=function(){window.print();};<\/script></body></html>";
-  popup.document.open(); popup.document.write(html); popup.document.close();
+  const titles = {requests:"Purchase Requests",suppliers:"Seller Directory",quotes:"Received Quotations",orders:"Purchase Orders"};
+  const title = titles[type] || "ProcureAI Report";
+  const labels = {code:"Request / PO reference",material:"Material / item",category:"Category",quantity:"Quantity",unit:"Unit",site:"Delivery location / site",required_by:"Required delivery date",priority:"Priority",status:"Status",name:"Supplier name",city:"City",email:"Email address",phone:"Phone number",website:"Website",address:"Business address",services:"Services / capabilities",rating:"Supplier rating",on_time:"On-time delivery (%)",supplier:"Supplier",request_code:"Request reference",unit_price:"Unit price (NGN)",freight:"Freight / delivery (NGN)",tax_rate:"Tax rate (%)",lead_days:"Lead time (days)",payment_days:"Payment terms (days)",note:"Commercial notes",created_at:"Date received",tax:"Tax amount (NGN)",total:"Commercial total (NGN)",decision_note:"Approval / decision note"};
+  const moneyFields = new Set(["unit_price","freight","tax","total"]);
+  const dateFields = new Set(["required_by","created_at"]);
+  const formatValue = (field,value) => {
+    if (value === null || value === undefined || value === "") return "—";
+    if (moneyFields.has(field) && Number.isFinite(Number(value))) return "₦" + Number(value).toLocaleString("en-NG",{minimumFractionDigits:2,maximumFractionDigits:2});
+    if (field === "on_time" || field === "tax_rate") return Number(value).toLocaleString("en-NG") + "%";
+    if (field === "quantity" && Number.isFinite(Number(value))) return Number(value).toLocaleString("en-NG");
+    if (dateFields.has(field)) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString("en-GB",{dateStyle:"medium"}); }
+    return String(value);
+  };
+  const tableHead = dataset.fields.map(field => "<th>"+escapePdfHtml(labels[field] || field)+"</th>").join("");
+  const tableRows = dataset.rows.map(row => "<tr>"+dataset.fields.map(field => "<td>"+escapePdfHtml(formatValue(field,row[field]))+"</td>").join("")+"</tr>").join("");
+  const generated = new Date().toLocaleString("en-GB",{dateStyle:"medium",timeStyle:"short"});
+  const filterSummary = type === "requests" ? (document.getElementById("requestStatusFilter")?.value || "All statuses") : type === "suppliers" ? (document.getElementById("supplierStatusFilter")?.value || "All statuses") : type === "orders" ? (document.getElementById("orderStatusFilter")?.value || "All statuses") : "All matching records";
+  const reportHtml = "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>"+escapePdfHtml(title)+" - ProcureAI</title><style>@page{size:A4 landscape;margin:13mm}*{box-sizing:border-box}body{font:10px/1.5 Arial,Helvetica,sans-serif;color:#1d2b3b;margin:0;background:#fff}header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;border-bottom:2px solid #233d5b;padding:0 0 14px;margin-bottom:16px}.brand{font-size:10px;font-weight:800;letter-spacing:1.5px;color:#315f91;text-transform:uppercase}.brand span{color:#172b4d}h1{font-size:22px;line-height:1.2;margin:7px 0 4px;color:#172b4d}header p{margin:0;color:#68788b;font-size:10px}.meta{min-width:170px;text-align:right;color:#68788b;font-size:9px}.summary{display:flex;gap:10px;margin:0 0 15px}.summary-card{padding:9px 12px;border:1px solid #e1e7ee;border-radius:7px;min-width:130px;background:#f8fafc}.summary-card span{display:block;color:#6c7b8d;font-size:8px;text-transform:uppercase;letter-spacing:.6px;font-weight:bold}.summary-card b{display:block;margin-top:3px;color:#203c5b;font-size:13px}.table-wrap{width:100%;overflow:visible}table{width:100%;border-collapse:collapse;table-layout:auto}thead{display:table-header-group}th{background:#edf3f9;color:#314d6b;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.035em;font-weight:700}th,td{border:1px solid #dce4ec;padding:7px 6px;vertical-align:top;overflow-wrap:anywhere;word-break:normal}td{font-size:9px}tbody tr:nth-child(even){background:#f8fafc}tr{break-inside:avoid}.empty{padding:28px;text-align:center;color:#68788b;border:1px dashed #cbd5df;border-radius:8px;margin-top:12px}.report-note{margin-top:13px;padding:10px 12px;border-left:3px solid #d49a35;background:#fff9ed;color:#6d562b;font-size:9px}footer{margin-top:18px;padding-top:9px;border-top:1px solid #dce4ec;color:#778597;font-size:8px;display:flex;justify-content:space-between;gap:12px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}@media(max-width:650px){header{display:block}.meta{text-align:left;margin-top:12px}.summary{flex-wrap:wrap}.table-wrap{overflow-x:auto}table{min-width:760px}}</style></head><body><header><div><div class='brand'>Procure<span>AI</span> · Gestro Global Consult Ltd</div><h1>"+escapePdfHtml(title)+"</h1><p>Structured procurement register · "+escapePdfHtml(filterSummary)+"</p></div><div class='meta'>Generated: "+escapePdfHtml(generated)+"<br>Records included: "+dataset.rows.length+"</div></header><section class='summary'><div class='summary-card'><span>Records in report</span><b>"+dataset.rows.length+"</b></div><div class='summary-card'><span>Report type</span><b>"+escapePdfHtml(title)+"</b></div><div class='summary-card'><span>Applied view</span><b>"+escapePdfHtml(filterSummary)+"</b></div></section>"+(dataset.rows.length?"<div class='table-wrap'><table><thead><tr>"+tableHead+"</tr></thead><tbody>"+tableRows+"</tbody></table></div>":"<div class='empty'>No records match the current filters. Adjust the search or status filter and export again.</div>")+"<div class='report-note'>Confidential procurement information. Confirm technical specifications, quantities, dates and commercial terms against the original records before making commitments.</div><footer><span>ProcureAI · Internal procurement report</span><span>Generated "+escapePdfHtml(generated)+"</span></footer><script>window.onload=function(){window.focus();window.print();};<\/script></body></html>";
+  popup.document.open(); popup.document.write(reportHtml); popup.document.close();
 }
 
 async function loadInvoices() {
@@ -698,26 +710,45 @@ async function openPurchaseRequestDetails(requestId) {
     if (!response.ok) throw new Error(data.detail || "Could not load purchase request");
     const r = data.request;
     title.textContent = r.code || "Purchase request details";
-    const fields = [
-      ["Request reference", r.code], ["Status", r.status], ["Material / item", r.material],
-      ["Category", r.category], ["Quantity", `${Number(r.quantity).toLocaleString()} ${r.unit || ""}`],
-      ["Project workspace", r.project_title || "Project details unavailable"],
-      ["Project / site", r.site], ["Required by", r.required_by],
-      ["Priority", r.priority], ["Date created", r.created_at ? new Date(r.created_at).toLocaleString() : "Not recorded"]
+    const displayDate = value => {
+      if (!value) return "Not recorded";
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"});
+    };
+    const detailSections = [
+      {title:"Request overview",description:"The item and classification being procured.",fields:[
+        ["Request reference",r.code],["Material / item",r.material],["Category",r.category],["Quantity",`${Number(r.quantity).toLocaleString()} ${r.unit || ""}`]
+      ]},
+      {title:"Project & delivery",description:"Where and when the requirement is needed.",fields:[
+        ["Project workspace",r.project_title || "Project details unavailable"],["Delivery location / site",r.site],["Required delivery date",displayDate(r.required_by)]
+      ]},
+      {title:"Request tracking",description:"Current workflow state and record history.",fields:[
+        ["Current status",r.status],["Priority",r.priority],["Date created",displayDate(r.created_at)]
+      ]}
     ];
+    const statusClass = String(r.status || "").toLowerCase() === "open" ? "blue" : "green";
     content.innerHTML = `
       <div class="request-detail-hero">
-        <div><span class="eyebrow">PURCHASE REQUEST</span><h3>${escapeHtml(r.material || "Untitled request")}</h3><p>${escapeHtml(r.code || "")} · ${escapeHtml(r.project_title || "Unassigned project")}</p></div>
-        <span class="pill ${r.status === "Open" ? "blue" : "green"}">${escapeHtml(r.status || "Unknown")}</span>
+        <div class="request-detail-title-block"><span class="eyebrow">PURCHASE REQUEST · ${escapeHtml(r.code || "UNREFERENCED")}</span><h3>${escapeHtml(r.material || "Untitled request")}</h3><p>${escapeHtml(r.project_title || "Unassigned project")} <span aria-hidden="true">·</span> ${escapeHtml(r.site || "Site not provided")}</p></div>
+        <span class="pill ${statusClass}">${escapeHtml(r.status || "Unknown")}</span>
       </div>
-      <div class="request-detail-grid">${fields.map(([label,value]) => `<div class="request-detail-field"><span>${escapeHtml(label)}</span><b>${escapeHtml(value ?? "Not provided")}</b></div>`).join("")}</div>
-      <div class="request-detail-note"><b>Procurement note</b><p>This record is linked to its project workspace. Use the quotation section to collect supplier offers against this request.</p></div>
-      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button></div>`;
+      ${detailSections.map(section=>`
+        <section class="request-detail-section" aria-label="${escapeHtml(section.title)}">
+          <div class="request-detail-section-heading"><h4>${escapeHtml(section.title)}</h4><p>${escapeHtml(section.description)}</p></div>
+          <div class="request-detail-grid">${section.fields.map(([label,value])=>`<div class="request-detail-field"><span>${escapeHtml(label)}</span><b>${escapeHtml(value ?? "Not provided")}</b></div>`).join("")}</div>
+        </section>`).join("")}
+      <div class="request-detail-note"><span class="request-note-icon" aria-hidden="true">i</span><div><b>Next procurement step</b><p>Collect supplier offers against this request in RFQs & quotations. Buyer confirmation and approval remain part of the project workflow.</p></div></div>
+      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button><button type="button" class="btn btn-primary" data-open-quotes>View quotations</button></div>`;
     content.querySelector("[data-close]")?.addEventListener("click", () => modal.classList.remove("open"));
   } catch (error) {
     content.innerHTML = `<div class="request-detail-error"><b>Request details unavailable</b><p>${escapeHtml(error.message)}</p></div>`;
   }
 }
+document.getElementById("requestDetailContent")?.addEventListener("click", event => {
+  if (!event.target.closest("[data-open-quotes]")) return;
+  document.getElementById("requestDetailModal")?.classList.remove("open");
+  document.querySelector('.nav-item[data-page="quotes"]')?.click();
+});
 document.getElementById("allRequests")?.addEventListener("click", event => {
   const open = event.target.closest("[data-open-request]");
   if (open) openPurchaseRequestDetails(open.dataset.openRequest);
