@@ -947,7 +947,7 @@ window.editQuote = async function(id) {
     const form = document.getElementById("quoteForm"); form.reset();
     document.getElementById("quoteRequest").innerHTML = (dashboardData.requests || []).map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
     document.getElementById("quoteSupplier").innerHTML = (dashboardData.suppliers || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
-    ["request_id","supplier_id","unit_price","freight","tax_rate","lead_days","payment_days","note"].forEach(key => { if (form.elements[key]) form.elements[key].value = quote[key] ?? ""; });
+    ["request_id","supplier_id","unit_price","freight","tax_rate","lead_days","payment_days","technical_status","stock_status","compliance_status","note"].forEach(key => { if (form.elements[key]) form.elements[key].value = quote[key] ?? ""; });
     form.dataset.quoteId = String(id);
     { const node = document.getElementById("quoteModalTitle"); if (node) node.textContent = "Edit registered quotation"; }
     { const node = document.getElementById("quoteModalDescription"); if (node) node.textContent = "Any previous seller request email will be reset and must be sent again before PO generation."; }
@@ -975,7 +975,7 @@ window.openQuote = async function(id) {
     const response = await apiFetch(API + "/quotes/" + id);
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
-    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
+    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Technical compliance",q.technical_status || "Not assessed"],["Stock availability",q.stock_status || "Not confirmed"],["Certificates / regulatory compliance",q.compliance_status || "Pending"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
     content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + escapeHtml(String(pair[1] ?? "—")) + "</b></div>").join("") + "</div>" + (q.has_purchase_order ? '<p class="quote-lock-note">This quotation is locked because a purchase-order proposal is linked to it.</p>' : '<div class="quote-detail-actions"><button type="button" class="btn btn-ghost" data-edit-quote="' + q.id + '">✎ Edit quotation</button><button type="button" class="btn btn-ghost reject" data-delete-quote="' + q.id + '">Delete quotation</button></div>');
   } catch (error) { content.textContent = error.message; }
 };
@@ -1082,12 +1082,15 @@ document.getElementById("runAnalysis").addEventListener("click", async () => {
       } else if (preferred) {
         html += `<div class="bid-caution"><b>No offer is currently award-eligible.</b><span>${escapeHtml(preferred.supplier)} is the closest candidate by the current comparison, but still needs the issues below resolved. This is not an award recommendation.</span></div>`;
       }
-      html += `<div class="analysis-table"><table><thead><tr><th>SUPPLIER</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>CHECK</th><th>TCO (EST.)</th><th>NEXT ACTION</th></tr></thead><tbody>`;
+      html += `<div class="analysis-table"><table><thead><tr><th>SUPPLIER</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>FEASIBILITY</th><th>TCO (EST.)</th><th>NEXT ACTION</th></tr></thead><tbody>`;
       data.offers.forEach(o => {
         const eligible = !!o.award_eligible;
-        const review = o.ai_review || {};
-        const action = eligible ? `<button class="action-btn generate-po-btn" data-generate-po="${o.id}">Review PO</button>` : `<span class="po-unavailable">${!["verified","active"].includes(String(o.supplier_status||"").toLowerCase()) ? "Verify seller" : "Resolve gaps"}</span>`;
-        html += `<tr><td class="material">${escapeHtml(o.supplier)}</td><td>${formatMoney(o.unit_price)}</td><td>${formatMoney(o.freight)}</td><td>${Number(o.lead_days)} days</td><td><span class="pill ${eligible ? "green" : (o.feasible ? "amber" : "red")}">${eligible ? "Eligible for review" : (o.feasible ? "Conditional" : "Needs action")}</span></td><td><b>${formatMoney(o.estimated_total)}</b></td><td>${action}</td></tr>`;
+        const feasibility = o.feasibility || {};
+        const readiness = feasibility.status || (o.feasible ? "feasible" : "conditional");
+        const label = readiness === "feasible" ? "Feasible" : readiness === "infeasible" ? "Infeasible" : "Conditional";
+        const evidence = ["Budget: " + (feasibility.budget?.status || "unknown"), "Technical: " + (feasibility.technical_compliance || "not assessed"), "Stock: " + (feasibility.stock || "not confirmed"), "Compliance: " + (feasibility.regulatory_compliance || "pending")].join(" · ");
+        const action = eligible ? `<button class="action-btn generate-po-btn" data-generate-po="${o.id}">Review PO</button>` : `<span class="po-unavailable">${readiness === "infeasible" ? "Not eligible" : "Complete evidence"}</span>`;
+        html += `<tr><td class="material">${escapeHtml(o.supplier)}</td><td>${formatMoney(o.unit_price)}</td><td>${formatMoney(o.freight)}</td><td>${Number(o.lead_days)} days</td><td><span class="pill ${eligible ? "green" : (readiness === "conditional" ? "amber" : "red")}">${label}</span><small class="feasibility-evidence">${escapeHtml(evidence)}</small></td><td><b>${formatMoney(o.estimated_total)}</b></td><td>${action}</td></tr>`;
       });
       html += `</tbody></table></div>`;
       html += `<section class="bid-review-list"><div class="panel-heading"><div><h2>Seller-by-seller judgement</h2><p>What each bidder did well, what needs to improve and the next action.</p></div></div>`;
