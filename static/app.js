@@ -826,7 +826,7 @@ document.getElementById("runAnalysis").addEventListener("click", async () => {
     try {
       data = responseText ? JSON.parse(responseText) : {};
     } catch (_) {
-      const preview = responseText.replace(/\\s+/g, " ").slice(0, 180);
+      const preview = responseText.replace(/\s+/g, " ").slice(0, 180);
       throw new Error(`The server returned an unreadable response (HTTP ${res.status}). ${preview || "Please retry in a moment."}`);
     }
     if (!res.ok) throw new Error(data.detail || data.error || `Could not analyse this purchase request (HTTP ${res.status})`);
