@@ -27,6 +27,7 @@ function showApp() {
 }
 let currentPage = "overview";
 let dashboardData = {};
+let quoteRecords = [];
 // --- Navigation ---
 document.querySelectorAll(".nav-item").forEach(btn => {
   btn.addEventListener("click", (e) => {
@@ -52,10 +53,45 @@ async function fetchDashboard() {
   const res = await apiFetch(`${API}/dashboard`);
   const data = await res.json();
   dashboardData = data;
+  const quoteResponse = await apiFetch(`${API}/quotes`);
+  const quoteData = quoteResponse.ok ? await quoteResponse.json() : { quotes: [] };
+  quoteRecords = quoteData.quotes || [];
   renderDashboard();
 }
 function formatMoney(val) {
   return "₦" + Number(val).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
+}
+function filterRecords(records, search, status, fields) {
+  const term = String(search || "").trim().toLowerCase();
+  return (records || []).filter(record => {
+    const matchesText = !term || fields.some(field => String(record[field] ?? "").toLowerCase().includes(term));
+    const matchesStatus = !status || String(record.status || "") === status;
+    return matchesText && matchesStatus;
+  });
+}
+function csvCell(value) {
+  const text = String(value ?? "");
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+function exportCsv(type) {
+  const datasets = {
+    requests: { rows: filterRecords(dashboardData.requests, document.getElementById("requestSearch")?.value, document.getElementById("requestStatusFilter")?.value, ["code","material","category","site","status"]), fields: ["code","material","category","quantity","unit","site","required_by","priority","status"] },
+    suppliers: { rows: filterRecords(dashboardData.suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]), fields: ["name","city","contact","email","phone","website","address","services","rating","on_time","status"] },
+    quotes: { rows: filterRecords(quoteRecords, document.getElementById("quoteSearch")?.value, "", ["supplier","request_code","material","category","note"]), fields: ["supplier","request_code","material","unit_price","freight","tax_rate","lead_days","payment_days","note","created_at"] },
+    orders: { rows: filterRecords(dashboardData.orders, document.getElementById("orderSearch")?.value, document.getElementById("orderStatusFilter")?.value, ["code","supplier","material","status"]), fields: ["code","supplier","material","quantity","unit_price","freight","tax","total","required_by","status","decision_note"] }
+  };
+  const dataset = datasets[type];
+  if (!dataset) return;
+  const csv = [dataset.fields, ...dataset.rows.map(row => dataset.fields.map(field => row[field]))]
+    .map(row => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob(["\\uFEFF", csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = `procureai-${type}-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
 }
 function renderDashboard() {
   const { metrics, requests, suppliers, orders, recent_quotes } = dashboardData;
@@ -79,7 +115,8 @@ function renderDashboard() {
     </tr>
   `).join("");
   // All Requests
-  document.getElementById("allRequests").innerHTML = requests.map(r => `
+  const visibleRequests = filterRecords(requests, document.getElementById("requestSearch")?.value, document.getElementById("requestStatusFilter")?.value, ["code","material","category","site","status"]);
+  document.getElementById("allRequests").innerHTML = visibleRequests.map(r => `
     <tr>
       <td class="code">${r.code}</td>
       <td class="material">${r.material}</td>
@@ -103,14 +140,17 @@ function renderDashboard() {
       <div class="rating">★ ${s.rating}</div>
     </div>
   `).join("");
-  document.getElementById("supplierCards").innerHTML = suppliers.map(s => `
+  const visibleSuppliers = filterRecords(suppliers, document.getElementById("supplierSearch")?.value, document.getElementById("supplierStatusFilter")?.value, ["name","city","contact","email","phone","services","status"]);
+  document.getElementById("supplierCards").innerHTML = visibleSuppliers.map(s => `
     <div class="supplier-card">
       <div class="supplier-card-top">
         <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
         <span class="rating">★ ${s.rating}</span>
       </div>
       <h3>${s.name} ${s.is_demo ? '<span class="pill amber">DEMO DATA</span>' : ''}</h3>
-      <p>${s.city} · ${s.contact}</p>
+      <p>${escapeHtml(s.city)} · ${escapeHtml(s.phone || s.email || s.contact || "No contact supplied")}</p>
+      <p class="supplier-capabilities">${escapeHtml(s.services || "Services not yet listed")}</p>
+      <p class="supplier-capabilities">${escapeHtml([s.email,s.website,s.address].filter(Boolean).join(" · "))}</p>
       <div class="supplier-stats">
         <div><b>${s.on_time}%</b><small>On-time</small></div>
         <div><b>${s.status}</b><small>Status</small></div>
@@ -128,7 +168,8 @@ function renderDashboard() {
     </div>
   `).join("");
   // All Quotes Table
-  document.getElementById("allQuotes").innerHTML = recent_quotes.map(q => `
+  const visibleQuotes = filterRecords(quoteRecords, document.getElementById("quoteSearch")?.value, "", ["supplier","request_code","material","category","note"]);
+  document.getElementById("allQuotes").innerHTML = visibleQuotes.map(q => `
     <tr>
       <td class="material">${q.supplier}</td>
       <td class="code">${q.request_code}</td>
@@ -141,7 +182,8 @@ function renderDashboard() {
     </tr>
   `).join("");
   // Orders Table
-  document.getElementById("allOrders").innerHTML = orders.map(o => `
+  const visibleOrders = filterRecords(orders, document.getElementById("orderSearch")?.value, document.getElementById("orderStatusFilter")?.value, ["code","supplier","material","status"]);
+  document.getElementById("allOrders").innerHTML = visibleOrders.map(o => `
     <tr>
       <td class="code">${o.code}</td>
       <td class="material">${o.supplier}</td>
@@ -308,6 +350,34 @@ document.getElementById("quoteForm").addEventListener("submit", async (e) => {
     showToast(err.error, true);
   }
 });
+// Register search/filter controls and CSV exports.
+["requestSearch","requestStatusFilter","supplierSearch","supplierStatusFilter","quoteSearch","orderSearch","orderStatusFilter"].forEach(id => {
+  const control = document.getElementById(id);
+  if (control) control.addEventListener("input", renderDashboard);
+  if (control && control.tagName === "SELECT") control.addEventListener("change", renderDashboard);
+});
+document.querySelectorAll("[data-export]").forEach(button => button.addEventListener("click", () => exportCsv(button.dataset.export)));
+
+// Add seller information to the shared supplier register.
+document.getElementById("supplierForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  ["rating","on_time"].forEach(key => payload[key] = Number(payload[key] || 0));
+  const button = form.querySelector('button[type="submit"], button:not([type])');
+  if (button) button.disabled = true;
+  try {
+    const response = await apiFetch(API + "/suppliers", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Could not save seller");
+    document.getElementById("supplierModal").classList.remove("open");
+    form.reset();
+    showToast("Seller information saved");
+    await fetchDashboard();
+  } catch (error) { showToast(error.message, true); }
+  finally { if (button) button.disabled = false; }
+});
+
 // --- Administrator company configuration ---
 function splitLines(value) { return value.split(/\r?\n|,/).map(item => item.trim()).filter(Boolean); }
 async function loadCompanyProfile() {
