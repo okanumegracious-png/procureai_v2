@@ -87,6 +87,15 @@ document.getElementById("recalculateProject").addEventListener("click", async ()
   } catch(error) { showToast(error.message,true); }
   finally { button.disabled = false; }
 });
+document.getElementById("projectWorkspaceContent").addEventListener("click", event => {
+  const button = event.target.closest("[data-add-project-request]");
+  if (!button || !activeProjectId) return;
+  const form = document.getElementById("requestForm");
+  form.reset();
+  form.elements.project_id.value = activeProjectId;
+  document.querySelector("#requestModal .modal-head h2").textContent = "Add purchase request to project";
+  document.getElementById("requestModal").classList.add("open");
+});
 document.getElementById("projectWorkspaceContent").addEventListener("submit", async event => {
   if (event.target.id === "projectLinkQuotationForm") {
     event.preventDefault();
@@ -237,6 +246,11 @@ function renderProjectWorkspace(project) {
       <article class="project-overview-card project-progress-card"><span class="eyebrow">DELIVERY HEALTH</span><h2>Project progress</h2><div class="project-progress-number">${progress.toFixed(0)}<small>%</small></div><div class="project-progress-track large"><i style="width:${progress}%"></i></div><div class="project-progress-legend"><span>Milestones <b>${Number(project.progress_breakdown?.milestones || 0).toFixed(0)}%</b></span><span>Daily updates <b>${Number(project.progress_breakdown?.daily_updates || 0).toFixed(0)}%</b></span></div><p>Calculated from 4 procurement milestones (60%) and the latest reported workstream progress (40%).</p></article>
     </section>
     <section class="project-overview-card project-timeline-card"><div class="project-section-heading"><div><span class="eyebrow">TIMELINE & DUE DATE TRACKER</span><h2>Procurement milestones</h2></div><div class="project-date-pair"><span>Start <b>${projectDate(project.start_date)}</b></span><span>Due <b>${projectDate(project.due_date)}</b></span></div></div><div class="project-milestones">${milestoneMarkup}</div></section>
+    <section class="project-overview-card project-purchase-requests-card">
+      <div class="project-section-heading"><div><span class="eyebrow">PROJECT PROCUREMENT</span><h2>Purchase requests</h2><p>Manage multiple independent material and service requests under this project.</p></div><div class="project-request-actions"><span class="project-deliverable-count">\${(project.purchase_requests || []).length} requests</span><button type="button" class="btn btn-primary" data-add-project-request>＋ Add request</button></div></div>
+      <div class="project-request-list">\${(project.purchase_requests || []).length ? \`<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody>\${project.purchase_requests.map(r=>\`
+        <tr><td><b>\${escapeHtml(r.code)}</b></td><td><b>\${escapeHtml(r.material)}</b><small>\${escapeHtml(r.category)}</small></td><td>\${escapeHtml(r.quantity)} \${escapeHtml(r.unit)}</td><td>\${projectDate(r.required_by)}</td><td><span class="project-request-priority \${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">\${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">\${escapeHtml(r.status)}</span></td></tr>\`).join("")}</tbody></table></div>\` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>'}</div>
+    </section>
     <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
     <section class="project-overview-card project-linked-quotes">
       <div class="project-section-heading"><div><span class="eyebrow">COMMERCIAL RECORDS</span><h2>Linked quotations</h2><p>Attach quotations already recorded in ProcureAI without changing their original purchase request.</p></div><span class="project-deliverable-count">${(project.linked_quotations || []).length} linked</span></div>
@@ -695,6 +709,11 @@ document.querySelectorAll("[data-modal]").forEach(btn => {
   btn.addEventListener("click", () => {
     const modal = document.getElementById(btn.dataset.modal);
     modal.classList.add("open");
+    if (btn.dataset.modal === "requestModal") {
+      document.getElementById("requestForm").reset();
+      document.getElementById("requestProjectId").value = "";
+      document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
+    }
     if (btn.dataset.modal === "projectModal") {
       const form = document.getElementById("projectForm");
       const today = new Date();
@@ -709,6 +728,10 @@ document.querySelectorAll("[data-close]").forEach(btn => {
     const backdrop = btn.closest(".modal-backdrop");
     if (!backdrop) return;
     backdrop.classList.remove("open");
+    if (backdrop.id === "requestModal") {
+      document.getElementById("requestForm").reset();
+      document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
+    }
     if (backdrop.id === "quoteModal") {
       const form = document.getElementById("quoteForm");
       if (form) { form.reset(); delete form.dataset.quoteId; setFormSubmitLabel(form, "Save quotation"); }
@@ -723,18 +746,26 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const formData = new FormData(e.target);
   const payload = Object.fromEntries(formData.entries());
- 
-  const res = await apiFetch(`${API}/requests`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
-  });
-  if (res.ok) {
+  const projectId = payload.project_id || "";
+  if (!projectId) delete payload.project_id;
+  const submitButton = e.target.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const res = await apiFetch(\`\${API}/requests\`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.detail || result.error || "Could not create purchase request");
     document.getElementById("requestModal").classList.remove("open");
     e.target.reset();
-    showToast("Purchase request created");
-    fetchDashboard();
-  } else {
-    const err = await res.json();
-    showToast(err.error, true);
+    document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
+    showToast(projectId ? \`Purchase request \${result.code} added to project\` : "Purchase request created");
+    await fetchDashboard();
+    if (projectId && activeProjectId === projectId) await openProjectWorkspace(projectId);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    if (submitButton) submitButton.disabled = false;
   }
 });
 // Populate quote modal dropdowns
