@@ -98,6 +98,30 @@ document.getElementById("projectCards").addEventListener("click", async event =>
     }
     return;
   }
+  const unarchive = event.target.closest("[data-unarchive-project]");
+  if (unarchive) {
+    const projectId = unarchive.dataset.unarchiveProject;
+    const project = projectRecords.find(item => item.project_id === projectId);
+    if (!project || String(project.status).toLowerCase() !== "terminated") {
+      showToast("Only archived projects can be unarchived.", true);
+      return;
+    }
+    if (!window.confirm(`Restore "${project.title}" to the active project workspace? Its previous termination note and audit history will be retained.`)) return;
+    unarchive.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(projectId)}/unarchive`, {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not unarchive project");
+      projectRecords = projectRecords.map(item => item.project_id === projectId ? data.project : item);
+      renderProjectCards();
+      await loadProjectTrends();
+      showToast("Project unarchived and restored to the active workspace.");
+    } catch(error) {
+      showToast(error.message, true);
+      unarchive.disabled = false;
+    }
+    return;
+  }
   const open = event.target.closest("[data-open-project]");
   if (open) openProjectWorkspace(open.dataset.openProject);
 });
@@ -156,6 +180,24 @@ document.getElementById("projectWorkspaceContent").addEventListener("click", asy
       showToast("Project terminated and archived. Existing records were retained.");
     } catch(error) { showToast(error.message,true); }
     finally { if (terminateButton.isConnected) terminateButton.disabled = false; }
+    return;
+  }
+  const unarchiveButton = event.target.closest("[data-unarchive-project-workspace]");
+  if (unarchiveButton && activeProjectId) {
+    if (!window.confirm("Restore this archived project to active status? Its previous termination note and audit history will be retained.")) return;
+    unarchiveButton.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/unarchive`, {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not unarchive project");
+      renderProjectWorkspace(data.project);
+      await loadProjects();
+      await loadProjectTrends();
+      showToast("Project unarchived and restored to the active workspace.");
+    } catch(error) {
+      showToast(error.message, true);
+      unarchiveButton.disabled = false;
+    }
     return;
   }
   const button = event.target.closest("[data-add-project-request]");
@@ -329,7 +371,7 @@ function renderProjectCards() {
       <h3>${escapeHtml(project.title)}</h3><p class="project-client">${escapeHtml(project.client_name || "Client not specified")}</p>
       <div class="project-card-meta"><span>Lead</span><b>${escapeHtml(project.procurement_lead || "Unassigned")}</b><span>Purchase requests</span><b>${Number(project.purchase_requests_count || 0)}</b></div>
       <div class="project-card-progress"><div><span>Overall progress</span><b>${Number(project.progress_percent || 0).toFixed(0)}%</b></div><div class="project-progress-track"><i style="width:${Math.max(0,Math.min(100,Number(project.progress_percent||0)))}%"></i></div></div>
-      <div class="project-card-footer"><span>Due ${projectDate(project.due_date)}</span><div class="project-card-actions"><button type="button" class="text-btn" data-open-project="${escapeHtml(project.project_id)}">Open workspace →</button>${String(project.status || "").toLowerCase() === "completed" ? `<button type="button" class="btn btn-danger project-delete-btn" data-delete-project="${escapeHtml(project.project_id)}" aria-label="Delete completed project">Delete</button>` : ""}</div></div>
+      <div class="project-card-footer"><span>Due ${projectDate(project.due_date)}</span><div class="project-card-actions"><button type="button" class="text-btn" data-open-project="${escapeHtml(project.project_id)}">Open workspace →</button>${String(project.status || "").toLowerCase() === "completed" ? `<button type="button" class="btn btn-danger project-delete-btn" data-delete-project="${escapeHtml(project.project_id)}" aria-label="Delete completed project">Delete</button>` : String(project.status || "").toLowerCase() === "terminated" ? `<button type="button" class="btn btn-secondary project-unarchive-btn" data-unarchive-project="${escapeHtml(project.project_id)}">Unarchive</button>` : ""}</div></div>
     </article>`).join("");
 }
 async function openProjectWorkspace(projectId) {
@@ -375,7 +417,7 @@ function renderProjectWorkspace(project) {
   container.innerHTML = `
     <section class="project-workspace-hero" data-project-status="${escapeHtml(project.status || "active")}">
       <div><div class="eyebrow">PROJECT WORKSPACE · ${escapeHtml(project.project_id)}</div><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.client_name || "Client not specified")} · Procurement lead: ${escapeHtml(project.procurement_lead || "Unassigned")}</p></div>
-      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project completed</span>' : project.status === "terminated" ? '<span class="project-closed-label">Archived / terminated</span>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
+      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project completed</span>' : project.status === "terminated" ? '<span class="project-closed-label">Archived / terminated</span><button type="button" class="btn btn-secondary project-unarchive-workspace-btn" data-unarchive-project-workspace>↶ Unarchive project</button>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
     </section>
 ${project.status === "completed" ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
     ${project.status === "terminated" ? `<div class="project-closure-notice"><b>Project terminated and archived</b><span>Archived by ${escapeHtml(project.terminated_by || "Workspace user")} on ${projectDate((project.terminated_at || "").slice(0,10))}. Existing procurement records and reports are retained.</span>${project.termination_note ? `<p>${escapeHtml(project.termination_note)}</p>` : ""}</div>` : ""}
