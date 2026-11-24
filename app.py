@@ -27,9 +27,11 @@ def money(value):
 
 
 def connect():
-    con = sqlite3.connect(DB)
+    DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
+    con.execute("PRAGMA busy_timeout=30000")
     return con
 
 
