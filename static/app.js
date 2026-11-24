@@ -821,8 +821,15 @@ document.getElementById("runAnalysis").addEventListener("click", async () => {
   resultContainer.innerHTML = '<div class="empty-state"><span>◈</span><h3>Evaluating procurement options</h3><p>Reviewing quotations, delivery risks and possible alternatives…</p></div>';
   try {
     const res = await apiFetch(`${API}/analysis?request_id=${encodeURIComponent(rid)}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Could not analyse this purchase request");
+    const responseText = await res.text();
+    let data;
+    try {
+      data = responseText ? JSON.parse(responseText) : {};
+    } catch (_) {
+      const preview = responseText.replace(/\\s+/g, " ").slice(0, 180);
+      throw new Error(`The server returned an unreadable response (HTTP ${res.status}). ${preview || "Please retry in a moment."}`);
+    }
+    if (!res.ok) throw new Error(data.detail || data.error || `Could not analyse this purchase request (HTTP ${res.status})`);
     latestAnalysis = data;
     const rec = data.recommendation;
     const preferred = data.preferred_offer;
