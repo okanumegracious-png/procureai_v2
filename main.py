@@ -236,8 +236,135 @@ class AwardApprovalRequest(BaseModel):
     note: str = ""
 
 
+class ProjectCreatePayload(BaseModel):
+    title: str = Field(min_length=2, max_length=220)
+    client_name: str = Field(default="", max_length=200)
+    agency_details: str = Field(default="", max_length=1200)
+    executive_summary: str = Field(default="", max_length=5000)
+    procurement_lead: str = Field(default="", max_length=160)
+    deliverables: List[str] = Field(default_factory=list)
+    start_date: str
+    due_date: str
+    status: str = Field(default="active", pattern="^(active|on_hold|completed|cancelled)$")
+
+
+class ProjectDailyUpdatePayload(BaseModel):
+    update_type: str = Field(default="daily", pattern="^(daily|field_note|blocker|milestone)$")
+    status: str = Field(default="In progress", max_length=80)
+    progress_percent: float = Field(default=0, ge=0, le=100)
+    field_notes: str = Field(default="", max_length=8000)
+    blockers: str = Field(default="", max_length=4000)
+    next_steps: str = Field(default="", max_length=4000)
+    completed_milestones: List[str] = Field(default_factory=list)
+
+
 def _now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+PROJECT_MILESTONE_TEMPLATE = [
+    {"key": "boq_extraction", "label": "BOQ extraction", "weight": 15},
+    {"key": "rfq_dispatch", "label": "RFQ dispatch", "weight": 15},
+    {"key": "bid_evaluation", "label": "Bid evaluation", "weight": 15},
+    {"key": "po_award", "label": "PO award", "weight": 15},
+]
+
+
+def _project_milestones(raw: str) -> list:
+    try:
+        saved = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        saved = []
+    by_key = {item.get("key"): item for item in saved if isinstance(item, dict)}
+    result = []
+    for template in PROJECT_MILESTONE_TEMPLATE:
+        item = {**template, **by_key.get(template["key"], {})}
+        item["completed"] = bool(item.get("completed", False))
+        result.append(item)
+    return result
+
+
+def _complete_project_milestone(db, project_id: str, key: str, source: str = "workflow") -> None:
+    row = db.execute("SELECT milestones_json FROM projects WHERE project_id=?", (project_id,)).fetchone()
+    if not row:
+        return
+    milestones = _project_milestones(row["milestones_json"])
+    for item in milestones:
+        if item["key"] == key and not item["completed"]:
+            item["completed"] = True
+            item["completed_at"] = _now()
+            item["source"] = source
+    db.execute("UPDATE projects SET milestones_json=?,updated_at=? WHERE project_id=?",
+               (json.dumps(milestones), _now(), project_id))
+
+
+def _recalculate_project(db, project_id: str) -> dict:
+    project = db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    milestones = _project_milestones(project["milestones_json"])
+    boq_count = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
+    approved_po_count = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=? AND status='approved'", (project_id,)).fetchone()[0]
+    if boq_count:
+        for item in milestones:
+            if item["key"] == "boq_extraction" and not item["completed"]:
+                item.update({"completed": True, "completed_at": _now(), "source": "BOQ records"})
+    if approved_po_count:
+        for item in milestones:
+            if item["key"] == "po_award" and not item["completed"]:
+                item.update({"completed": True, "completed_at": _now(), "source": "Approved purchase order"})
+    latest = db.execute("SELECT progress_percent FROM project_updates WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+    daily_progress = float(latest["progress_percent"]) if latest else 0.0
+    milestone_progress = sum(float(item["weight"]) for item in milestones if item["completed"])
+    overall = round(min(100.0, milestone_progress + daily_progress * 0.4), 1)
+    db.execute("UPDATE projects SET milestones_json=?,progress_percent=?,updated_at=? WHERE project_id=?",
+               (json.dumps(milestones), overall, _now(), project_id))
+    return {"progress_percent": overall, "milestone_progress": round(milestone_progress, 1),
+            "daily_progress": daily_progress, "milestones": milestones}
+
+
+def _project_due_status(project: dict) -> dict:
+    if project.get("status") == "completed":
+        return {"due_status": "complete", "days_remaining": 0, "due_label": "Completed"}
+    if not project.get("due_date"):
+        return {"due_status": "unscheduled", "days_remaining": None, "due_label": "No due date"}
+    try:
+        days = (date.fromisoformat(project["due_date"]) - date.today()).days
+    except ValueError:
+        return {"due_status": "unscheduled", "days_remaining": None, "due_label": "Check due date"}
+    if days < 0:
+        return {"due_status": "overdue", "days_remaining": days, "due_label": f"{abs(days)} days overdue"}
+    if days == 0:
+        return {"due_status": "due_today", "days_remaining": 0, "due_label": "Due today"}
+    if days <= 7:
+        return {"due_status": "due_soon", "days_remaining": days, "due_label": f"{days} days remaining"}
+    return {"due_status": "on_track", "days_remaining": days, "due_label": f"{days} days remaining"}
+
+
+def _project_overview(db, project_id: str) -> dict:
+    row = db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = dict(row)
+    progress = _recalculate_project(db, project_id)
+    project = dict(db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone())
+    project["deliverables"] = json.loads(project.pop("deliverables_json") or "[]")
+    project["milestones"] = progress["milestones"]
+    project["progress_percent"] = progress["progress_percent"]
+    project["progress_breakdown"] = {"milestones": progress["milestone_progress"], "daily_updates": round(progress["daily_progress"] * 0.4, 1)}
+    project.update(_project_due_status(project))
+    project["boq_items_count"] = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
+    project["quotations_count"] = db.execute("SELECT COUNT(*) FROM workflow_quotations WHERE project_id=?", (project_id,)).fetchone()[0]
+    project["purchase_orders_count"] = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=?", (project_id,)).fetchone()[0]
+    updates = db.execute("""SELECT id,author,update_type,status,progress_percent,field_notes,blockers,next_steps,
+        completed_milestones_json,created_at FROM project_updates
+        WHERE project_id=? ORDER BY id DESC LIMIT 40""", (project_id,)).fetchall()
+    project["updates"] = []
+    for update in updates:
+        item = dict(update)
+        item["completed_milestones"] = json.loads(item.pop("completed_milestones_json") or "[]")
+        project["updates"].append(item)
+    return project
 
 
 def _extract_pdf_text(raw: bytes) -> str:
@@ -353,6 +480,9 @@ async def upload_boq(project_id: str = Form(...), file: UploadFile = File(...)):
                 VALUES(?,?,?,?,?,?,?,?)""",
                 (project_id, item.get("item_code",""), item["item_name"], item.get("specification",""),
                  item["quantity"], item.get("unit",""), item.get("category","General"), now))
+        if db.execute("SELECT 1 FROM projects WHERE project_id=?", (project_id,)).fetchone():
+            _complete_project_milestone(db, project_id, "boq_extraction", "BOQ extraction workflow")
+            _recalculate_project(db, project_id)
     return {"success": True, "project_id": project_id, "project_summary": extracted["project_summary"], "items": extracted["items"]}
 
 
@@ -460,6 +590,10 @@ def recommend_supplier(payload: RecommendationRequest):
         score += (min_days / max(q["delivery_days"],1) * 100) * payload.weights.get("delivery",0.2)
         ranked.append({**q,"weighted_score":round(score,2)})
     ranked.sort(key=lambda x:x["weighted_score"], reverse=True)
+    with connect() as db:
+        if db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
+            _complete_project_milestone(db, payload.project_id, "bid_evaluation", "Supplier comparison workflow")
+            _recalculate_project(db, payload.project_id)
     return {"success":True,"recommended":ranked[0],"ranking":ranked,
             "disclaimer":"Decision support only. Verify quote validity, scope, tax, freight and supplier capacity. A human approval is required before award."}
 
@@ -489,6 +623,9 @@ def decide_award(po_number: str, payload: AwardApprovalRequest):
         if cur.rowcount != 1:
             raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
         row = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=?", (po_number,)).fetchone()
+        if status == "approved":
+            _complete_project_milestone(db, row["project_id"], "po_award", "Human-approved purchase order")
+            _recalculate_project(db, row["project_id"])
     return {"success":True,"purchase_order":dict(row)}
 
 
@@ -932,6 +1069,80 @@ def save_company_profile(payload: CompanyProfilePayload):
              json.dumps([x.strip() for x in payload.client_segments if x.strip()]),
              payload.currency.upper(), now))
     return {"success": True, "profile": payload.model_dump(), "updated_at": now}
+
+
+@app.get("/api/projects")
+def list_project_workspaces():
+    with connect() as db:
+        records = db.execute("SELECT project_id FROM projects ORDER BY updated_at DESC").fetchall()
+        projects = [_project_overview(db, row["project_id"]) for row in records]
+    return {"projects": projects}
+
+
+@app.post("/api/projects", status_code=201)
+def create_project_workspace(payload: ProjectCreatePayload, request: Request):
+    try:
+        start = date.fromisoformat(payload.start_date)
+        due = date.fromisoformat(payload.due_date)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Project start and due dates must use YYYY-MM-DD")
+    if due < start:
+        raise HTTPException(status_code=422, detail="Project due date cannot be earlier than its start date")
+    project_id = "prj_" + uuid.uuid4().hex[:12]
+    now = _now()
+    milestones = [{**item, "completed": False} for item in PROJECT_MILESTONE_TEMPLATE]
+    with connect() as db:
+        db.execute("""INSERT INTO projects
+            (project_id,title,client_name,agency_details,executive_summary,procurement_lead,deliverables_json,
+             start_date,due_date,status,milestones_json,progress_percent,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?)""",
+            (project_id,payload.title.strip(),payload.client_name.strip(),payload.agency_details.strip(),
+             payload.executive_summary.strip(),payload.procurement_lead.strip(),
+             json.dumps([x.strip() for x in payload.deliverables if x.strip()]),
+             payload.start_date,payload.due_date,payload.status,json.dumps(milestones),now,now))
+        db.execute("""INSERT OR IGNORE INTO workflow_projects
+            (project_id,summary,status,created_at,updated_at) VALUES(?,?,?,?,?)""",
+            (project_id,payload.executive_summary.strip(), "created", now, now))
+        result = _project_overview(db, project_id)
+    return {"success": True, "project": result}
+
+
+@app.get("/api/projects/{project_id}/overview")
+def get_project_workspace(project_id: str):
+    with connect() as db:
+        return {"project": _project_overview(db, project_id)}
+
+
+@app.post("/api/projects/{project_id}/updates", status_code=201)
+def add_project_daily_update(project_id: str, payload: ProjectDailyUpdatePayload, request: Request):
+    allowed = {item["key"] for item in PROJECT_MILESTONE_TEMPLATE}
+    invalid = sorted(set(payload.completed_milestones) - allowed)
+    if invalid:
+        raise HTTPException(status_code=422, detail="Unknown milestone key: " + ", ".join(invalid))
+    now = _now()
+    author = getattr(request.state, "auth_user", "") or "Workspace user"
+    with connect() as db:
+        if not db.execute("SELECT 1 FROM projects WHERE project_id=?", (project_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Project not found")
+        db.execute("""INSERT INTO project_updates
+            (project_id,author,update_type,status,progress_percent,field_notes,blockers,next_steps,
+             completed_milestones_json,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            (project_id,author,payload.update_type,payload.status,payload.progress_percent,
+             payload.field_notes.strip(),payload.blockers.strip(),payload.next_steps.strip(),
+             json.dumps(payload.completed_milestones),now))
+        for key in payload.completed_milestones:
+            _complete_project_milestone(db, project_id, key, "Daily team update")
+        project = _project_overview(db, project_id)
+    return {"success": True, "project": project}
+
+
+@app.post("/api/projects/{project_id}/recalculate")
+def recalculate_project_progress(project_id: str):
+    with connect() as db:
+        progress = _recalculate_project(db, project_id)
+        project = _project_overview(db, project_id)
+    return {"success": True, "progress": progress, "project": project}
 
 
 @app.get("/api/dashboard")
