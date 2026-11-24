@@ -19,4 +19,4 @@ jobs:
       - name: Compile Python files
         run: python -m compileall -q app.py main.py procureai_store.py agentic tests
       - name: Run intake tests
-        run: pytest -q
+        run: python -m pytest -q
