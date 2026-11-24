@@ -148,12 +148,12 @@ def _send_supplier_request_email(quote):
         <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#526174;">Gestro Global Consult Ltd invites you to review the procurement requirement below and submit or confirm your quotation.</p>
         <div style="font-size:12px;font-weight:bold;letter-spacing:1px;color:#64748b;margin:0 0 10px;">REQUEST SUMMARY</div>
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;border:1px solid #e2e8f0;">
-          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;width:38%;color:#64748b;border-bottom:1px solid #e2e8f0;">RFQ reference</td><td style="padding:11px 13px;font-weight:bold;color:#172b4d;border-bottom:1px solid #e2e8f0;">${esc(request_code)}</td></tr>
-          <tr><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Item / material</td><td style="padding:11px 13px;font-weight:bold;border-bottom:1px solid #e2e8f0;">${esc(material)}</td></tr>
-          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Category</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">${esc(category)}</td></tr>
-          <tr><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Required quantity</td><td style="padding:11px 13px;font-weight:bold;border-bottom:1px solid #e2e8f0;">${esc(quantity)}</td></tr>
-          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Delivery location</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">${esc(site)}</td></tr>
-          <tr><td style="padding:11px 13px;color:#64748b;">Required delivery date</td><td style="padding:11px 13px;">${esc(required_by)}</td></tr>
+          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;width:38%;color:#64748b;border-bottom:1px solid #e2e8f0;">RFQ reference</td><td style="padding:11px 13px;font-weight:bold;color:#172b4d;border-bottom:1px solid #e2e8f0;">{esc(request_code)}</td></tr>
+          <tr><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Item / material</td><td style="padding:11px 13px;font-weight:bold;border-bottom:1px solid #e2e8f0;">{esc(material)}</td></tr>
+          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Category</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">{esc(category)}</td></tr>
+          <tr><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Required quantity</td><td style="padding:11px 13px;font-weight:bold;border-bottom:1px solid #e2e8f0;">{esc(quantity)}</td></tr>
+          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Delivery location</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">{esc(site)}</td></tr>
+          <tr><td style="padding:11px 13px;color:#64748b;">Required delivery date</td><td style="padding:11px 13px;">{esc(required_by)}</td></tr>
         </table>
         <p style="margin:22px 0 8px;font-size:14px;font-weight:bold;color:#172b4d;">Quotation submission</p>
         <p style="margin:0;font-size:14px;line-height:1.7;color:#526174;">Please reply with your unit price, total price, applicable taxes and charges, delivery lead time, payment terms, and quotation validity. Clearly state any exclusions or deviations from the requirement.</p>
