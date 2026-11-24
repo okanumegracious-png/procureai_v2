@@ -977,8 +977,51 @@ window.openQuote = async function(id) {
     const response = await apiFetch(API + "/quotes/" + id);
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
-    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
+    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Technical compliance",q.technical_status || "pending"],["Technical review notes",q.technical_notes || "Not reviewed"],["Reviewed by",q.technical_reviewed_by || "Not reviewed"],["Review date",q.technical_reviewed_at || "—"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
     content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + escapeHtml(String(pair[1] ?? "—")) + "</b></div>").join("") + "</div>" + (q.has_purchase_order ? '<p class="quote-lock-note">This quotation is locked because a purchase-order proposal is linked to it.</p>' : '<div class="quote-detail-actions"><button type="button" class="btn btn-ghost" data-edit-quote="' + q.id + '">✎ Edit quotation</button><button type="button" class="btn btn-ghost reject" data-delete-quote="' + q.id + '">Delete quotation</button></div>');
+    if (!q.has_purchase_order) {
+      const reviewForm = document.createElement("form");
+      reviewForm.className = "technical-review-form";
+      const heading = document.createElement("strong");
+      heading.textContent = "Technical compliance review";
+      const help = document.createElement("p");
+      help.textContent = "Compare the supplier's datasheets, ratings, quantities and deviations against the purchase request. A quotation cannot progress to a purchase order until marked compliant.";
+      const statusLabel = document.createElement("label");
+      statusLabel.textContent = "Review outcome";
+      const statusSelect = document.createElement("select");
+      statusSelect.name = "status";
+      [["pending","Pending review"],["compliant","Compliant"],["deviation","Deviation — buyer decision required"],["non_compliant","Non-compliant"]].forEach(([value,label]) => {
+        const option = document.createElement("option"); option.value = value; option.textContent = label; statusSelect.append(option);
+      });
+      statusSelect.value = q.technical_status || "pending";
+      statusLabel.append(statusSelect);
+      const notesLabel = document.createElement("label");
+      notesLabel.textContent = "Evidence and review notes";
+      const notes = document.createElement("textarea");
+      notes.name = "notes"; notes.rows = 3; notes.maxLength = 5000;
+      notes.placeholder = "Record the datasheet / standard checked, ratings, scope match and any deviations.";
+      notes.value = q.technical_notes || "";
+      notesLabel.append(notes);
+      const submit = document.createElement("button");
+      submit.type = "submit"; submit.className = "btn btn-primary"; submit.textContent = "Save technical review";
+      reviewForm.append(heading, help, statusLabel, notesLabel, submit);
+      reviewForm.addEventListener("submit", async event => {
+        event.preventDefault(); submit.disabled = true;
+        try {
+          const response = await apiFetch(API + "/quotes/" + id + "/technical-review", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({status:statusSelect.value,notes:notes.value})
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "Could not save technical review");
+          showToast("Technical review saved");
+          await window.openQuote(id);
+          await fetchDashboard();
+        } catch(error) { showToast(error.message,true); }
+        finally { submit.disabled = false; }
+      });
+      content.append(reviewForm);
+    }
   } catch (error) { content.textContent = error.message; }
 };
 
