@@ -253,3 +253,21 @@
   .project-request-actions{width:100%;justify-content:space-between}
   .project-request-actions .btn{font-size:10px;padding:9px 11px}
 }
+
+
+/* Project closure and monthly completion trends */
+.project-trends-panel{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px;margin:0 0 22px;box-shadow:0 3px 14px #16253a05}
+.project-trends-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+.project-trends-head h2{font:700 18px Manrope,sans-serif;margin:5px 0}.project-trends-head p{font-size:11px;color:var(--muted);margin:0;line-height:1.55}
+.project-trends-total{display:grid;gap:2px;text-align:right}.project-trends-total strong{font:800 28px Manrope;color:#16815e}.project-trends-total span{font-size:9px;color:#718095}
+.project-month-feature{display:flex;align-items:center;gap:15px;margin:18px 0;padding:16px 18px;border-radius:11px;background:linear-gradient(115deg,#f3f8f5,#fbf8ee);border:1px solid #e6eee8}
+.project-month-cup{display:grid;place-items:center;width:45px;height:45px;border-radius:13px;background:#fff;color:#a87920;font-size:24px;flex:0 0 auto}
+.project-month-copy{min-width:0}.project-month-copy h3{font:700 15px Manrope;margin:4px 0}.project-month-copy p{font-size:10px;color:#647286;margin:0 0 4px}.project-month-copy small{font-size:9px;color:#8793a1}
+.project-trend-chart{padding:15px 0 8px;border-top:1px solid #edf0f3}.project-trend-chart-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.project-trend-chart-head b,.project-trend-history>b{font-size:11px;color:#34445a}.project-trend-chart-head span{font-size:9px;color:#8793a1}
+.project-trend-bars{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:8px;align-items:end;min-height:120px}
+.project-trend-column{display:grid;grid-template-rows:88px 13px 13px;gap:4px;justify-items:center;min-width:0}.project-trend-bar-track{width:100%;height:88px;display:flex;align-items:flex-end;justify-content:center;background:#f4f6f8;border-radius:5px 5px 2px 2px;overflow:hidden}.project-trend-bar-track i{display:block;width:65%;min-height:0;background:linear-gradient(180deg,#43b58b,#16815e);border-radius:5px 5px 0 0}.project-trend-column>b{font-size:9px;color:#526176}.project-trend-column>small{font-size:8px;color:#8995a5;white-space:nowrap}
+.project-trend-history{border-top:1px solid #edf0f3;padding-top:14px;margin-top:10px}.project-trend-history>div{display:grid;gap:8px;margin-top:10px}.project-trend-history>div>span{display:grid;grid-template-columns:100px 1fr 25px;gap:10px;align-items:center;font-size:9px}.project-trend-history strong{color:#536176}.project-trend-history small{color:#8793a1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-trend-history em{font-style:normal;text-align:right;font-weight:800;color:#16815e}
+.project-close-btn{margin-top:5px;background:#16815e;border-color:#16815e;color:#fff}.project-close-btn:hover{background:#116b4d}
+.project-closed-label{display:inline-flex;align-items:center;padding:6px 9px;border-radius:20px;background:#e8f6f0;color:#16815e;font-size:9px;font-weight:800;white-space:nowrap}
+.project-closure-notice{display:grid;gap:5px;margin:-4px 0 16px;padding:12px 15px;border:1px solid #d8eee3;border-radius:9px;background:#f5fbf7}.project-closure-notice b{font-size:11px;color:#176b4e}.project-closure-notice span{font-size:10px;color:#61766a;line-height:1.5}
+@media(max-width:650px){.project-trends-head{flex-direction:column}.project-trends-total{text-align:left}.project-trend-bars{gap:4px}.project-trend-column>small{font-size:7px}.project-trend-history>div>span{grid-template-columns:75px 1fr 20px}.project-month-feature{align-items:flex-start;padding:13px}.project-trend-chart{overflow-x:auto}.project-trend-bars{min-width:480px}}
