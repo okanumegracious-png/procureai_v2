@@ -50,7 +50,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_origin_regex=VERCEL_ORIGIN_RE,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", API_KEY_NAME, "X-CSRF-Token"],
 )
 
@@ -485,6 +485,20 @@ def list_intake_requests():
     return {"requests":intake_store.list()}
 
 
+class DashboardSupplierPayload(BaseModel):
+    name: str = Field(min_length=2, max_length=200)
+    city: str = Field(min_length=2, max_length=120)
+    contact: str = Field(default="", max_length=500)
+    email: str = Field(default="", max_length=200)
+    phone: str = Field(default="", max_length=80)
+    website: str = Field(default="", max_length=240)
+    address: str = Field(default="", max_length=300)
+    services: str = Field(default="", max_length=1200)
+    rating: float = Field(default=0, ge=0, le=5)
+    on_time: float = Field(default=0, ge=0, le=100)
+    status: str = Field(default="Pending verification", max_length=60)
+
+
 class CompanyProfilePayload(BaseModel):
     company_name: str = Field(min_length=2, max_length=200)
     registration_number: str = Field(default="", max_length=80)
@@ -533,7 +547,39 @@ def dashboard_requests():
 
 @app.get("/api/suppliers")
 def dashboard_suppliers():
-    return {"suppliers": dashboard_module.rows("SELECT * FROM suppliers ORDER BY rating DESC")}
+    return {"suppliers": dashboard_module.rows("SELECT * FROM suppliers ORDER BY name COLLATE NOCASE")}
+
+
+@app.post("/api/suppliers", status_code=201)
+def dashboard_create_supplier(payload: DashboardSupplierPayload, request: Request):
+    now = _now()
+    with dashboard_module.connect() as db:
+        cur = db.execute("""INSERT INTO suppliers
+            (name,city,rating,on_time,contact,status,email,phone,website,address,services)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (payload.name.strip(), payload.city.strip(), payload.rating, payload.on_time,
+             payload.contact.strip(), payload.status.strip(), payload.email.strip(),
+             payload.phone.strip(), payload.website.strip(), payload.address.strip(),
+             payload.services.strip()))
+        supplier_id = cur.lastrowid
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state, "auth_user", ""), "create", "supplier", str(supplier_id),
+             json.dumps({"name": payload.name, "city": payload.city}), now))
+    return {"success": True, "supplier_id": supplier_id, "status": payload.status}
+
+
+@app.get("/api/quotes")
+def dashboard_quotes():
+    quotes = dashboard_module.rows("""SELECT q.*,s.name supplier,s.city supplier_city,
+        s.contact supplier_contact,r.code request_code,r.material,r.category
+        FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
+        JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC""")
+    return {"quotes": quotes}
 
 
 @app.get("/api/orders")
