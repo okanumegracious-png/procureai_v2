@@ -353,8 +353,8 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         solution = "Confirm stock, quotation validity, warranty, references and final landed cost, then obtain human approval before any commitment."
     else:
         action = "Do not award yet — seek revisions or alternatives"
-        reason = "No submitted offer currently meets both the basic feasibility checks and seller-status requirements. The analysis is still complete and identifies corrective actions."
-        solution = "Ask the strongest candidates to revise delivery, price or supporting evidence; invite additional sellers; or split the requirement into feasible lots if operationally safe."
+        reason = "No submitted offer currently passes all recorded budget, delivery, supplier-verification and technical-compliance gates. The analysis is still complete and identifies corrective actions."
+        solution = "Ask the strongest candidates to revise price or delivery, complete technical review, resolve budget gaps, invite additional verified sellers, or split the requirement into feasible lots if operationally safe."
     judgement = {
         "engine": "rules_fallback", "overall_assessment": reason,
         "recommended_action": action, "solution": solution,
