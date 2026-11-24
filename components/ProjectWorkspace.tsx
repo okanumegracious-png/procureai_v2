@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import "./project-workspace.css";
 
 type Milestone = { key: string; label: string; weight: number; completed: boolean; completed_at?: string };
