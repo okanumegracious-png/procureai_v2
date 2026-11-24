@@ -973,7 +973,8 @@ def compare_offers(project_id: str):
     low = min(row["total_amount"] for row in offers)
     return {"success": True, "project_id": project_id, "comparison_report": [
         {"quotation_id":q["quotation_id"],"supplier_id":q["supplier_id"],"supplier_name":q["supplier_name"],
-         "verification_status":q["verification_status"],"total_amount":q["total_amount"],"currency":q["currency"],
+         "verification_status":q["verification_status"],"technical_status":q["technical_status"],
+         "technical_notes":q["technical_notes"],"total_amount":q["total_amount"],"currency":q["currency"],
          "delivery_days":q["delivery_days"],"variance_from_lowest":round(q["total_amount"]-low,2),
          "line_items":json.loads(q["line_items_json"])} for q in offers]}
 
@@ -992,11 +993,14 @@ def recommend_supplier(payload: RecommendationRequest):
         score += (min_days / max(q["delivery_days"],1) * 100) * payload.weights.get("delivery",0.2)
         ranked.append({**q,"weighted_score":round(score,2)})
     ranked.sort(key=lambda x:x["weighted_score"], reverse=True)
+    eligible = [item for item in ranked
+                if item.get("verification_status") == "verified" and item.get("technical_status") == "compliant"]
     with connect() as db:
         if db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
             _complete_project_milestone(db, payload.project_id, "bid_evaluation", "Supplier comparison workflow")
             _recalculate_project(db, payload.project_id)
-    return {"success":True,"recommended":ranked[0],"ranking":ranked,
+    return {"success":True,"recommended":eligible[0] if eligible else None,"ranking":ranked,
+            "recommendation_note":"Only quotations with verified suppliers and recorded technical compliance are eligible for recommendation. If none qualify, resolve the listed checks before award.",
             "disclaimer":"Decision support only. Verify quote validity, scope, tax, freight and supplier capacity. A human approval is required before award."}
 
 
