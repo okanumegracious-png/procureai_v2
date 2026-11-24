@@ -6,6 +6,7 @@ External supplier contact and purchase commitments are deliberately gated.
 from __future__ import annotations
 
 import json
+import html
 import os
 import uuid
 import smtplib
@@ -99,10 +100,76 @@ def _send_supplier_request_email(quote):
         raise HTTPException(status_code=409, detail="This seller has no valid email address. Update the seller record before sending the request.")
 
     message = EmailMessage()
-    message["Subject"] = f"Purchase request {quote['request_code']} – {quote['material']}"
+    message["Subject"] = f"Request for Quotation (RFQ) {quote['request_code']} – {quote['material']}"
     message["To"] = recipient
-    message.set_content(f"Dear {quote['supplier_name']},\\n\\nGestro Global Consult Ltd is requesting your acknowledgement of this purchase requirement before we prepare our internal purchase-order report.\\n\\nRequest reference: {quote['request_code']}\\nEquipment / material: {quote['material']}\\nCategory: {quote['category']}\\nQuantity: {quote['quantity']} {quote['unit']}\\nDelivery location: {quote['site']}\\nRequired by: {quote['required_by']}\\n\\nPlease acknowledge receipt and confirm that your quoted price, delivery lead time and payment terms remain valid. If anything has changed, reply with revised details.\\n\\nThis is a request for confirmation only. It is not a purchase order, award notice or authority to commence work or supply goods.\\n\\nRegards,\\nProcurement Team\\nGestro Global Consult Ltd")
-    body_text = message.get_content()
+
+    # Build both a readable plain-text fallback and a styled HTML email.
+    supplier_name = str(quote["supplier_name"] or "Supplier")
+    request_code = str(quote["request_code"] or "—")
+    material = str(quote["material"] or "—")
+    category = str(quote["category"] or "—")
+    quantity = f"{quote['quantity']} {quote['unit'] or ''}".strip()
+    site = str(quote["site"] or "To be confirmed")
+    required_by = str(quote["required_by"] or "To be confirmed")
+    esc = lambda value: html.escape(str(value), quote=True)
+
+    body_text = "\n".join([
+        f"Dear {supplier_name},",
+        "",
+        "Gestro Global Consult Ltd invites you to review the procurement requirement below and submit or confirm your quotation.",
+        "",
+        "REQUEST SUMMARY",
+        f"RFQ reference: {request_code}",
+        f"Item / material: {material}",
+        f"Category: {category}",
+        f"Required quantity: {quantity}",
+        f"Delivery location: {site}",
+        f"Required delivery date: {required_by}",
+        "",
+        "Please reply with your unit price, total price, applicable taxes and charges, delivery lead time, payment terms, and quotation validity. Clearly state any exclusions or deviations from the requirement.",
+        "",
+        "IMPORTANT: This RFQ is an invitation to submit or confirm a quotation only. It is not a purchase order, award notice, contract, or authority to commence work or supply goods.",
+        "",
+        "Kind regards,",
+        "Procurement Team",
+        "Gestro Global Consult Ltd",
+    ])
+    html_body = f"""<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:24px 12px;background:#f3f5f8;font-family:Arial,Helvetica,sans-serif;color:#243044;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #e3e8ef;border-radius:10px;overflow:hidden;">
+      <tr><td style="padding:24px 30px;background:#172b4d;color:#ffffff;">
+        <div style="font-size:12px;letter-spacing:1.5px;font-weight:bold;color:#f5a623;">GESTRO GLOBAL CONSULT LTD</div>
+        <div style="font-size:22px;line-height:1.3;font-weight:bold;margin-top:8px;">Request for Quotation</div>
+        <div style="font-size:13px;color:#dce5f2;margin-top:6px;">Supplier procurement enquiry</div>
+      </td></tr>
+      <tr><td style="padding:28px 30px 12px;">
+        <p style="margin:0 0 14px;font-size:15px;">Dear <strong>{esc(supplier_name)}</strong>,</p>
+        <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#526174;">Gestro Global Consult Ltd invites you to review the procurement requirement below and submit or confirm your quotation.</p>
+        <div style="font-size:12px;font-weight:bold;letter-spacing:1px;color:#64748b;margin:0 0 10px;">REQUEST SUMMARY</div>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;font-size:14px;border:1px solid #e2e8f0;">
+          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;width:38%;color:#64748b;border-bottom:1px solid #e2e8f0;">RFQ reference</td><td style="padding:11px 13px;font-weight:bold;color:#172b4d;border-bottom:1px solid #e2e8f0;">{esc(request_code)}</td></tr>
+          <tr><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Item / material</td><td style="padding:11px 13px;font-weight:bold;border-bottom:1px solid #e2e8f0;">{esc(material)}</td></tr>
+          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Category</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">{esc(category)}</td></tr>
+          <tr><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Required quantity</td><td style="padding:11px 13px;font-weight:bold;border-bottom:1px solid #e2e8f0;">{esc(quantity)}</td></tr>
+          <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Delivery location</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">{esc(site)}</td></tr>
+          <tr><td style="padding:11px 13px;color:#64748b;">Required delivery date</td><td style="padding:11px 13px;">{esc(required_by)}</td></tr>
+        </table>
+        <p style="margin:22px 0 8px;font-size:14px;font-weight:bold;color:#172b4d;">Quotation submission</p>
+        <p style="margin:0;font-size:14px;line-height:1.7;color:#526174;">Please reply with your unit price, total price, applicable taxes and charges, delivery lead time, payment terms, and quotation validity. Clearly state any exclusions or deviations from the requirement.</p>
+        <div style="margin:22px 0 8px;padding:14px 16px;background:#fff8e8;border-left:4px solid #e5a12a;border-radius:4px;">
+          <div style="font-size:12px;font-weight:bold;letter-spacing:.5px;color:#8a5a08;margin-bottom:5px;">IMPORTANT PROCUREMENT NOTICE</div>
+          <div style="font-size:13px;line-height:1.6;color:#624b22;">This RFQ is an invitation to submit or confirm a quotation only. It is not a purchase order, award notice, contract, or authority to commence work or supply goods.</div>
+        </div>
+        <p style="margin:22px 0 4px;font-size:14px;color:#526174;">Kind regards,</p>
+        <p style="margin:0 0 24px;font-size:14px;line-height:1.5;font-weight:bold;color:#172b4d;">Procurement Team<br>Gestro Global Consult Ltd</p>
+      </td></tr>
+      <tr><td style="padding:14px 30px;background:#f7f9fc;border-top:1px solid #e8edf3;font-size:11px;line-height:1.5;color:#8793a3;">This message was generated by ProcureAI for procurement communication. Please reply directly to this email with your quotation or clarification.</td></tr>
+    </table>
+  </body>
+</html>"""
+    message.set_content(body_text)
+    message.add_alternative(html_body, subtype="html")
 
     # Gmail API uses HTTPS, avoiding Railway's restricted outbound SMTP ports.
     if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "gmail":
@@ -181,6 +248,7 @@ def _send_supplier_request_email(quote):
             "to": [recipient],
             "subject": str(message["Subject"]),
             "text": body_text,
+            "html": html_body,
         }).encode("utf-8")
         request = urllib.request.Request(
             "https://api.resend.com/emails",
