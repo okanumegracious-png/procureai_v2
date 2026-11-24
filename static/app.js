@@ -62,6 +62,16 @@ document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
 document.getElementById("projectStatusFilter").addEventListener("change", renderProjectCards);
+document.getElementById("filterOpenRequests")?.addEventListener("click", () => {
+  const filter = document.getElementById("requestStatusFilter");
+  const button = document.getElementById("filterOpenRequests");
+  const isActive = filter.value === "Open";
+  filter.value = isActive ? "" : "Open";
+  button.setAttribute("aria-pressed", String(!isActive));
+  button.classList.toggle("active", !isActive);
+  renderDashboard();
+});
+
 document.getElementById("projectCards").addEventListener("click", event => {
   const create = event.target.closest('[data-modal="projectModal"]');
   if (create) { document.querySelector('.project-page-heading [data-modal="projectModal"]')?.click(); return; }
@@ -112,6 +122,7 @@ document.getElementById("projectWorkspaceContent").addEventListener("click", asy
   if (!button || !activeProjectId) return;
   const form = document.getElementById("requestForm");
   form.reset();
+  await populateRequestProjects(activeProjectId);
   form.elements.project_id.value = activeProjectId;
   document.querySelector("#requestModal .modal-head h2").textContent = "Add purchase request to project";
   document.getElementById("requestModal").classList.add("open");
@@ -180,6 +191,27 @@ document.getElementById("projectForm").addEventListener("submit", async event =>
   finally { button.disabled = false; }
 });
 // --- Data Fetching ---
+async function populateRequestProjects(selectedProjectId = "") {
+  const select = document.getElementById("requestProjectId");
+  if (!select) return;
+  select.innerHTML = '<option value="">Loading projects…</option>';
+  try {
+    const response = await apiFetch(API + "/projects");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load project workspaces");
+    const projects = data.projects || [];
+    projectRecords = projects;
+    const available = projects.filter(project => String(project.status || "").toLowerCase() !== "completed");
+    select.innerHTML = '<option value="">Select a project workspace</option>' + available.map(project =>
+      '<option value="' + escapeHtml(project.project_id) + '">' + escapeHtml(project.title) + ' · ' + escapeHtml(project.project_id) + '</option>'
+    ).join("");
+    if (selectedProjectId) select.value = selectedProjectId;
+    if (!available.length) select.innerHTML = '<option value="">Create a project workspace first</option>';
+  } catch (error) {
+    select.innerHTML = '<option value="">Could not load projects — close and try again</option>';
+    showToast(error.message, true);
+  }
+}
 async function fetchDashboard() {
   const res = await apiFetch(`${API}/dashboard`);
   const data = await res.json();
@@ -816,6 +848,7 @@ document.querySelectorAll("[data-modal]").forEach(btn => {
     if (btn.dataset.modal === "requestModal") {
       document.getElementById("requestForm").reset();
       document.getElementById("requestProjectId").value = "";
+      populateRequestProjects();
       document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
     }
     if (btn.dataset.modal === "projectModal") {
@@ -853,7 +886,10 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
   const formData = new FormData(e.target);
   const payload = Object.fromEntries(formData.entries());
   const projectId = payload.project_id || "";
-  if (!projectId) delete payload.project_id;
+  if (!projectId) {
+    showToast("Select a project workspace before creating a purchase request.", true);
+    return;
+  }
   const submitButton = e.target.querySelector('button[type="submit"]');
   if (submitButton) submitButton.disabled = true;
   try {

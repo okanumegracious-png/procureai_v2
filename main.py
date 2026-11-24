@@ -949,7 +949,7 @@ class DashboardRequestPayload(BaseModel):
     site: str
     required_by: str
     priority: str = "Normal"
-    project_id: Optional[str] = Field(default=None, max_length=80)
+    project_id: str = Field(min_length=1, max_length=80)
 
 
 class DashboardQuotePayload(BaseModel):
@@ -1122,12 +1122,13 @@ def dashboard_create_request(payload: DashboardRequestPayload):
     except ValueError:
         raise HTTPException(status_code=422, detail="required_by must be an ISO date")
     with dashboard_module.connect() as db:
-        if payload.project_id:
-            selected_project = db.execute("SELECT status FROM projects WHERE project_id=?", (payload.project_id,)).fetchone()
-            if not selected_project:
-                raise HTTPException(status_code=404, detail="Selected project was not found")
-            if selected_project["status"] == "completed":
-                raise HTTPException(status_code=409, detail="This project is closed. Reopen it through an authorised process before adding requests.")
+        if not payload.project_id.strip():
+            raise HTTPException(status_code=422, detail="Select a project before creating a purchase request")
+        selected_project = db.execute("SELECT status FROM projects WHERE project_id=?", (payload.project_id,)).fetchone()
+        if not selected_project:
+            raise HTTPException(status_code=404, detail="Selected project was not found")
+        if selected_project["status"] == "completed":
+            raise HTTPException(status_code=409, detail="This project is closed. Reopen it through an authorised process before adding requests.")
         next_id = db.execute("SELECT COALESCE(MAX(id),0)+1 FROM requests").fetchone()[0]
         code = f"PR-{next_id+141:04d}"
         created_at = _now()
@@ -1136,11 +1137,10 @@ def dashboard_create_request(payload: DashboardRequestPayload):
             (code,payload.material.strip(),payload.category,payload.quantity,payload.unit,payload.site.strip(),
              payload.required_by,payload.priority,"Open",created_at))
         request_id = cur.lastrowid
-        if payload.project_id:
-            db.execute("""INSERT INTO project_purchase_requests(project_id,request_id,linked_by,linked_at)
-                VALUES(?,?,?,?)""",
-                (payload.project_id,request_id,"Workspace user",created_at))
-            db.execute("UPDATE projects SET updated_at=? WHERE project_id=?", (created_at,payload.project_id))
+        db.execute("""INSERT INTO project_purchase_requests(project_id,request_id,linked_by,linked_at)
+            VALUES(?,?,?,?)""",
+            (payload.project_id,request_id,"Workspace user",created_at))
+        db.execute("UPDATE projects SET updated_at=? WHERE project_id=?", (created_at,payload.project_id))
     return {"success":True,"id":request_id,"code":code,"project_id":payload.project_id}
 
 

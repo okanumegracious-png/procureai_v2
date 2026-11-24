@@ -90,7 +90,7 @@
 
     <section class="page" id="page-requests">
       <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials, parts and services required for workshop or client jobs.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
-      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><button type="button" class="btn btn-ghost request-open-filter" id="filterOpenRequests" aria-pressed="false">Open</button><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-suppliers">
@@ -167,7 +167,7 @@
 </form></div></div>
 <div class="modal-backdrop" id="requestModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">DEMAND MANAGEMENT</span><h2>Create purchase request</h2></div><button class="close" data-close>×</button></div>
 <form id="requestForm" class="form-grid">
-<input type="hidden" name="project_id" id="requestProjectId" value="">
+<label class="wide">Project workspace<select name="project_id" id="requestProjectId" required><option value="">Select a project first</option></select><small>Every purchase request must be attached to an existing project workspace.</small></label>
 <label class="wide">Material description<input name="material" required placeholder="e.g. Reinforcement steel T12"></label>
 <label>Category<select name="category"><option>Reinforcement</option><option>Cementitious</option><option>Aggregate</option><option>Formwork</option><option>Electrical</option><option>Plumbing</option><option>Other</option></select></label>
 <label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" required placeholder="0"></label>
