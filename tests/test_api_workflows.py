@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 import app as dashboard_module
 import main as procureai_main
+import procureai_store as shared_store
 
 
 @pytest.fixture
@@ -22,6 +23,7 @@ def authenticated_client(tmp_path, monkeypatch):
     digest_text = base64.urlsafe_b64encode(digest).decode().rstrip("=")
     monkeypatch.setenv("PROCUREAI_ADMIN_PASSWORD_HASH", "pbkdf2_sha256$" + str(rounds) + "$" + salt_text + "$" + digest_text)
     monkeypatch.setattr(dashboard_module, "DB", database)
+    monkeypatch.setattr(shared_store, "DB_PATH", database)
     monkeypatch.setattr(procureai_main.intake_store, "path", str(database))
 
     with TestClient(procureai_main.app, base_url="https://testserver") as client:
