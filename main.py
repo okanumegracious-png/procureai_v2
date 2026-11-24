@@ -6,6 +6,8 @@ External supplier contact and purchase commitments are deliberately gated.
 from __future__ import annotations
 
 import json
+import asyncio
+import sqlite3
 import html
 import os
 import uuid
@@ -61,6 +63,65 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", API_KEY_NAME, "X-CSRF-Token"],
 )
+
+def _database_file() -> Path:
+    return Path(os.getenv("PROCUREAI_DB_PATH", str(BASE_DIR / "procureai.db")))
+
+
+def _create_database_backup() -> dict:
+    """Create a consistent SQLite online backup and retain the newest seven copies."""
+    source_path = _database_file()
+    if not source_path.is_file():
+        raise RuntimeError("ProcureAI database file is not available for backup")
+    backup_dir = Path(os.getenv("PROCUREAI_BACKUP_DIR", str(source_path.parent / "backups")))
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    final_path = backup_dir / f"procureai-{stamp}.sqlite3"
+    temp_path = backup_dir / f".{final_path.name}.tmp"
+    try:
+        with sqlite3.connect(str(source_path), timeout=30) as source_db:
+            with sqlite3.connect(str(temp_path), timeout=30) as backup_db:
+                source_db.backup(backup_db)
+                integrity = backup_db.execute("PRAGMA integrity_check").fetchone()
+                if not integrity or integrity[0] != "ok":
+                    raise RuntimeError("Database backup failed its SQLite integrity check")
+        os.replace(temp_path, final_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+    backups = sorted(backup_dir.glob("procureai-*.sqlite3"), key=lambda path: path.stat().st_mtime, reverse=True)
+    for old_backup in backups[7:]:
+        old_backup.unlink(missing_ok=True)
+    return {"filename": final_path.name, "size_bytes": final_path.stat().st_size,
+            "created_at": datetime.utcfromtimestamp(final_path.stat().st_mtime).isoformat(timespec="seconds") + "Z",
+            "integrity": "ok"}
+
+
+def _list_database_backups() -> list[dict]:
+    source_path = _database_file()
+    backup_dir = Path(os.getenv("PROCUREAI_BACKUP_DIR", str(source_path.parent / "backups")))
+    if not backup_dir.is_dir():
+        return []
+    files = sorted(backup_dir.glob("procureai-*.sqlite3"), key=lambda path: path.stat().st_mtime, reverse=True)
+    return [{"filename": path.name, "size_bytes": path.stat().st_size,
+             "created_at": datetime.utcfromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds") + "Z"}
+            for path in files[:7]]
+
+
+async def _scheduled_database_backups():
+    """Check hourly and create one integrity-checked backup every 24 hours."""
+    while True:
+        try:
+            backups = _list_database_backups()
+            latest = datetime.fromisoformat(backups[0]["created_at"].replace("Z", "+00:00")) if backups else None
+            due = latest is None or (datetime.now(latest.tzinfo) - latest).total_seconds() >= 24 * 60 * 60
+            if due:
+                result = await asyncio.to_thread(_create_database_backup)
+                print("ProcureAI database backup completed:", result["filename"], result["integrity"])
+        except Exception as exc:
+            print("ProcureAI database backup failed:", type(exc).__name__)
+        await asyncio.sleep(60 * 60)
+
 
 def _init_auth_store():
     with connect() as db:
@@ -356,6 +417,8 @@ def startup():
     dashboard_module.init_db()
     init_store()
     _init_auth_store()
+    if os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"):
+        app.state.database_backup_task = asyncio.create_task(_scheduled_database_backups())
     with connect() as db:
         db.execute("""CREATE TABLE IF NOT EXISTS project_quotations (
             project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -1607,6 +1670,26 @@ def dashboard_mark_invoice_paid(invoice_id: int, request: Request):
             VALUES(?,?,?,?,?,?)""",
             (getattr(request.state,"auth_user",""),"mark_paid","invoice",str(invoice_id),"{}",now))
     return {"success":True,"status":"Paid"}
+
+@app.get("/api/admin/database/backups")
+def list_database_backups():
+    return {"backups": _list_database_backups(), "retention": 7,
+            "automatic_backup": os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"),
+            "storage_note": "Backups are stored beside the configured SQLite database on the Railway volume. Copy them off-volume for disaster recovery."}
+
+
+@app.post("/api/admin/database/backups", status_code=201)
+def create_database_backup(request: Request):
+    try:
+        result = _create_database_backup()
+    except (OSError, sqlite3.Error, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=f"Database backup could not be completed: {type(exc).__name__}")
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state,"auth_user",""), "create_database_backup", "database_backup", result["filename"], json.dumps({"size_bytes":result["size_bytes"],"integrity":result["integrity"]}), _now()))
+    return {"success": True, "backup": result}
+
 
 @app.get("/api/admin/company-profile")
 def get_company_profile():
