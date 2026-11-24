@@ -497,9 +497,9 @@ def _require_buyer_confirmation(db, project_id: str):
     table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='buyer_confirmations'").fetchone()
     if not table:
         raise HTTPException(status_code=409, detail="Buyer confirmation is required before AI bid analysis or PO creation.")
-    latest = db.execute("SELECT status FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
-    if not latest or latest["status"] != "confirmed":
-        raise HTTPException(status_code=409, detail="Buyer confirmation is required. Record the buyer's confirmation in the Project Workspace before proceeding.")
+    latest = db.execute("SELECT status,budget_delivery_accepted FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+    if not latest or latest["status"] != "confirmed" or latest["budget_delivery_accepted"] != "yes":
+        raise HTTPException(status_code=409, detail="Explicit buyer confirmation of the requirements, budget and delivery is required. Record a confirmed decision and select Yes for budget and delivery acceptance in the Project Workspace.")
 
 
 
@@ -926,15 +926,29 @@ def decide_award(po_number: str, payload: AwardApprovalRequest):
     now = _now()
     status = "approved" if payload.action == "approve" else "rejected"
     with connect() as db:
+        pending = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=? AND status='pending_approval'", (po_number,)).fetchone()
+        if not pending:
+            raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
+        if status == "approved":
+            _require_buyer_confirmation(db, pending["project_id"])
+            project = db.execute("SELECT status FROM projects WHERE project_id=?", (pending["project_id"],)).fetchone()
+            if project and project["status"] in ("completed", "terminated", "cancelled"):
+                raise HTTPException(status_code=409, detail="This project is closed or archived. Purchase-order approval is blocked.")
+            supplier = db.execute("SELECT verification_status FROM workflow_suppliers WHERE supplier_id=?", (pending["supplier_id"],)).fetchone()
+            if not supplier or supplier["verification_status"] != "verified":
+                raise HTTPException(status_code=409, detail="Supplier must remain verified at the point of purchase-order approval.")
         cur = db.execute("""UPDATE workflow_purchase_orders SET status=?,decided_by=?,decision_note=?,decided_at=?
             WHERE po_number=? AND status='pending_approval'""",
             (status,payload.decided_by,payload.note,now,po_number))
         if cur.rowcount != 1:
-            raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
+            raise HTTPException(status_code=409, detail="Purchase order is no longer awaiting approval")
         row = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=?", (po_number,)).fetchone()
         if status == "approved":
             _complete_project_milestone(db, row["project_id"], "po_award", "Human-approved purchase order")
             _recalculate_project(db, row["project_id"])
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (payload.decided_by, "approve" if status == "approved" else "reject", "workflow_purchase_order", po_number, json.dumps({"status":status,"note":payload.note,"supplier_id":pending["supplier_id"],"project_id":pending["project_id"]}), now))
     return {"success":True,"purchase_order":dict(row)}
 
 
