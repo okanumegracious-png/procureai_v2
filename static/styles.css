@@ -65,3 +65,15 @@
 .supplier-modal .form-grid small{display:block;color:#929dab;font-weight:400;margin-top:6px}
 @media(max-width:900px){.setup-layout{grid-template-columns:1fr}.setup-intro{position:static;min-height:0}.setup-note{margin-top:0}}
 @media(max-width:650px){.toolbar-actions{width:100%}.toolbar-actions .search{flex:1;width:auto;min-width:150px}.toolbar-actions .filter-select{flex:1}.setup-section{padding:18px 15px}.setup-save{padding:17px 15px;align-items:flex-start;flex-direction:column}.setup-save .btn{width:100%}}
+
+/* Generate PO from bid analysis */
+.generate-po-btn{white-space:nowrap;border-color:#16845e;color:#11734f;background:#eff9f4}.generate-po-btn:hover{background:#e2f4eb}
+.po-unavailable{font-size:9px;color:#8994a2;white-space:nowrap}.po-preview-modal{width:min(760px,100%)}.po-preview-content{padding:18px 0 4px}
+.po-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}
+.po-preview-field{padding:12px 4px;border-bottom:1px solid #edf0f3;display:grid;gap:5px;min-width:0}
+.po-preview-field small{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#8b96a5}.po-preview-field b{font-size:12px;color:#304158;overflow-wrap:anywhere}
+.po-preview-note{margin:15px 0;padding:12px 14px;border-radius:8px;background:#f5f7fa;color:#6d7a8b;font-size:10px;line-height:1.65}
+.po-approval-note{display:grid;gap:5px;padding:13px 14px;border:1px solid #f0dfb9;border-radius:8px;background:#fffbf1}
+.po-approval-note span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#9a741e;font-weight:800}.po-approval-note b{font-size:10px;line-height:1.6;color:#725a28}
+.po-preview-actions{justify-content:flex-end;margin-top:18px}
+@media(max-width:600px){.po-preview-grid{grid-template-columns:1fr}.po-preview-modal{padding:18px}.po-preview-actions{flex-direction:column-reverse}.po-preview-actions .btn{width:100%}}

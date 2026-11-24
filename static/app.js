@@ -253,11 +253,37 @@ window.decideOrder = async function(id, action) {
     showToast(err.error, true);
   }
 };
+let latestAnalysis = null;
+let selectedPoQuoteId = null;
+function openPoPreview(quoteId) {
+  const offer = latestAnalysis?.offers?.find(item => Number(item.id) === Number(quoteId));
+  if (!offer) return showToast("Run the analysis again before generating a PO.", true);
+  if (!["verified", "active"].includes(String(offer.supplier_status || "").toLowerCase()) || String(offer.supplier || "").toLowerCase().includes("[fictional demo]")) return showToast("Verify this seller before generating a purchase order.", true);
+  selectedPoQuoteId = Number(quoteId);
+  const req = latestAnalysis.request, qty = Number(req.quantity);
+  const subtotal = qty * Number(offer.unit_price), tax = subtotal * Number(offer.tax_rate) / 100, freight = Number(offer.freight);
+  const items = [["Purchase request",req.code],["Equipment / material",req.material],["Category",req.category],["Quantity",qty.toLocaleString()+" "+req.unit],["Project / site",req.site],["Required by",req.required_by],["Selected supplier",offer.supplier],["Unit price",formatMoney(offer.unit_price)],["Subtotal",formatMoney(subtotal)],["Tax ("+offer.tax_rate+"%)",formatMoney(tax)],["Freight",formatMoney(freight)],["Commercial PO total",formatMoney(subtotal+tax+freight)],["Analysis estimated total",formatMoney(offer.estimated_total)],["Delivery lead time",offer.lead_days+" days"],["Payment terms","Net "+offer.payment_days+" days"]];
+  document.getElementById("poPreviewContent").innerHTML = '<div class="po-preview-grid">'+items.map(([k,v])=>'<div class="po-preview-field"><small>'+escapeHtml(k)+'</small><b>'+escapeHtml(v)+'</b></div>').join("")+'</div><p class="po-preview-note">The commercial PO total uses the supplier’s quoted price, tax and freight. The analysis estimate is shown separately for decision support.</p><div class="po-approval-note"><span>Approval control</span><b>This proposal will be created as Pending approval. It will not be sent to the supplier or treated as an approved order.</b></div>';
+  document.getElementById("poPreviewModal").classList.add("open");
+}
+document.getElementById("confirmGeneratePo").addEventListener("click", async () => {
+  if (!selectedPoQuoteId) return;
+  const button=document.getElementById("confirmGeneratePo"); button.disabled=true; button.textContent="Creating proposal…";
+  try {
+    const response=await apiFetch(API+"/orders/from-analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quote_id:selectedPoQuoteId})});
+    const data=await response.json(); if(!response.ok) throw new Error(data.detail||"Could not generate purchase order");
+    document.getElementById("poPreviewModal").classList.remove("open"); selectedPoQuoteId=null;
+    showToast("PO proposal "+data.code+" created — pending approval");
+    await fetchDashboard(); document.querySelector('[data-page="orders"]')?.click();
+  } catch(error){showToast(error.message,true)}
+  finally{button.disabled=false;button.textContent="Generate PO proposal"}
+});
 document.getElementById("runAnalysis").addEventListener("click", async () => {
   const rid = document.getElementById("analysisRequest").value;
   if (!rid) return;
   const res = await apiFetch(`${API}/analysis?request_id=${rid}`);
   const data = await res.json();
+  latestAnalysis = data;
  
   const resultContainer = document.getElementById("analysisResult");
   if (!data.offers || data.offers.length === 0) {
@@ -280,24 +306,27 @@ document.getElementById("runAnalysis").addEventListener("click", async () => {
     `;
   }
   html += `<div class="analysis-table"><table><thead><tr>
-    <th>SUPPLIER</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>FEASIBILITY</th><th>TCO (EST)</th>
+    <th>SUPPLIER</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>FEASIBILITY</th><th>TCO (EST)</th><th>PO ACTION</th>
   </tr></thead><tbody>`;
  
   data.offers.forEach(o => {
+    const sellerEligible=["verified","active"].includes(String(o.supplier_status||"").toLowerCase()) && !String(o.supplier||"").toLowerCase().includes("[fictional demo]");
     html += `
       <tr>
-        <td class="material">${o.supplier}</td>
+        <td class="material">${escapeHtml(o.supplier)}</td>
         <td>${formatMoney(o.unit_price)}</td>
         <td>${formatMoney(o.freight)}</td>
         <td>${o.lead_days} days</td>
         <td><span class="pill ${o.feasible ? 'green' : 'red'}">${o.feasible ? 'Feasible' : 'Infeasible'}</span></td>
         <td><b>${formatMoney(o.estimated_total)}</b></td>
+        <td>${o.feasible && sellerEligible ? `<button class="action-btn generate-po-btn" data-generate-po="${o.id}">Generate PO</button>` : `<span class="po-unavailable">${!sellerEligible ? "Verify seller first" : "Not feasible"}</span>`}</td>
       </tr>
     `;
   });
   html += `</tbody></table></div>`;
   resultContainer.innerHTML = html;
 });
+document.addEventListener("click", event => { const trigger=event.target.closest("[data-generate-po]"); if(trigger) openPoPreview(trigger.dataset.generatePo); });
 // --- Modals & Forms ---
 document.querySelectorAll("[data-modal]").forEach(btn => {
   btn.addEventListener("click", () => document.getElementById(btn.dataset.modal).classList.add("open"));

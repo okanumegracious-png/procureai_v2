@@ -69,6 +69,16 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
+        # Link generated purchase-order proposals to the exact quotation used in analysis.
+        order_columns = {row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()}
+        for column, definition in {
+            "quote_id": "INTEGER", "analysis_estimate": "REAL DEFAULT 0",
+            "lead_days": "INTEGER DEFAULT 0", "payment_days": "INTEGER DEFAULT 0"
+        }.items():
+            if column not in order_columns:
+                db.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
+        db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_quote_id_unique ON orders(quote_id) WHERE quote_id IS NOT NULL")
+
         # Add structured seller fields while preserving every existing supplier row.
         supplier_columns = {row["name"] for row in db.execute("PRAGMA table_info(suppliers)").fetchall()}
         for column, definition in {
@@ -180,7 +190,7 @@ def analyse_request(request_id):
     req = one("SELECT * FROM requests WHERE id=?", (request_id,))
     if not req:
         raise ValueError("Purchase request not found")
-    offers = rows("""SELECT q.*,s.name supplier,s.rating,s.on_time
+    offers = rows("""SELECT q.*,s.name supplier,s.rating,s.on_time,s.status supplier_status
         FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
         WHERE q.request_id=?""", (request_id,))
     results = []
