@@ -72,18 +72,18 @@
     </section>
 
     <section class="page" id="page-requests">
-      <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials required across your construction sites.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
-      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Requests generated from stock monitoring or entered by your team.</p></div><input class="search" id="requestSearch" placeholder="Search requests…"></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
+      <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials, parts and services required for workshop or client jobs.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
+      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests">↓ Export CSV</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-suppliers">
-      <div class="page-heading"><div><div class="eyebrow">SUPPLIER NETWORK</div><h1>Suppliers</h1><p class="subheading">A performance-led view of your supplier relationships.</p></div></div>
-      <div class="supplier-cards" id="supplierCards"></div>
+      <div class="page-heading"><div><div class="eyebrow">SUPPLIER NETWORK</div><h1>Suppliers & service providers</h1><p class="subheading">Maintain seller contacts, technical capabilities and verification status.</p></div><button class="btn btn-primary" data-modal="supplierModal">＋ Add seller</button></div>
+      <section class="panel supplier-tools"><div class="panel-heading"><div><h2>Seller directory</h2><p>Only mark a seller verified after your team has checked their identity and capability.</p></div><div class="toolbar-actions"><input class="search" id="supplierSearch" placeholder="Search sellers…"><select class="filter-select" id="supplierStatusFilter" aria-label="Filter sellers by status"><option value="">All statuses</option><option>Active</option><option>Pending verification</option><option>Verified</option><option>Rejected</option><option>Demo / Unverified</option></select><button class="btn btn-ghost" data-export="suppliers">↓ Export CSV</button></div></div><div class="supplier-cards" id="supplierCards"></div></section>
     </section>
 
     <section class="page" id="page-quotes">
       <div class="page-heading"><div><div class="eyebrow">SOURCING</div><h1>RFQs & quotations</h1><p class="subheading">Capture offers against open purchase requests.</p></div><button class="btn btn-primary" data-modal="quoteModal">＋ Add quotation</button></div>
-      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Supplier offers available for evaluation.</p></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th><th>DETAILS</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Filter offers by supplier or request, then export the register.</p></div><div class="toolbar-actions"><input class="search" id="quoteSearch" placeholder="Search quotations…"><button class="btn btn-ghost" data-export="quotes">↓ Export CSV</button></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th><th>DETAILS</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-analysis">
@@ -94,25 +94,39 @@
 
     <section class="page" id="page-settings">
       <div class="page-heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>Company setup</h1><p class="subheading">Enter your organisation details and operating scope. ProcureAI will use this configuration for your workspace.</p></div></div>
-      <section class="panel"><form id="companyProfileForm" class="form-grid">
-        <label class="wide">Company / organisation name<input id="companyName" required minlength="2" maxlength="200" placeholder="Enter registered company name"></label>
-        <label>Registration number<input id="companyRegistration" maxlength="80" placeholder="Optional"></label>
-        <label>Industry / expertise<input id="companyIndustry" maxlength="160" placeholder="Enter your industry"></label>
-        <label class="wide">Services provided<textarea id="companyServices" rows="3" placeholder="Enter services, one per line"></textarea></label>
-        <label class="wide">Service delivery modes<textarea id="companyModes" rows="2" placeholder="e.g. On-site repairs, workshop repairs"></textarea></label>
-        <label class="wide">Client segments<textarea id="companyClients" rows="2" placeholder="Enter client types, one per line"></textarea></label>
-        <label>Default currency<select id="companyCurrency"><option value="NGN">NGN — Nigerian Naira</option><option value="USD">USD — US Dollar</option><option value="GBP">GBP — British Pound</option><option value="EUR">EUR — Euro</option></select></label>
-        <div class="form-actions wide"><button class="btn btn-primary" type="submit">Save company configuration</button><span id="companyProfileStatus" role="status"></span></div>
-      </form></section>
+      <div class="setup-layout">
+        <section class="setup-intro"><div class="setup-icon">⚙</div><div><span class="eyebrow">WORKSPACE PROFILE</span><h2>Make ProcureAI understand your business.</h2><p>These details shape supplier categories, procurement requests and the way your team describes its work. You can update them at any time.</p></div><div class="setup-note"><b>Administrator settings</b><span>Changes are saved to your shared workspace.</span></div></section>
+        <section class="panel setup-panel"><form id="companyProfileForm" class="setup-form">
+          <div class="setup-section"><div class="setup-section-title"><span>01</span><div><h2>Organisation identity</h2><p>Use the name and registration details your clients recognise.</p></div></div><div class="form-grid"><label class="wide">Company / organisation name<input id="companyName" required minlength="2" maxlength="200" placeholder="e.g. Gestro Global Consult Ltd"></label><label>Registration number<input id="companyRegistration" maxlength="80" placeholder="CAC / registration number"></label><label>Industry / expertise<input id="companyIndustry" maxlength="160" placeholder="e.g. Industrial engineering & maintenance"></label></div></div>
+          <div class="setup-section"><div class="setup-section-title"><span>02</span><div><h2>Services & capabilities</h2><p>List the work your organisation can deliver, one service per line.</p></div></div><div class="form-grid"><label class="wide">Services provided<textarea id="companyServices" rows="4" placeholder="Generator servicing and repairs&#10;Electrical systems and control panels&#10;Mechanical fabrication and installation"></textarea><small>Include maintenance, repairs, installation, supply and specialist technical services.</small></label><label class="wide">Service delivery modes<textarea id="companyModes" rows="3" placeholder="On-site inspection and repairs&#10;Workshop repairs and testing&#10;Equipment installation and commissioning"></textarea></label></div></div>
+          <div class="setup-section"><div class="setup-section-title"><span>03</span><div><h2>Clients & commercial defaults</h2><p>Set the types of clients you serve and the currency used in your workspace.</p></div></div><div class="form-grid"><label class="wide">Client segments<textarea id="companyClients" rows="3" placeholder="Industrial facilities&#10;Commercial organisations&#10;Public sector and institutions"></textarea></label><label>Default currency<select id="companyCurrency"><option value="NGN">NGN — Nigerian Naira</option><option value="USD">USD — US Dollar</option><option value="GBP">GBP — British Pound</option><option value="EUR">EUR — Euro</option></select></label></div></div>
+          <div class="setup-save"><div><b>Ready to update your workspace?</b><span id="companyProfileStatus" role="status">Your changes are not saved until you select Save.</span></div><button class="btn btn-primary" type="submit">Save company profile</button></div>
+        </form></section>
+      </div>
     </section>
 
     <section class="page" id="page-orders">
       <div class="page-heading"><div><div class="eyebrow">AWARD & CONTROL</div><h1>Purchase orders</h1><p class="subheading">Review generated orders and resolve approval decisions.</p></div></div>
-      <section class="panel"><div class="panel-heading"><div><h2>Purchase order register</h2><p>Every order retains its supplier, source request and decision status.</p></div></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>SUPPLIER</th><th>MATERIAL</th><th>TOTAL</th><th>DELIVERY</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allOrders"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>Purchase order register</h2><p>Every order retains its supplier, source request and decision status.</p></div><div class="toolbar-actions"><input class="search" id="orderSearch" placeholder="Search orders…"><select class="filter-select" id="orderStatusFilter" aria-label="Filter orders by status"><option value="">All statuses</option><option>Pending approval</option><option>Approved</option><option>Rejected</option></select><button class="btn btn-ghost" data-export="orders">↓ Export CSV</button></div></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>SUPPLIER</th><th>MATERIAL</th><th>TOTAL</th><th>DELIVERY</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allOrders"></tbody></table></div></section>
     </section>
   </main>
 </div>
 
+<div class="modal-backdrop" id="supplierModal"><div class="modal supplier-modal"><div class="modal-head"><div><span class="eyebrow">SUPPLIER NETWORK</span><h2>Add seller information</h2><p class="subheading">Capture the seller's identity and technical capabilities. New sellers start unverified.</p></div><button class="close" data-close>×</button></div>
+<form id="supplierForm" class="form-grid">
+<label class="wide">Business / seller name<input name="name" required minlength="2" maxlength="200" placeholder="Registered or trading name"></label>
+<label>City / location<input name="city" required placeholder="e.g. Port Harcourt, Rivers State"></label>
+<label>Contact person / notes<input name="contact" placeholder="Contact person or internal notes"></label>
+<label>Email address<input name="email" type="email" placeholder="name@company.com"></label>
+<label>Phone / WhatsApp<input name="phone" type="tel" placeholder="+234…"></label>
+<label class="wide">Business address<input name="address" placeholder="Street, area, city and state"></label>
+<label>Website<input name="website" type="url" placeholder="https://"></label>
+<label>Services / parts supplied<input name="services" placeholder="Generator servicing, alternators…"></label>
+<label>Supplier rating (0–5)<input name="rating" type="number" min="0" max="5" step="0.1" value="0"></label>
+<label>On-time delivery (%)<input name="on_time" type="number" min="0" max="100" step="1" value="0"></label>
+<label class="wide">Verification status<select name="status"><option>Pending verification</option><option>Active</option><option>Verified</option><option>Demo / Unverified</option></select><small>Only choose Verified after completing your own checks.</small></label>
+<div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary" type="submit">Save seller</button></div>
+</form></div></div>
 <div class="modal-backdrop" id="requestModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">DEMAND MANAGEMENT</span><h2>Create purchase request</h2></div><button class="close" data-close>×</button></div>
 <form id="requestForm" class="form-grid">
 <label class="wide">Material description<input name="material" required placeholder="e.g. Reinforcement steel T12"></label>
