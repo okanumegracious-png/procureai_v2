@@ -365,6 +365,15 @@ def startup():
             PRIMARY KEY(project_id, quote_id)
         )""")
         db.execute("CREATE INDEX IF NOT EXISTS idx_project_quotations_quote ON project_quotations(quote_id)")
+        db.execute("""CREATE TABLE IF NOT EXISTS project_purchase_requests (
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            request_id INTEGER NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+            linked_by TEXT NOT NULL DEFAULT '',
+            linked_at TEXT NOT NULL,
+            PRIMARY KEY(project_id, request_id),
+            UNIQUE(request_id)
+        )""")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_project_purchase_requests_project ON project_purchase_requests(project_id)")
 
 
 class BOQItem(BaseModel):
@@ -548,6 +557,10 @@ def _project_overview(db, project_id: str) -> dict:
     project["boq_items_count"] = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
     project["quotations_count"] = db.execute("SELECT COUNT(*) FROM workflow_quotations WHERE project_id=?", (project_id,)).fetchone()[0]
     project["purchase_orders_count"] = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=?", (project_id,)).fetchone()[0]
+    project["purchase_requests"] = [dict(item) for item in db.execute("""SELECT r.id,r.code,r.material,r.category,r.quantity,r.unit,r.site,r.required_by,r.priority,r.status,r.created_at
+        FROM project_purchase_requests pr JOIN requests r ON r.id=pr.request_id
+        WHERE pr.project_id=? ORDER BY pr.linked_at DESC""", (project_id,)).fetchall()]
+    project["purchase_requests_count"] = len(project["purchase_requests"])
     linked_quotes = db.execute("""SELECT q.id,q.unit_price,q.freight,q.tax_rate,q.lead_days,q.payment_days,q.note,q.created_at,
         s.name AS supplier,s.email AS supplier_email,r.code AS request_code,r.material,r.category,r.quantity,r.unit
         FROM project_quotations pq JOIN quotes q ON q.id=pq.quote_id
@@ -900,6 +913,7 @@ class DashboardRequestPayload(BaseModel):
     site: str
     required_by: str
     priority: str = "Normal"
+    project_id: Optional[str] = Field(default=None, max_length=80)
 
 
 class DashboardQuotePayload(BaseModel):
@@ -1048,13 +1062,22 @@ def dashboard_create_request(payload: DashboardRequestPayload):
     except ValueError:
         raise HTTPException(status_code=422, detail="required_by must be an ISO date")
     with dashboard_module.connect() as db:
+        if payload.project_id and not db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Selected project was not found")
         next_id = db.execute("SELECT COALESCE(MAX(id),0)+1 FROM requests").fetchone()[0]
         code = f"PR-{next_id+141:04d}"
+        created_at = _now()
         cur = db.execute("""INSERT INTO requests(code,material,category,quantity,unit,site,required_by,priority,status,created_at)
             VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (code,payload.material.strip(),payload.category,payload.quantity,payload.unit,payload.site.strip(),
-             payload.required_by,payload.priority,"Open",datetime.utcnow().isoformat()))
-    return {"success":True,"id":cur.lastrowid,"code":code}
+             payload.required_by,payload.priority,"Open",created_at))
+        request_id = cur.lastrowid
+        if payload.project_id:
+            db.execute("""INSERT INTO project_purchase_requests(project_id,request_id,linked_by,linked_at)
+                VALUES(?,?,?,?)""",
+                (payload.project_id,request_id,"Workspace user",created_at))
+            db.execute("UPDATE projects SET updated_at=? WHERE project_id=?", (created_at,payload.project_id))
+    return {"success":True,"id":request_id,"code":code,"project_id":payload.project_id}
 
 
 @app.get("/api/quotes/{quote_id}")

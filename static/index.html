@@ -159,6 +159,7 @@
 </form></div></div>
 <div class="modal-backdrop" id="requestModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">DEMAND MANAGEMENT</span><h2>Create purchase request</h2></div><button class="close" data-close>×</button></div>
 <form id="requestForm" class="form-grid">
+<input type="hidden" name="project_id" id="requestProjectId" value="">
 <label class="wide">Material description<input name="material" required placeholder="e.g. Reinforcement steel T12"></label>
 <label>Category<select name="category"><option>Reinforcement</option><option>Cementitious</option><option>Aggregate</option><option>Formwork</option><option>Electrical</option><option>Plumbing</option><option>Other</option></select></label>
 <label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" required placeholder="0"></label>
