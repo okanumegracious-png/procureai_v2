@@ -501,6 +501,10 @@ class QuotationSubmission(BaseModel):
     currency: str = "NGN"
     line_items: List[QuotationLineItem] = Field(min_length=1)
 
+class WorkflowTechnicalReviewPayload(BaseModel):
+    status: str = Field(pattern="^(pending|compliant|deviation|non_compliant)$")
+    notes: str = Field(default="", max_length=5000)
+
 
 class RecommendationRequest(BaseModel):
     project_id: str
@@ -932,6 +936,31 @@ def upload_quotation(payload: QuotationSubmission):
     return {"success": True, "quotation_id": qid, "total_amount": total, "currency": payload.currency}
 
 
+@app.post("/api/v1/workflows/quotations/{quotation_id}/technical-review", dependencies=[Depends(verify_api_key)])
+def review_workflow_quotation_technical_compliance(quotation_id: str, payload: WorkflowTechnicalReviewPayload):
+    now = _now()
+    notes = payload.notes.strip()
+    if payload.status in ("compliant", "deviation", "non_compliant") and len(notes) < 10:
+        raise HTTPException(status_code=422, detail="Record at least 10 characters describing specification checks, evidence or deviations.")
+    with connect() as db:
+        quote = db.execute("SELECT quotation_id FROM workflow_quotations WHERE quotation_id=?", (quotation_id,)).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        if db.execute("SELECT 1 FROM workflow_purchase_orders WHERE quotation_id=? LIMIT 1", (quotation_id,)).fetchone():
+            raise HTTPException(status_code=409, detail="This quotation is locked by a purchase-order proposal.")
+        db.execute("""UPDATE workflow_quotations SET technical_status=?,technical_notes=?,technical_reviewed_by=?,technical_reviewed_at=?
+            WHERE quotation_id=?""",
+            (payload.status, notes, "API administrator", now if payload.status != "pending" else None, quotation_id))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            ("API administrator", "technical_review", "workflow_quotation", quotation_id,
+             json.dumps({"status": payload.status, "notes": notes}), now))
+    return {"success": True, "quotation_id": quotation_id, "technical_status": payload.status,
+            "reviewed_by": "API administrator", "reviewed_at": now if payload.status != "pending" else None}
+
+
 @app.get("/api/v1/workflows/compare-offers/{project_id}", dependencies=[Depends(verify_api_key)])
 def compare_offers(project_id: str):
     with connect() as db:
@@ -944,7 +973,8 @@ def compare_offers(project_id: str):
     low = min(row["total_amount"] for row in offers)
     return {"success": True, "project_id": project_id, "comparison_report": [
         {"quotation_id":q["quotation_id"],"supplier_id":q["supplier_id"],"supplier_name":q["supplier_name"],
-         "verification_status":q["verification_status"],"total_amount":q["total_amount"],"currency":q["currency"],
+         "verification_status":q["verification_status"],"technical_status":q["technical_status"],
+         "technical_notes":q["technical_notes"],"total_amount":q["total_amount"],"currency":q["currency"],
          "delivery_days":q["delivery_days"],"variance_from_lowest":round(q["total_amount"]-low,2),
          "line_items":json.loads(q["line_items_json"])} for q in offers]}
 
@@ -963,11 +993,14 @@ def recommend_supplier(payload: RecommendationRequest):
         score += (min_days / max(q["delivery_days"],1) * 100) * payload.weights.get("delivery",0.2)
         ranked.append({**q,"weighted_score":round(score,2)})
     ranked.sort(key=lambda x:x["weighted_score"], reverse=True)
+    eligible = [item for item in ranked
+                if item.get("verification_status") == "verified" and item.get("technical_status") == "compliant"]
     with connect() as db:
         if db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
             _complete_project_milestone(db, payload.project_id, "bid_evaluation", "Supplier comparison workflow")
             _recalculate_project(db, payload.project_id)
-    return {"success":True,"recommended":ranked[0],"ranking":ranked,
+    return {"success":True,"recommended":eligible[0] if eligible else None,"ranking":ranked,
+            "recommendation_note":"Only quotations with verified suppliers and recorded technical compliance are eligible for recommendation. If none qualify, resolve the listed checks before award.",
             "disclaimer":"Decision support only. Verify quote validity, scope, tax, freight and supplier capacity. A human approval is required before award."}
 
 
@@ -979,6 +1012,8 @@ def create_award_proposal(quotation_id: str, requested_by: str = Form(...)):
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
         _require_buyer_confirmation(db, quote["project_id"])
+        if quote["technical_status"] != "compliant":
+            raise HTTPException(status_code=409, detail="Technical compliance must be reviewed and marked compliant before creating a purchase-order proposal.")
         db.execute("""INSERT INTO workflow_purchase_orders
             (po_number,project_id,quotation_id,supplier_id,total_amount,currency,status,requested_by,created_at)
             VALUES(?,?,?,?,?,?,'pending_approval',?,?)""",
@@ -991,11 +1026,15 @@ def decide_award(po_number: str, payload: AwardApprovalRequest):
     now = _now()
     status = "approved" if payload.action == "approve" else "rejected"
     with connect() as db:
-        pending = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=? AND status='pending_approval'", (po_number,)).fetchone()
+        pending = db.execute("SELECT po.*,q.technical_status FROM workflow_purchase_orders po
+            JOIN workflow_quotations q ON q.quotation_id=po.quotation_id
+            WHERE po.po_number=? AND po.status='pending_approval'", (po_number,)).fetchone()
         if not pending:
             raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
         if status == "approved":
             _require_buyer_confirmation(db, pending["project_id"])
+            if pending["technical_status"] != "compliant":
+                raise HTTPException(status_code=409, detail="Technical compliance must remain approved at the point of purchase-order approval.")
             project = db.execute("SELECT status FROM projects WHERE project_id=?", (pending["project_id"],)).fetchone()
             if project and project["status"] in ("completed", "terminated", "cancelled"):
                 raise HTTPException(status_code=409, detail="This project is closed or archived. Purchase-order approval is blocked.")
@@ -1098,12 +1137,48 @@ class QuoteParsePayload(BaseModel):
     message: str = Field(min_length=3, max_length=12000)
 
 
+def _extract_quote_line_items(message: str) -> list[dict]:
+    """Extract independently priced material lines without creating quotations."""
+    items = []
+    unit_pattern = r"(kgs?|kilograms?|grams?|g|tonnes?|tons?|mt|litres?|liters?|l|metres?|meters?|m|pieces?|pcs|units?|bags?|boxes?|cartons?|packs?|sets?|rolls?|sheets?|pairs?|drums?|pallets?)"
+    quantity_re = re.compile(r"\b(\d[\d,]*(?:\.\d+)?)\s*" + unit_pattern + r"\b", re.I)
+    price_re = re.compile(
+        r"(?:at|@|for|unit\s+price(?:\s+is)?)\s*(?:₦\s*|NGN\s*|N\s*)?([\d,]+(?:\.\d{1,2})?)\s*(?:naira\s*)?(?:per|/)\s*" + unit_pattern + r"\b",
+        re.I,
+    )
+    compact_price_re = re.compile(
+        r"(?:₦\s*|NGN\s*|N\s*)?([\d,]+(?:\.\d{1,2})?)\s*/\s*" + unit_pattern + r"\b",
+        re.I,
+    )
+    for raw_line in message.splitlines():
+        line = " ".join(raw_line.replace("\u00a0", " ").split())
+        quantity = quantity_re.search(line)
+        if not quantity:
+            continue
+        price = price_re.search(line) or compact_price_re.search(line)
+        if not price:
+            continue
+        description = line[:quantity.start()] + " " + line[quantity.end():price.start()] + " " + line[price.end():]
+        description = re.sub(r"^\s*(?:[-*•]+\s*)?(?:i can|we can|we offer|we have|we supply|we supply|can supply|supply|quote for|quotation for)\s+", "", description, flags=re.I)
+        description = re.split(r"\b(?:delivery|lead\s*time|transport|freight|vat|tax|payment|validity|available)\b", description, maxsplit=1, flags=re.I)[0]
+        description = re.sub(r"^\s*(?:of|for|:|-)+\s*|\s*(?:of|for|at|:|-)+\s*$", "", description).strip(" .,:;-")
+        items.append({
+            "description": description or f"Line item {len(items) + 1}",
+            "quantity": float(quantity.group(1).replace(",", "")),
+            "unit": quantity.group(2).lower(),
+            "unit_price": float(price.group(1).replace(",", "")),
+            "price_unit": price.group(2).lower(),
+            "source_line": line,
+        })
+    return items[:50]
+
+
 def _parse_supplier_quote_message(message: str) -> dict:
     """Conservative, rule-based extraction. Never invent values."""
     text = " ".join(message.replace("\u00a0", " ").split())
     result = {"quantity": None, "unit": None, "unit_price": None, "freight": None,
               "tax_rate": None, "lead_days": None, "payment_days": None,
-              "payment_terms": None, "matched": []}
+              "payment_terms": None, "matched": [], "line_items": _extract_quote_line_items(message)}
     unit_pattern = r"(kgs?|kilograms?|grams?|g|tonnes?|tons?|mt|litres?|liters?|l|metres?|meters?|m|pieces?|pcs|units?|bags?|boxes?|cartons?|packs?|sets?)"
     quantity_match = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s*" + unit_pattern + r"\b", text, re.I)
     if quantity_match:
@@ -1162,6 +1237,11 @@ class AnalysisPurchaseOrderPayload(BaseModel):
 class DashboardDecisionPayload(BaseModel):
     action: str = Field(pattern="^(approve|reject)$")
     note: str = ""
+
+
+class TechnicalReviewPayload(BaseModel):
+    status: str = Field(pattern="^(pending|compliant|deviation|non_compliant)$")
+    notes: str = Field(default="", max_length=5000)
 
 
 @app.get("/api/requests")
@@ -1370,6 +1450,32 @@ def dashboard_quote_detail(quote_id: int):
     quote["total_landed"] = float(subtotal + tax + Decimal(str(quote["freight"])))
     return quote
 
+@app.post("/api/quotes/{quote_id}/technical-review")
+def review_quote_technical_compliance(quote_id: int, payload: TechnicalReviewPayload, request: Request):
+    now = _now()
+    notes = payload.notes.strip()
+    if payload.status in ("compliant", "deviation", "non_compliant") and len(notes) < 10:
+        raise HTTPException(status_code=422, detail="Record at least 10 characters describing the specification checks, evidence or deviations.")
+    with dashboard_module.connect() as db:
+        quote = db.execute("SELECT id FROM quotes WHERE id=?", (quote_id,)).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        if db.execute("SELECT 1 FROM orders WHERE quote_id=? LIMIT 1", (quote_id,)).fetchone():
+            raise HTTPException(status_code=409, detail="This quotation is locked by a purchase-order proposal.")
+        db.execute("""UPDATE quotes SET technical_status=?,technical_notes=?,technical_reviewed_by=?,technical_reviewed_at=?
+            WHERE id=?""",
+            (payload.status, notes, getattr(request.state, "auth_user", ""), now if payload.status != "pending" else None, quote_id))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state, "auth_user", ""), "technical_review", "quotation", str(quote_id),
+             json.dumps({"status": payload.status, "notes": notes}), now))
+    return {"success": True, "technical_status": payload.status,
+            "reviewed_by": getattr(request.state, "auth_user", ""),
+            "reviewed_at": now if payload.status != "pending" else None}
+
+
 @app.post("/api/quotes/{quote_id}/send-request")
 def dashboard_send_supplier_request(quote_id: int, request: Request):
     with dashboard_module.connect() as db:
@@ -1420,7 +1526,7 @@ def dashboard_update_quote(quote_id: int, payload: DashboardQuotePayload, reques
         if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone(): raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone(): raise HTTPException(status_code=404, detail="Supplier not found")
         before = {key: current[key] for key in ("supplier_id","request_id","unit_price","freight","tax_rate","lead_days","payment_days","note")}
-        db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,note=? WHERE id=?""",
+        db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,note=?,technical_status='pending',technical_notes='',technical_reviewed_by='',technical_reviewed_at=NULL WHERE id=?""",
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,payload.note,quote_id))
         _ensure_supplier_request_email_table(db)
         email_invalidated = db.execute("DELETE FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).rowcount > 0
@@ -1466,6 +1572,8 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
         supplier_status = (quote["supplier_status"] or "").strip().casefold()
         if supplier_status not in {"verified", "active"} or "[fictional demo]" in quote["supplier_name"].casefold():
             raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation. Verify the seller first.")
+        if quote["technical_status"] != "compliant":
+            raise HTTPException(status_code=409, detail="Technical compliance must be reviewed and marked compliant before creating a purchase-order proposal.")
         if quote["request_status"] != "Open":
             raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
         _ensure_supplier_request_email_table(db)
@@ -1526,6 +1634,8 @@ def dashboard_create_order(payload: DashboardOrderPayload, request: Request):
         supplier_status = str(supplier["status"] or "").strip().casefold()
         if supplier_status not in {"verified", "active"} or "[fictional demo]" in str(supplier["name"]).casefold():
             raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation.")
+        if quote["technical_status"] != "compliant":
+            raise HTTPException(status_code=409, detail="Technical compliance must be reviewed and marked compliant before creating a purchase-order proposal.")
         if req["status"] != "Open":
             raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
         _ensure_supplier_request_email_table(db)
@@ -1556,14 +1666,19 @@ def dashboard_create_order(payload: DashboardOrderPayload, request: Request):
 def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload, request: Request):
     status = "Approved" if payload.action == "approve" else "Rejected"
     with dashboard_module.connect() as db:
-        order = db.execute("""SELECT o.request_id,o.supplier_id,s.status AS supplier_status,s.name AS supplier_name
-            FROM orders o JOIN suppliers s ON s.id=o.supplier_id WHERE o.id=? AND o.status='Pending approval'""", (order_id,)).fetchone()
+        order = db.execute("""SELECT o.request_id,o.supplier_id,s.status AS supplier_status,s.name AS supplier_name,
+            q.technical_status
+            FROM orders o JOIN suppliers s ON s.id=o.supplier_id
+            LEFT JOIN quotes q ON q.id=o.quote_id
+            WHERE o.id=? AND o.status='Pending approval'""", (order_id,)).fetchone()
         if not order:
             raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
         if payload.action == "approve":
             _require_request_buyer_confirmation(db, int(order["request_id"]))
             if str(order["supplier_status"] or "").strip().casefold() not in {"verified", "active"} or "[fictional demo]" in str(order["supplier_name"]).casefold():
                 raise HTTPException(status_code=409, detail="Supplier verification must remain valid at the point of approval.")
+            if order["technical_status"] != "compliant":
+                raise HTTPException(status_code=409, detail="Technical compliance must remain approved at the point of purchase-order approval.")
         cur = db.execute("UPDATE orders SET status=?,decision_note=? WHERE id=? AND status='Pending approval'",
                          (status,payload.note,order_id))
         if cur.rowcount != 1:

@@ -4,6 +4,8 @@ import pytest
 from fastapi import HTTPException
 
 import main as procureai_main
+import app as dashboard_app
+from app import assess_offer_feasibility as dashboard_feasibility
 
 
 def _gate_db(status="active", confirmation=None):
@@ -55,3 +57,64 @@ def test_analysis_and_po_gate_rejects_closed_projects():
         procureai_main._require_request_buyer_confirmation(db, 101)
     assert exc.value.status_code == 409
     db.close()
+
+
+def test_feasibility_requires_budget_technical_delivery_and_supplier_checks():
+    base = {
+        "estimated_total": 700000,
+        "days_left": 14,
+        "lead_days": 4,
+        "supplier_rating": 4.2,
+        "supplier_status": "verified",
+        "technical_status": "compliant",
+        "budget_context": {"budget": 850000, "available_budget": 850000},
+    }
+    result = dashboard_feasibility(**base)
+    assert result["feasible"] is True
+    assert result["award_eligible"] is True
+    assert result["budget_feasibility"] == "within_budget"
+
+
+def test_feasibility_blocks_over_budget_and_unreviewed_technical_offers():
+    base = {
+        "estimated_total": 900000,
+        "days_left": 14,
+        "lead_days": 4,
+        "supplier_rating": 4.2,
+        "supplier_status": "verified",
+        "technical_status": "pending",
+        "budget_context": {"budget": 850000, "available_budget": 800000},
+    }
+    result = dashboard_feasibility(**base)
+    assert result["budget_feasibility"] == "over_budget"
+    assert result["award_eligible"] is False
+    assert result["technical_feasibility"] == "pending"
+
+
+def test_feasibility_requires_project_budget_to_be_configured():
+    result = dashboard_feasibility(
+        estimated_total=1000, days_left=10, lead_days=2, supplier_rating=4.0,
+        supplier_status="verified", technical_status="compliant",
+        budget_context={"budget": 0, "available_budget": None},
+    )
+    assert result["budget_feasibility"] == "not_configured"
+    assert result["feasible"] is False
+    assert result["award_eligible"] is False
+
+
+def test_quote_schema_migrates_technical_review_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(dashboard_app, "DB", tmp_path / "technical-review.db")
+    dashboard_app.init_db()
+    with dashboard_app.connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)")}
+    assert {"technical_status", "technical_notes", "technical_reviewed_by", "technical_reviewed_at"} <= columns
+
+
+def test_budget_feasibility_warns_about_other_unpriced_open_requests():
+    result = dashboard_feasibility(
+        estimated_total=700000, days_left=14, lead_days=4, supplier_rating=4.2,
+        supplier_status="verified", technical_status="compliant",
+        budget_context={"budget": 850000, "available_budget": 850000, "unpriced_open_requests": 2},
+    )
+    assert result["budget_feasibility"] == "within_budget"
+    assert any("2 other open project request" in issue for issue in result["issues"])

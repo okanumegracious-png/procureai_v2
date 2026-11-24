@@ -32,6 +32,7 @@ function showApp() {
 let currentPage = "overview";
 let dashboardData = {};
 let quoteRecords = [];
+let parsedQuoteLineItems = [];
 let projectRecords = [];
 let activeProjectId = null;
 let invoiceRecords = [];
@@ -976,8 +977,51 @@ window.openQuote = async function(id) {
     const response = await apiFetch(API + "/quotes/" + id);
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
-    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
+    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Technical compliance",q.technical_status || "pending"],["Technical review notes",q.technical_notes || "Not reviewed"],["Reviewed by",q.technical_reviewed_by || "Not reviewed"],["Review date",q.technical_reviewed_at || "—"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
     content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + escapeHtml(String(pair[1] ?? "—")) + "</b></div>").join("") + "</div>" + (q.has_purchase_order ? '<p class="quote-lock-note">This quotation is locked because a purchase-order proposal is linked to it.</p>' : '<div class="quote-detail-actions"><button type="button" class="btn btn-ghost" data-edit-quote="' + q.id + '">✎ Edit quotation</button><button type="button" class="btn btn-ghost reject" data-delete-quote="' + q.id + '">Delete quotation</button></div>');
+    if (!q.has_purchase_order) {
+      const reviewForm = document.createElement("form");
+      reviewForm.className = "technical-review-form";
+      const heading = document.createElement("strong");
+      heading.textContent = "Technical compliance review";
+      const help = document.createElement("p");
+      help.textContent = "Compare the supplier's datasheets, ratings, quantities and deviations against the purchase request. A quotation cannot progress to a purchase order until marked compliant.";
+      const statusLabel = document.createElement("label");
+      statusLabel.textContent = "Review outcome";
+      const statusSelect = document.createElement("select");
+      statusSelect.name = "status";
+      [["pending","Pending review"],["compliant","Compliant"],["deviation","Deviation — buyer decision required"],["non_compliant","Non-compliant"]].forEach(([value,label]) => {
+        const option = document.createElement("option"); option.value = value; option.textContent = label; statusSelect.append(option);
+      });
+      statusSelect.value = q.technical_status || "pending";
+      statusLabel.append(statusSelect);
+      const notesLabel = document.createElement("label");
+      notesLabel.textContent = "Evidence and review notes";
+      const notes = document.createElement("textarea");
+      notes.name = "notes"; notes.rows = 3; notes.maxLength = 5000;
+      notes.placeholder = "Record the datasheet / standard checked, ratings, scope match and any deviations.";
+      notes.value = q.technical_notes || "";
+      notesLabel.append(notes);
+      const submit = document.createElement("button");
+      submit.type = "submit"; submit.className = "btn btn-primary"; submit.textContent = "Save technical review";
+      reviewForm.append(heading, help, statusLabel, notesLabel, submit);
+      reviewForm.addEventListener("submit", async event => {
+        event.preventDefault(); submit.disabled = true;
+        try {
+          const response = await apiFetch(API + "/quotes/" + id + "/technical-review", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({status:statusSelect.value,notes:notes.value})
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "Could not save technical review");
+          showToast("Technical review saved");
+          await window.openQuote(id);
+          await fetchDashboard();
+        } catch(error) { showToast(error.message,true); }
+        finally { submit.disabled = false; }
+      });
+      content.append(reviewForm);
+    }
   } catch (error) { content.textContent = error.message; }
 };
 
@@ -1232,6 +1276,9 @@ document.querySelector('[data-modal="quoteModal"]').addEventListener("click", ()
   document.getElementById("quoteParseStatus").textContent = "Review all extracted values before saving.";
   document.getElementById("quoteParseReview").hidden = true;
   document.getElementById("quoteParseReview").innerHTML = "";
+  document.getElementById("quoteExtractedLineItemLabel").hidden = true;
+  document.getElementById("quoteExtractedLineItem").replaceChildren();
+  parsedQuoteLineItems = [];
   setFormSubmitLabel(form, "Save quotation");
   document.getElementById("quoteRequest").innerHTML = dashboardData.requests.filter(r => r.status === "Open").map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
   document.getElementById("quoteSupplier").innerHTML = dashboardData.suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
@@ -1242,38 +1289,65 @@ document.getElementById("parseQuoteMessage").addEventListener("click", async () 
   const status = document.getElementById("quoteParseStatus");
   const review = document.getElementById("quoteParseReview");
   const button = document.getElementById("parseQuoteMessage");
+  const lineLabel = document.getElementById("quoteExtractedLineItemLabel");
+  const linePicker = document.getElementById("quoteExtractedLineItem");
   if (message.length < 3) { status.textContent = "Paste the supplier's message first."; return; }
   button.disabled = true; button.textContent = "Parsing…"; status.textContent = "Checking the message for quotation details…";
-  review.hidden = true; review.innerHTML = "";
+  review.hidden = true; review.innerHTML = ""; parsedQuoteLineItems = [];
+  lineLabel.hidden = true; linePicker.replaceChildren();
   try {
     const response = await apiFetch(API + "/quotes/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message})});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not parse supplier message");
     const x = data.extracted || {}, filled = [];
+    parsedQuoteLineItems = Array.isArray(x.line_items) ? x.line_items : [];
     const setValue = (key,value) => { if (value !== null && value !== undefined && form.elements[key]) { form.elements[key].value = value; filled.push(key); } };
-    setValue("unit_price",x.unit_price); setValue("freight",x.freight); setValue("tax_rate",x.tax_rate);
+    setValue("freight",x.freight); setValue("tax_rate",x.tax_rate);
     setValue("lead_days",x.lead_days); setValue("payment_days",x.payment_days);
+    if (parsedQuoteLineItems.length > 1) {
+      parsedQuoteLineItems.forEach((item,index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = item.description + " — " + Number(item.quantity).toLocaleString() + " " + item.unit + " @ ₦" + Number(item.unit_price).toLocaleString("en-NG") + "/" + item.price_unit;
+        linePicker.append(option);
+      });
+      lineLabel.hidden = false;
+      setValue("unit_price",parsedQuoteLineItems[0].unit_price);
+      filled.push("unit_price");
+    } else {
+      setValue("unit_price",x.unit_price);
+    }
     const selectedRequest = (dashboardData.requests || []).find(r => String(r.id) === String(form.elements.request_id.value));
     const normalizeUnit = value => ({kgs:"kg",kilogram:"kg",kilograms:"kg",pcs:"piece",pieces:"piece",units:"unit",ton:"tonne",tons:"tonne",mt:"tonne"}[String(value || "").toLowerCase()] || String(value || "").toLowerCase());
-    const quantityNote = x.quantity !== null
-      ? (selectedRequest ? (Math.abs(Number(selectedRequest.quantity)-Number(x.quantity)) < 0.000001 && normalizeUnit(selectedRequest.unit) === normalizeUnit(x.unit)
+    const chosen = parsedQuoteLineItems[0] || null;
+    const supplierQuantity = chosen ? chosen.quantity : x.quantity;
+    const supplierUnit = chosen ? chosen.unit : x.unit;
+    const quantityNote = supplierQuantity !== null && supplierQuantity !== undefined
+      ? (selectedRequest ? (Math.abs(Number(selectedRequest.quantity)-Number(supplierQuantity)) < 0.000001 && normalizeUnit(selectedRequest.unit) === normalizeUnit(supplierUnit)
         ? "Supplier quantity matches the selected request."
-        : "Supplier states " + Number(x.quantity).toLocaleString() + " " + x.unit + "; selected request is " + Number(selectedRequest.quantity).toLocaleString() + " " + selectedRequest.unit + ". Confirm the discrepancy manually.")
-        : "Supplier quantity detected: " + Number(x.quantity).toLocaleString() + " " + x.unit + ". Select the correct purchase request to compare.")
+        : "Supplier states " + Number(supplierQuantity).toLocaleString() + " " + supplierUnit + "; selected request is " + Number(selectedRequest.quantity).toLocaleString() + " " + selectedRequest.unit + ". Confirm the discrepancy manually.")
+        : "Supplier quantity detected: " + Number(supplierQuantity).toLocaleString() + " " + supplierUnit + ". Select the correct purchase request to compare.")
       : "No supplier quantity was confidently recognised.";
     const lines = [];
-    if (x.unit_price !== null) lines.push("Unit price: ₦" + Number(x.unit_price).toLocaleString("en-NG"));
+    if (x.line_items?.length > 1) lines.push(x.line_items.length + " separately priced material lines detected. Choose the matching line above; save each item against its own purchase request.");
+    if (x.unit_price !== null && !chosen) lines.push("Unit price: ₦" + Number(x.unit_price).toLocaleString("en-NG"));
     if (x.freight !== null) lines.push("Freight: ₦" + Number(x.freight).toLocaleString("en-NG"));
     if (x.tax_rate !== null) lines.push("Tax: " + x.tax_rate + "%");
     if (x.lead_days !== null) lines.push("Lead time: " + x.lead_days + " days");
     if (x.payment_days !== null) lines.push("Payment period: " + x.payment_days + " days");
-    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + ". The form stores payment periods in days, so verify the day-based field and retain this split in the original message.");
+    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + ". Verify the day-based field and retain the original terms in the source message.");
     lines.push(quantityNote);
-    review.innerHTML = "<strong>Extraction review</strong><ul>" + lines.map(line => "<li>" + escapeHtml(line) + "</li>").join("") + "</ul><small>Supplier quantity is checked against the purchase request, never used to overwrite the requirement. All extracted values remain editable.</small>";
+    review.innerHTML = "<strong>Extraction review</strong><ul>" + lines.map(line => "<li>" + escapeHtml(line) + "</li>").join("") + "</ul><small>Supplier quantities never overwrite requested quantities. Nothing is saved until you review and submit the quotation.</small>";
     review.hidden = false;
     status.textContent = filled.length ? "Recognised " + filled.length + " form field(s). Please verify them." : "No supported price or delivery fields found. Enter the values manually.";
   } catch(error) { status.textContent = error.message; }
   finally { button.disabled = false; button.textContent = "✦ Parse message"; }
+});
+document.getElementById("quoteExtractedLineItem").addEventListener("change", event => {
+  const item = parsedQuoteLineItems[Number(event.target.value)];
+  if (!item) return;
+  document.getElementById("quoteForm").elements.unit_price.value = item.unit_price;
+  document.getElementById("quoteParseStatus").textContent = "Selected " + item.description + ". Confirm the purchase request and quantity before saving.";
 });
 document.getElementById("quoteForm").addEventListener("submit", async (e) => {
   e.preventDefault();

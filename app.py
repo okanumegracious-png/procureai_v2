@@ -80,6 +80,17 @@ def init_db():
                 db.execute(f"ALTER TABLE orders ADD COLUMN {column} {definition}")
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_quote_id_unique ON orders(quote_id) WHERE quote_id IS NOT NULL")
 
+        # Technical compliance is reviewed by an administrator, never assumed from a supplier message.
+        quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)").fetchall()}
+        for column, definition in {
+            "technical_status": "TEXT NOT NULL DEFAULT 'pending'",
+            "technical_notes": "TEXT NOT NULL DEFAULT ''",
+            "technical_reviewed_by": "TEXT NOT NULL DEFAULT ''",
+            "technical_reviewed_at": "TEXT"
+        }.items():
+            if column not in quote_columns:
+                db.execute(f"ALTER TABLE quotes ADD COLUMN {column} {definition}")
+
         # Add structured seller fields while preserving every existing supplier row.
         supplier_columns = {row["name"] for row in db.execute("PRAGMA table_info(suppliers)").fetchall()}
         for column, definition in {
@@ -273,6 +284,11 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         "lead_days": int(o["lead_days"]), "payment_days": int(o["payment_days"]),
         "rating": float(o["rating"] or 0), "on_time_percent": float(o["on_time"] or 0),
         "seller_status": o["supplier_status"], "feasible": bool(o["feasible"]),
+        "award_eligible": bool(o.get("award_eligible")),
+        "budget_feasibility": o.get("budget_feasibility", "not_configured"),
+        "budget": float(o.get("budget") or 0),
+        "available_budget": o.get("available_budget"),
+        "technical_feasibility": o.get("technical_feasibility", "pending"),
         "issues": o["issues"], "quotation_note": o["note"] or ""
     } for o in offers]
     fallback_reviews = []
@@ -299,6 +315,21 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         if str(o["seller_status"] or "").lower() not in ("verified", "active"):
             gaps.append("Seller is not currently marked Active or Verified in the supplier register.")
             improvements.append("Complete identity, capability, references and bank-account verification before award.")
+        if o["budget_feasibility"] == "over_budget":
+            gaps.append("Estimated total exceeds the remaining project budget.")
+            improvements.append("Seek a revised price, reduce scope only with buyer approval, or obtain an authorised budget revision.")
+        elif o["budget_feasibility"] == "not_configured":
+            gaps.append("Project budget has not been configured, so budget feasibility cannot be confirmed.")
+            improvements.append("Record the approved project budget before progressing to award.")
+        if o["technical_feasibility"] == "pending":
+            gaps.append("Technical compliance has not been reviewed against the request specification.")
+            improvements.append("Compare datasheets, ratings, standards, scope and deviations, then record the technical review.")
+        elif o["technical_feasibility"] == "deviation":
+            gaps.append("Supplier quotation contains technical deviations.")
+            improvements.append("Obtain written buyer acceptance or request a compliant alternative.")
+        elif o["technical_feasibility"] == "non_compliant":
+            gaps.append("Supplier quotation is technically non-compliant.")
+            improvements.append("Do not award this offer; source a technically compliant alternative.")
         if o["freight"] < 0:
             gaps.append("Freight value needs correction.")
             improvements.append("Resubmit a complete landed-cost breakdown.")
@@ -307,23 +338,23 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
             "strengths": strengths or ["Quotation captured for review."],
             "gaps": gaps or ["No material issue identified by the current rule checks; confirm specifications and quote validity."],
             "improvements": improvements or ["Confirm technical compliance, stock, warranty, quote validity and delivery commitments."],
-            "risk_level": "high" if (not o["feasible"] or str(o["seller_status"] or "").lower() not in ("verified", "active")) else ("medium" if gaps else "low"),
+            "risk_level": "high" if (not o["award_eligible"] or str(o["seller_status"] or "").lower() not in ("verified", "active")) else ("medium" if gaps else "low"),
             "next_step": "Request a revised quotation / clarification" if gaps else "Proceed to technical and commercial due diligence"
         })
 
-    eligible = [o for o in offers if o["feasible"] and str(o["supplier_status"] or "").lower() in ("verified", "active")]
+    eligible = [o for o in offers if o.get("award_eligible")]
     if not offers:
         action = "Source additional quotations"
         reason = "No quotations have been submitted for this request yet. The review can still be completed as a sourcing-gap assessment."
         solution = "Invite suitable suppliers, request comparable itemised quotations, and confirm specifications, delivery lead time, warranty and payment terms."
     elif eligible:
         action = "Proceed to human review"
-        reason = "At least one offer passes the current delivery and minimum-rating checks. This is a shortlist recommendation, not an award decision."
-        solution = "Validate the recommended seller's technical compliance, stock, quotation validity, references and final landed cost before approval."
+        reason = "At least one offer passes the recorded budget, delivery, supplier-verification and technical-compliance gates. This is a shortlist recommendation, not an award decision."
+        solution = "Confirm stock, quotation validity, warranty, references and final landed cost, then obtain human approval before any commitment."
     else:
         action = "Do not award yet — seek revisions or alternatives"
-        reason = "No submitted offer currently meets both the basic feasibility checks and seller-status requirements. The analysis is still complete and identifies corrective actions."
-        solution = "Ask the strongest candidates to revise delivery, price or supporting evidence; invite additional sellers; or split the requirement into feasible lots if operationally safe."
+        reason = "No submitted offer currently passes all recorded budget, delivery, supplier-verification and technical-compliance gates. The analysis is still complete and identifies corrective actions."
+        solution = "Ask the strongest candidates to revise price or delivery, complete technical review, resolve budget gaps, invite additional verified sellers, or split the requirement into feasible lots if operationally safe."
     judgement = {
         "engine": "rules_fallback", "overall_assessment": reason,
         "recommended_action": action, "solution": solution,
@@ -349,6 +380,8 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
                 "specific improvements and next step. Suggest alternatives only from unquoted_supplier_options, clearly "
                 "stating that they have not submitted a bid and require verification. Recommend a solution such as "
                 "clarification, revised bid, phased delivery, split lots only where safe, re-sourcing, or no-award. "
+                "Treat budget_feasibility and technical_feasibility as hard evidence-based gates; never call an offer award-eligible "
+                "when the budget is unconfigured/overrun or technical compliance is pending, deviating or non-compliant. "
                 "Return JSON with keys overall_assessment, recommended_action, solution, seller_reviews (array with "
                 "quote_id, seller, strengths (array), gaps (array), improvements (array), risk_level, next_step), "
                 "alternative_recommendations (array of objects with supplier_id, supplier, reason, verification_note), "
@@ -391,10 +424,98 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
                     safe_alternatives.append(known_alternatives[candidate_id])
             ai["alternative_recommendations"] = safe_alternatives
             ai.setdefault("caveat", judgement["caveat"])
+            if offers and not eligible:
+                ai["recommended_action"] = "Do not award yet — resolve budget, delivery, supplier and technical checks"
+                ai["overall_assessment"] = "No submitted quotation currently passes every mandatory procurement gate. AI commentary is advisory; no offer is award-eligible until the recorded checks pass."
+                ai["solution"] = "Resolve the specific gaps listed for each seller, record technical evidence, confirm the project budget and re-run the analysis before generating a purchase order."
             return ai
     except Exception as exc:
         print("Bid AI judgement unavailable; using rules fallback:", type(exc).__name__)
     return judgement
+
+
+def _request_project_budget_context(request_id):
+    """Return project budget and existing approved/pending commitments for one request."""
+    linked = one("""SELECT p.project_id FROM project_purchase_requests pr
+        JOIN projects p ON p.project_id=pr.project_id WHERE pr.request_id=?""", (request_id,))
+    if not linked:
+        return {"project_id": None, "budget": 0.0, "approved_commitments": 0.0,
+                "pending_commitments": 0.0, "unpriced_open_requests": 0, "available_budget": None}
+    budget = 0.0
+    if one("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='project_intake'"):
+        intake = one("SELECT estimated_budget FROM project_intake WHERE project_id=?", (linked["project_id"],))
+        budget = float((intake or {}).get("estimated_budget") or 0)
+    approved = one("""SELECT COALESCE(SUM(o.total),0) AS amount FROM orders o
+        JOIN project_purchase_requests pr ON pr.request_id=o.request_id
+        WHERE pr.project_id=? AND o.request_id<>? AND o.status='Approved'""",
+        (linked["project_id"], request_id))
+    pending = one("""SELECT COALESCE(SUM(o.total),0) AS amount FROM orders o
+        JOIN project_purchase_requests pr ON pr.request_id=o.request_id
+        WHERE pr.project_id=? AND o.request_id<>? AND o.status='Pending approval'""",
+        (linked["project_id"], request_id))
+    approved_total = float((approved or {}).get("amount") or 0)
+    pending_total = float((pending or {}).get("amount") or 0)
+    unpriced = one("""SELECT COUNT(*) AS amount FROM project_purchase_requests pr
+        JOIN requests r ON r.id=pr.request_id
+        WHERE pr.project_id=? AND r.id<>? AND r.status='Open'
+          AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.request_id=r.id)
+          AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.request_id=r.id)""",
+        (linked["project_id"], request_id))
+    unpriced_count = int((unpriced or {}).get("amount") or 0)
+    available = max(0.0, budget - approved_total - pending_total) if budget > 0 else None
+    return {"project_id": linked["project_id"], "budget": budget,
+            "approved_commitments": approved_total, "pending_commitments": pending_total,
+            "unpriced_open_requests": unpriced_count, "available_budget": available}
+
+
+def assess_offer_feasibility(*, estimated_total, days_left, lead_days, supplier_rating,
+                             supplier_status, technical_status, budget_context):
+    """Separate budget, delivery, supplier and technical gates; never infer technical compliance."""
+    issues = []
+    budget = float(budget_context.get("budget") or 0)
+    available = budget_context.get("available_budget")
+    if budget <= 0:
+        budget_status = "not_configured"
+        issues.append("No project budget is configured; obtain budget confirmation before award.")
+    elif float(estimated_total) <= float(available or 0):
+        budget_status = "within_budget"
+    else:
+        budget_status = "over_budget"
+        issues.append("This offer exceeds the project's remaining budget after other approved and pending commitments.")
+    unpriced_open = int(budget_context.get("unpriced_open_requests") or 0)
+    if unpriced_open:
+        issues.append(f"{unpriced_open} other open project request(s) have no quotation or purchase-order value yet; the remaining budget may be overstated.")
+    delivery_ok = int(lead_days) <= int(days_left)
+    if not delivery_ok:
+        issues.append(f"Delivery is {int(lead_days) - int(days_left)} day(s) later than the remaining {int(days_left)}-day window.")
+    rating = float(supplier_rating or 0)
+    rating_ok = rating >= 2.5
+    if rating < 2.5:
+        issues.append("Seller rating is below the minimum 2.5/5 analysis threshold.")
+    elif rating < 3.5:
+        issues.append("Seller rating is below the preferred 3.5/5 threshold.")
+    seller_status = str(supplier_status or "").strip().casefold()
+    supplier_ok = seller_status in ("verified", "active")
+    if not supplier_ok:
+        issues.append("Seller verification is incomplete.")
+    technical = str(technical_status or "pending").strip().casefold()
+    technical_ok = technical == "compliant"
+    if technical == "pending":
+        issues.append("Technical compliance has not been reviewed against the requested specification.")
+    elif technical == "deviation":
+        issues.append("The supplier quotation contains technical deviations requiring buyer resolution.")
+    elif technical == "non_compliant":
+        issues.append("The supplier quotation is marked technically non-compliant.")
+    commercially_feasible = delivery_ok and rating_ok and budget_status == "within_budget"
+    award_eligible = commercially_feasible and supplier_ok and technical_ok
+    return {
+        "budget_feasibility": budget_status, "budget": budget,
+        "available_budget": available,
+        "delivery_feasibility": "on_time" if delivery_ok else "late",
+        "supplier_eligibility": "eligible" if supplier_ok else "verification_required",
+        "technical_feasibility": technical, "commercial_feasibility": "pass" if commercially_feasible else "review_required",
+        "feasible": commercially_feasible, "award_eligible": award_eligible, "issues": issues,
+    }
 
 
 def analyse_request(request_id):
@@ -407,6 +528,7 @@ def analyse_request(request_id):
     results = []
     required = date.fromisoformat(req["required_by"])
     days_left = max(0, (required-date.today()).days)
+    budget_context = _request_project_budget_context(request_id)
     for q in offers:
         qty = D(str(req["quantity"]))
         price = D(str(q["unit_price"]))
@@ -417,27 +539,18 @@ def analyse_request(request_id):
         reliability_risk = price * D("0.05") * (D("1") - D(str(q["on_time"])) / D("100"))
         unit_tco = price + tax + financing + delay_risk + reliability_risk
         total = unit_tco * qty + D(str(q["freight"]))
-        seller_status = str(q["supplier_status"] or "").strip().lower()
-        issues = []
-        if int(q["lead_days"]) > days_left:
-            issues.append(f"Delivery is {int(q['lead_days']) - days_left} day(s) later than the remaining {days_left}-day window.")
-        if float(q["rating"] or 0) < 2.5:
-            issues.append("Seller rating is below the minimum 2.5/5 threshold.")
-        elif float(q["rating"] or 0) < 3.5:
-            issues.append("Seller rating is below the preferred 3.5/5 threshold.")
-        if float(q["on_time"] or 0) < 80:
-            issues.append("On-time performance is below 80%.")
-        if seller_status not in ("verified", "active") or "[fictional demo]" in str(q["supplier"]).lower():
-            issues.append("Seller verification is incomplete.")
-        feasible = int(q["lead_days"]) <= days_left and int(float(q["rating"] or 0) * 100) >= 250
+        assessment = assess_offer_feasibility(
+            estimated_total=float(total), days_left=days_left, lead_days=q["lead_days"],
+            supplier_rating=q["rating"], supplier_status=q["supplier_status"],
+            technical_status=q.get("technical_status", "pending"), budget_context=budget_context,
+        )
         results.append({
             **q, "unit_tco": float(unit_tco), "estimated_total": float(total),
-            "feasible": feasible, "award_eligible": feasible and seller_status in ("verified", "active") and "[fictional demo]" not in str(q["supplier"]).lower(),
-            "days_left": days_left, "issues": issues,
+            **assessment, "days_left": days_left,
             "components": {"base":float(price),"tax":float(tax),"financing":float(financing),
                            "delay_risk":float(delay_risk),"reliability_risk":float(reliability_risk)}
         })
-    results.sort(key=lambda x: (not x["feasible"], x["estimated_total"]))
+    results.sort(key=lambda x: (not x["award_eligible"], not x["feasible"], x["estimated_total"]))
 
     quoted_supplier_ids = {int(o["supplier_id"]) for o in offers}
     all_suppliers = rows("""SELECT id,name,city,rating,on_time,status,services,phone,email,website,address
@@ -451,7 +564,6 @@ def analyse_request(request_id):
         services = str(seller["services"] or "").lower()
         name_city = f"{seller['name']} {seller['city']}".lower()
         matches = [word for word in keywords if word in services or word in name_city]
-        # If service descriptions do not share exact terms, retain local candidates as unverified leads.
         local_match = bool(req["site"] and any(part.strip().lower() in str(seller["city"] or "").lower()
                           for part in str(req["site"]).replace(",", " ").split() if len(part.strip()) > 3))
         if matches or local_match:
@@ -473,12 +585,12 @@ def analyse_request(request_id):
     return {
         "request": req, "offers": results,
         "recommendation": eligible[0] if eligible else None,
-        "preferred_offer": preferred,
-        "decision_support": judgement,
-        "alternatives": alternatives,
+        "preferred_offer": preferred, "budget_context": budget_context,
+        "decision_support": judgement, "alternatives": alternatives,
         "analysis_status": "completed",
-        "disclaimer": "Decision support only. Confirm specifications, stock, certificates, quote validity, references and commercial terms. Human approval is required before any purchase commitment."
+        "disclaimer": "Decision support only. Budget, delivery, supplier verification and technical compliance are separate checks. Technical compliance must be recorded against the requested specification. Confirm stock, certificates, quote validity, references and commercial terms. Human approval is required before any purchase commitment."
     }
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProcureAI/1.0"
