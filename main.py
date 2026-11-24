@@ -61,6 +61,9 @@ def _init_auth_store():
             expires_at INTEGER NOT NULL, created_at TEXT NOT NULL
         )""")
         db.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (int(time.time()),))
+        db.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
+            ip_hash TEXT PRIMARY KEY, attempts INTEGER NOT NULL, window_started INTEGER NOT NULL
+        )""")
 
 def _password_matches(password: str) -> bool:
     encoded = os.getenv("PROCUREAI_ADMIN_PASSWORD_HASH", "")
@@ -239,8 +242,21 @@ def login(payload: LoginPayload, request: Request, response: Response):
     configured_username = os.getenv("PROCUREAI_ADMIN_USERNAME", "").strip()
     if not configured_username or not os.getenv("PROCUREAI_ADMIN_PASSWORD_HASH"):
         raise HTTPException(status_code=503, detail="Administrator login is not configured")
+    client_ip = request.client.host if request.client else "unknown"
+    ip_hash = hashlib.sha256(client_ip.encode("utf-8")).hexdigest()
+    now_epoch = int(time.time())
+    with connect() as db:
+        attempt = db.execute("SELECT attempts,window_started FROM auth_login_attempts WHERE ip_hash=?", (ip_hash,)).fetchone()
+        if attempt and now_epoch - attempt["window_started"] < 900 and attempt["attempts"] >= 5:
+            raise HTTPException(status_code=429, detail="Too many sign-in attempts. Wait 15 minutes and try again.")
+        if not attempt or now_epoch - attempt["window_started"] >= 900:
+            db.execute("INSERT INTO auth_login_attempts(ip_hash,attempts,window_started) VALUES(?,0,?) ON CONFLICT(ip_hash) DO UPDATE SET attempts=0,window_started=excluded.window_started", (ip_hash, now_epoch))
     if not hmac.compare_digest(payload.username, configured_username) or not _password_matches(payload.password):
+        with connect() as db:
+            db.execute("INSERT INTO auth_login_attempts(ip_hash,attempts,window_started) VALUES(?,1,?) ON CONFLICT(ip_hash) DO UPDATE SET attempts=attempts+1", (ip_hash, now_epoch))
         raise HTTPException(status_code=401, detail="Incorrect username or password")
+    with connect() as db:
+        db.execute("DELETE FROM auth_login_attempts WHERE ip_hash=?", (ip_hash,))
     token = secrets.token_urlsafe(48)
     csrf = secrets.token_urlsafe(32)
     expires = int(time.time()) + SESSION_TTL_SECONDS
