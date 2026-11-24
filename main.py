@@ -534,6 +534,10 @@ class DashboardOrderPayload(BaseModel):
     request_id: int
     supplier_id: int
 
+class AnalysisPurchaseOrderPayload(BaseModel):
+    quote_id: int = Field(gt=0)
+
+
 
 class DashboardDecisionPayload(BaseModel):
     action: str = Field(pattern="^(approve|reject)$")
@@ -648,6 +652,64 @@ def dashboard_create_quote(payload: DashboardQuotePayload):
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,
              payload.lead_days,payload.payment_days,payload.note,datetime.utcnow().isoformat()))
     return {"success":True,"id":cur.lastrowid}
+
+
+@app.post("/api/orders/from-analysis", status_code=201)
+def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, request: Request):
+    now = datetime.utcnow().isoformat()
+    with dashboard_module.connect() as db:
+        quote = db.execute("""SELECT q.*, s.name AS supplier_name, s.status AS supplier_status,
+            s.rating AS supplier_rating, r.code AS request_code, r.material, r.category,
+            r.quantity, r.unit, r.site, r.required_by, r.status AS request_status
+            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
+            JOIN requests r ON r.id=q.request_id WHERE q.id=?""",
+            (payload.quote_id,)).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        supplier_status = (quote["supplier_status"] or "").strip().casefold()
+        if supplier_status not in {"verified", "active"} or "[fictional demo]" in quote["supplier_name"].casefold():
+            raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation. Verify the seller first.")
+        if quote["request_status"] != "Open":
+            raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
+        existing = db.execute("SELECT code,status FROM orders WHERE quote_id=?", (payload.quote_id,)).fetchone()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"A purchase order proposal ({existing['code']}) already exists for this quotation.")
+        qty, unit_price = Decimal(str(quote["quantity"])), Decimal(str(quote["unit_price"]))
+        subtotal = qty * unit_price
+        tax = subtotal * Decimal(str(quote["tax_rate"])) / Decimal("100")
+        freight = Decimal(str(quote["freight"]))
+        total = subtotal + tax + freight
+        analysis = dashboard_module.analyse_request(int(quote["request_id"]))
+        analysed_offer = next((offer for offer in analysis["offers"] if int(offer["id"]) == payload.quote_id), None)
+        analysis_estimate = Decimal(str(analysed_offer["estimated_total"])) if analysed_offer else total
+        reasons = ["Generated from quotation analysis; human approval required before any purchase commitment."]
+        if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold.")
+        if float(quote["supplier_rating"] or 0) < 3.5: reasons.append("Supplier rating is below the preferred threshold.")
+        if int(quote["lead_days"]) > max(0, (date.fromisoformat(quote["required_by"]) - date.today()).days):
+            reasons.append("Quoted lead time misses the requested delivery date.")
+        count = db.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+        code = f"PO-{datetime.utcnow():%y%m%d}-{count+1:03d}"
+        cur = db.execute("""INSERT INTO orders
+            (code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,
+             required_by,created_at,decision_note,quote_id,analysis_estimate,lead_days,payment_days)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (code, quote["supplier_id"], quote["request_id"], float(qty), float(unit_price),
+             float(freight), float(tax), float(total), "Pending approval", quote["required_by"],
+             now, "; ".join(reasons), payload.quote_id, float(analysis_estimate),
+             int(quote["lead_days"]), int(quote["payment_days"])))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state, "auth_user", ""), "create_from_analysis", "purchase_order",
+             str(cur.lastrowid), json.dumps({"po_number": code, "quote_id": payload.quote_id,
+             "request_code": quote["request_code"], "supplier": quote["supplier_name"],
+             "commercial_total": float(total), "analysis_estimate": float(analysis_estimate)}), now))
+    return {"success": True, "id": cur.lastrowid, "code": code,
+            "status": "Pending approval", "total": float(total),
+            "analysis_estimate": float(analysis_estimate), "reasons": reasons}
 
 
 @app.post("/api/orders", status_code=201)
