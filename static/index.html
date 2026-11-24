@@ -208,6 +208,7 @@
   <textarea id="quoteSourceMessage" name="source_message" rows="4" maxlength="12000" placeholder="Example: I can supply 15,000kg of T10 at ₦780 per kg. Delivery in 4 days. Transport is ₦45,000. Payment is 70% upfront."></textarea>
   <div class="quote-magic-actions"><span id="quoteParseStatus" role="status" aria-live="polite">Review all extracted values before saving.</span><button type="button" class="btn btn-secondary" id="parseQuoteMessage">✦ Parse message</button></div>
   <div id="quoteParseReview" class="quote-parse-review" hidden></div>
+  <label id="quoteExtractedLineItemLabel" class="quote-extracted-line-label" hidden>Supplier message contains multiple priced items — choose the line matching this purchase request<select id="quoteExtractedLineItem" aria-label="Choose extracted quotation line item"></select></label>
 </section>
 <label class="wide">Purchase request<select name="request_id" id="quoteRequest" required></select></label>
 <label class="wide">Supplier<select name="supplier_id" id="quoteSupplier" required></select></label>
