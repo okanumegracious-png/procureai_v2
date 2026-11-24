@@ -1004,10 +1004,32 @@ document.querySelectorAll("[data-close]").forEach(btn => {
     }
   });
 });
+const requestUnitSelect = document.getElementById("requestUnit");
+const requestCustomUnitWrap = document.getElementById("requestCustomUnitWrap");
+const requestCustomUnitInput = document.getElementById("requestCustomUnit");
+function syncRequestCustomUnit() {
+  const custom = requestUnitSelect?.value === "other";
+  if (requestCustomUnitWrap) requestCustomUnitWrap.hidden = !custom;
+  if (requestCustomUnitInput) requestCustomUnitInput.required = custom;
+}
+requestUnitSelect?.addEventListener("change", syncRequestCustomUnit);
+document.getElementById("requestForm")?.addEventListener("reset", () => {
+  requestCustomUnitWrap?.setAttribute("hidden", "");
+  if (requestCustomUnitInput) requestCustomUnitInput.required = false;
+});
 document.getElementById("requestForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const formData = new FormData(e.target);
   const payload = Object.fromEntries(formData.entries());
+  if (payload.unit === "other") {
+    payload.unit = (payload.custom_unit || "").trim();
+    if (!payload.unit) {
+      showToast("Enter the unit of measurement for this request.", true);
+      requestCustomUnitInput?.focus();
+      return;
+    }
+  }
+  delete payload.custom_unit;
   const projectId = payload.project_id || "";
   if (!projectId) {
     showToast("Select a project workspace before creating a purchase request.", true);
