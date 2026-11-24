@@ -1018,6 +1018,30 @@ def dashboard_update_supplier(supplier_id: int, payload: DashboardSupplierPayloa
     return {"success": True, "supplier_id": supplier_id, "status": payload.status}
 
 
+@app.delete("/api/suppliers/{supplier_id}")
+def dashboard_delete_supplier(supplier_id: int, request: Request):
+    with dashboard_module.connect() as db:
+        current = db.execute("SELECT id,name,city FROM suppliers WHERE id=?", (supplier_id,)).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Seller not found")
+        # Preserve procurement history: a supplier with quotations or purchase orders cannot be hard-deleted.
+        quote_count = db.execute("SELECT COUNT(*) FROM quotes WHERE supplier_id=?", (supplier_id,)).fetchone()[0]
+        if quote_count:
+            order_count = db.execute("""SELECT COUNT(*) FROM orders o
+                JOIN quotes q ON q.id=o.quote_id WHERE q.supplier_id=?""", (supplier_id,)).fetchone()[0]
+            raise HTTPException(status_code=409, detail=f"This seller has {quote_count} linked quotation(s) and {order_count} purchase-order record(s). Keep the seller record to preserve procurement history.")
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state, "auth_user", ""), "delete", "supplier", str(supplier_id),
+             json.dumps({"name": current["name"], "city": current["city"]}), _now()))
+        db.execute("DELETE FROM suppliers WHERE id=?", (supplier_id,))
+    return {"success": True, "deleted_supplier": current["name"]}
+
+
 @app.get("/api/quotes")
 def dashboard_quotes():
     quotes = dashboard_module.rows("""SELECT q.*,s.name supplier,s.city supplier_city,
