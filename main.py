@@ -1089,6 +1089,9 @@ class DashboardQuotePayload(BaseModel):
     tax_rate: float = Field(ge=0, le=100)
     lead_days: int = Field(ge=0)
     payment_days: int = Field(ge=0)
+    technical_status: str = Field(default="not_assessed", pattern="^(not_assessed|compliant|deviation)$")
+    stock_status: str = Field(default="not_confirmed", pattern="^(not_confirmed|available|partial|unavailable)$")
+    compliance_status: str = Field(default="pending", pattern="^(pending|verified|not_applicable|non_compliant)$")
     note: str = ""
 
 
@@ -1399,10 +1402,11 @@ def dashboard_create_quote(payload: DashboardQuotePayload):
             raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Supplier not found")
-        cur = db.execute("""INSERT INTO quotes(supplier_id,request_id,unit_price,freight,tax_rate,lead_days,payment_days,note,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?)""",
+        cur = db.execute("""INSERT INTO quotes(supplier_id,request_id,unit_price,freight,tax_rate,lead_days,payment_days,technical_status,stock_status,compliance_status,note,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,
-             payload.lead_days,payload.payment_days,payload.note,datetime.utcnow().isoformat()))
+             payload.lead_days,payload.payment_days,payload.technical_status,payload.stock_status,
+             payload.compliance_status,payload.note,datetime.utcnow().isoformat()))
     return {"success":True,"id":cur.lastrowid}
 
 
@@ -1417,9 +1421,9 @@ def dashboard_update_quote(quote_id: int, payload: DashboardQuotePayload, reques
             raise HTTPException(status_code=409, detail="This quotation already has a purchase-order proposal. It is locked to preserve approval and audit history.")
         if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone(): raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone(): raise HTTPException(status_code=404, detail="Supplier not found")
-        before = {key: current[key] for key in ("supplier_id","request_id","unit_price","freight","tax_rate","lead_days","payment_days","note")}
-        db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,note=? WHERE id=?""",
-            (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,payload.note,quote_id))
+        before = {key: current[key] for key in ("supplier_id","request_id","unit_price","freight","tax_rate","lead_days","payment_days","technical_status","stock_status","compliance_status","note")}
+        db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,technical_status=?,stock_status=?,compliance_status=?,note=? WHERE id=?""",
+            (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,payload.technical_status,payload.stock_status,payload.compliance_status,payload.note,quote_id))
         _ensure_supplier_request_email_table(db)
         email_invalidated = db.execute("DELETE FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).rowcount > 0
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
