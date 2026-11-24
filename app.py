@@ -286,6 +286,8 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         "seller_status": o["supplier_status"], "feasible": bool(o["feasible"]),
         "award_eligible": bool(o.get("award_eligible")),
         "budget_feasibility": o.get("budget_feasibility", "not_configured"),
+        "budget": float(o.get("budget") or 0),
+        "available_budget": o.get("available_budget"),
         "technical_feasibility": o.get("technical_feasibility", "pending"),
         "issues": o["issues"], "quotation_note": o["note"] or ""
     } for o in offers]
@@ -336,7 +338,7 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
             "strengths": strengths or ["Quotation captured for review."],
             "gaps": gaps or ["No material issue identified by the current rule checks; confirm specifications and quote validity."],
             "improvements": improvements or ["Confirm technical compliance, stock, warranty, quote validity and delivery commitments."],
-            "risk_level": "high" if (not o["feasible"] or str(o["seller_status"] or "").lower() not in ("verified", "active")) else ("medium" if gaps else "low"),
+            "risk_level": "high" if (not o["award_eligible"] or str(o["seller_status"] or "").lower() not in ("verified", "active")) else ("medium" if gaps else "low"),
             "next_step": "Request a revised quotation / clarification" if gaps else "Proceed to technical and commercial due diligence"
         })
 
@@ -434,7 +436,7 @@ def _request_project_budget_context(request_id):
         JOIN projects p ON p.project_id=pr.project_id WHERE pr.request_id=?""", (request_id,))
     if not linked:
         return {"project_id": None, "budget": 0.0, "approved_commitments": 0.0,
-                "pending_commitments": 0.0, "available_budget": None}
+                "pending_commitments": 0.0, "unpriced_open_requests": 0, "available_budget": None}
     budget = 0.0
     if one("SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name='project_intake'"):
         intake = one("SELECT estimated_budget FROM project_intake WHERE project_id=?", (linked["project_id"],))
@@ -449,10 +451,17 @@ def _request_project_budget_context(request_id):
         (linked["project_id"], request_id))
     approved_total = float((approved or {}).get("amount") or 0)
     pending_total = float((pending or {}).get("amount") or 0)
+    unpriced = one("""SELECT COUNT(*) AS amount FROM project_purchase_requests pr
+        JOIN requests r ON r.id=pr.request_id
+        WHERE pr.project_id=? AND r.id<>? AND r.status='Open'
+          AND NOT EXISTS (SELECT 1 FROM quotes q WHERE q.request_id=r.id)
+          AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.request_id=r.id)""",
+        (linked["project_id"], request_id))
+    unpriced_count = int((unpriced or {}).get("amount") or 0)
     available = max(0.0, budget - approved_total - pending_total) if budget > 0 else None
     return {"project_id": linked["project_id"], "budget": budget,
             "approved_commitments": approved_total, "pending_commitments": pending_total,
-            "available_budget": available}
+            "unpriced_open_requests": unpriced_count, "available_budget": available}
 
 
 def assess_offer_feasibility(*, estimated_total, days_left, lead_days, supplier_rating,
@@ -469,6 +478,9 @@ def assess_offer_feasibility(*, estimated_total, days_left, lead_days, supplier_
     else:
         budget_status = "over_budget"
         issues.append("This offer exceeds the project's remaining budget after other approved and pending commitments.")
+    unpriced_open = int(budget_context.get("unpriced_open_requests") or 0)
+    if unpriced_open:
+        issues.append(f"{unpriced_open} other open project request(s) have no quotation or purchase-order value yet; the remaining budget may be overstated.")
     delivery_ok = int(lead_days) <= int(days_left)
     if not delivery_ok:
         issues.append(f"Delivery is {int(lead_days) - int(days_left)} day(s) later than the remaining {int(days_left)}-day window.")
@@ -490,15 +502,15 @@ def assess_offer_feasibility(*, estimated_total, days_left, lead_days, supplier_
         issues.append("The supplier quotation contains technical deviations requiring buyer resolution.")
     elif technical == "non_compliant":
         issues.append("The supplier quotation is marked technically non-compliant.")
-    commercially_feasible = delivery_ok and rating_ok and budget_status != "over_budget"
-    award_eligible = commercially_feasible and supplier_ok and technical_ok and budget_status != "not_configured"
+    commercially_feasible = delivery_ok and rating_ok and budget_status == "within_budget"
+    award_eligible = commercially_feasible and supplier_ok and technical_ok
     return {
         "budget_feasibility": budget_status, "budget": budget,
         "available_budget": available,
         "delivery_feasibility": "on_time" if delivery_ok else "late",
         "supplier_eligibility": "eligible" if supplier_ok else "verification_required",
-        "technical_feasibility": technical, "feasible": commercially_feasible,
-        "award_eligible": award_eligible, "issues": issues,
+        "technical_feasibility": technical, "commercial_feasibility": "pass" if commercially_feasible else "review_required",
+        "feasible": commercially_feasible, "award_eligible": award_eligible, "issues": issues,
     }
 
 
