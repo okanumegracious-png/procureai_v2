@@ -119,6 +119,13 @@ def one(sql, args=()):
 def dashboard():
     req = rows("SELECT * FROM requests ORDER BY id DESC")
     suppliers = rows("SELECT * FROM suppliers ORDER BY rating DESC")
+    for supplier in suppliers:
+        supplier["is_demo"] = str(supplier.get("contact", "")).lower().endswith(".example")
+    recent_quotes = rows("""SELECT q.*,s.name supplier,s.contact,r.code request_code,r.material
+            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
+            JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC LIMIT 8""")
+    for quote in recent_quotes:
+        quote["is_demo"] = str(quote.get("contact", "")).lower().endswith(".example")
     orders = rows("""SELECT o.*,s.name supplier,r.material FROM orders o
                      JOIN suppliers s ON s.id=o.supplier_id JOIN requests r ON r.id=o.request_id
                      ORDER BY o.id DESC""")
@@ -129,9 +136,7 @@ def dashboard():
         "metrics": {"open_requests": open_requests, "suppliers": len(suppliers),
                     "pending_approvals": pending, "approved_spend": round(total_spend,2)},
         "requests": req, "suppliers": suppliers, "orders": orders,
-        "recent_quotes": rows("""SELECT q.*,s.name supplier,r.code request_code,r.material
-            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
-            JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC LIMIT 8""")
+        "recent_quotes": recent_quotes
     }
 
 
