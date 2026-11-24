@@ -501,6 +501,10 @@ class QuotationSubmission(BaseModel):
     currency: str = "NGN"
     line_items: List[QuotationLineItem] = Field(min_length=1)
 
+class WorkflowTechnicalReviewPayload(BaseModel):
+    status: str = Field(pattern="^(pending|compliant|deviation|non_compliant)$")
+    notes: str = Field(default="", max_length=5000)
+
 
 class RecommendationRequest(BaseModel):
     project_id: str
@@ -932,6 +936,31 @@ def upload_quotation(payload: QuotationSubmission):
     return {"success": True, "quotation_id": qid, "total_amount": total, "currency": payload.currency}
 
 
+@app.post("/api/v1/workflows/quotations/{quotation_id}/technical-review", dependencies=[Depends(verify_api_key)])
+def review_workflow_quotation_technical_compliance(quotation_id: str, payload: WorkflowTechnicalReviewPayload):
+    now = _now()
+    notes = payload.notes.strip()
+    if payload.status in ("compliant", "deviation", "non_compliant") and len(notes) < 10:
+        raise HTTPException(status_code=422, detail="Record at least 10 characters describing specification checks, evidence or deviations.")
+    with connect() as db:
+        quote = db.execute("SELECT quotation_id FROM workflow_quotations WHERE quotation_id=?", (quotation_id,)).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        if db.execute("SELECT 1 FROM workflow_purchase_orders WHERE quotation_id=? LIMIT 1", (quotation_id,)).fetchone():
+            raise HTTPException(status_code=409, detail="This quotation is locked by a purchase-order proposal.")
+        db.execute("""UPDATE workflow_quotations SET technical_status=?,technical_notes=?,technical_reviewed_by=?,technical_reviewed_at=?
+            WHERE quotation_id=?""",
+            (payload.status, notes, "API administrator", now if payload.status != "pending" else None, quotation_id))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            ("API administrator", "technical_review", "workflow_quotation", quotation_id,
+             json.dumps({"status": payload.status, "notes": notes}), now))
+    return {"success": True, "quotation_id": quotation_id, "technical_status": payload.status,
+            "reviewed_by": "API administrator", "reviewed_at": now if payload.status != "pending" else None}
+
+
 @app.get("/api/v1/workflows/compare-offers/{project_id}", dependencies=[Depends(verify_api_key)])
 def compare_offers(project_id: str):
     with connect() as db:
@@ -979,6 +1008,8 @@ def create_award_proposal(quotation_id: str, requested_by: str = Form(...)):
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
         _require_buyer_confirmation(db, quote["project_id"])
+        if quote["technical_status"] != "compliant":
+            raise HTTPException(status_code=409, detail="Technical compliance must be reviewed and marked compliant before creating a purchase-order proposal.")
         db.execute("""INSERT INTO workflow_purchase_orders
             (po_number,project_id,quotation_id,supplier_id,total_amount,currency,status,requested_by,created_at)
             VALUES(?,?,?,?,?,?,'pending_approval',?,?)""",
@@ -991,11 +1022,15 @@ def decide_award(po_number: str, payload: AwardApprovalRequest):
     now = _now()
     status = "approved" if payload.action == "approve" else "rejected"
     with connect() as db:
-        pending = db.execute("SELECT * FROM workflow_purchase_orders WHERE po_number=? AND status='pending_approval'", (po_number,)).fetchone()
+        pending = db.execute("SELECT po.*,q.technical_status FROM workflow_purchase_orders po
+            JOIN workflow_quotations q ON q.quotation_id=po.quotation_id
+            WHERE po.po_number=? AND po.status='pending_approval'", (po_number,)).fetchone()
         if not pending:
             raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
         if status == "approved":
             _require_buyer_confirmation(db, pending["project_id"])
+            if pending["technical_status"] != "compliant":
+                raise HTTPException(status_code=409, detail="Technical compliance must remain approved at the point of purchase-order approval.")
             project = db.execute("SELECT status FROM projects WHERE project_id=?", (pending["project_id"],)).fetchone()
             if project and project["status"] in ("completed", "terminated", "cancelled"):
                 raise HTTPException(status_code=409, detail="This project is closed or archived. Purchase-order approval is blocked.")
