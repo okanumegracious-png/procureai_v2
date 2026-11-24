@@ -547,6 +547,13 @@ def _recalculate_project(db, project_id: str) -> dict:
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     milestones = _project_milestones(project["milestones_json"])
+    if project["status"] == "terminated":
+        latest = db.execute("SELECT progress_percent FROM project_updates WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+        daily_progress = float(latest["progress_percent"]) if latest else 0.0
+        milestone_progress = sum(float(item["weight"]) for item in milestones if item["completed"])
+        overall = float(project["progress_percent"] or 0)
+        return {"progress_percent": overall, "milestone_progress": round(milestone_progress, 1),
+                "daily_progress": daily_progress, "milestones": milestones}
     boq_count = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
     approved_po_count = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=? AND status='approved'", (project_id,)).fetchone()[0]
     if boq_count:
@@ -570,6 +577,8 @@ def _recalculate_project(db, project_id: str) -> dict:
 def _project_due_status(project: dict) -> dict:
     if project.get("status") == "completed":
         return {"due_status": "complete", "days_remaining": 0, "due_label": "Completed"}
+    if project.get("status") == "terminated":
+        return {"due_status": "terminated", "days_remaining": None, "due_label": "Terminated / archived"}
     if not project.get("due_date"):
         return {"due_status": "unscheduled", "days_remaining": None, "due_label": "No due date"}
     try:
@@ -1588,8 +1597,8 @@ def complete_project(project_id: str, payload: ProjectCompletionPayload, request
         project = db.execute("SELECT project_id,title,status,progress_percent FROM projects WHERE project_id=?", (project_id,)).fetchone()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
-        if project["status"] == "completed":
-            raise HTTPException(status_code=409, detail="This project is already closed.")
+        if project["status"] in ("completed", "terminated"):
+            raise HTTPException(status_code=409, detail="This project is already closed or archived.")
         if project["status"] == "cancelled":
             raise HTTPException(status_code=409, detail="A cancelled project cannot be marked as completed.")
         db.execute("""INSERT INTO project_closures(project_id,completed_at,closed_by,completion_note,progress_at_close)
