@@ -752,7 +752,7 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
   const submitButton = e.target.querySelector('button[type="submit"]');
   if (submitButton) submitButton.disabled = true;
   try {
-    const res = await apiFetch(\`\${API}/requests\`, {
+    const res = await apiFetch(`${API}/requests`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
     });
     const result = await res.json();
@@ -760,7 +760,7 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
     document.getElementById("requestModal").classList.remove("open");
     e.target.reset();
     document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
-    showToast(projectId ? \`Purchase request \${result.code} added to project\` : "Purchase request created");
+    showToast(projectId ? `Purchase request ${result.code} added to project` : "Purchase request created");
     await fetchDashboard();
     if (projectId && activeProjectId === projectId) await openProjectWorkspace(projectId);
   } catch (error) {
