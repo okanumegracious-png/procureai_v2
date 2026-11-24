@@ -1026,9 +1026,9 @@ def decide_award(po_number: str, payload: AwardApprovalRequest):
     now = _now()
     status = "approved" if payload.action == "approve" else "rejected"
     with connect() as db:
-        pending = db.execute("SELECT po.*,q.technical_status FROM workflow_purchase_orders po
+        pending = db.execute("""SELECT po.*,q.technical_status FROM workflow_purchase_orders po
             JOIN workflow_quotations q ON q.quotation_id=po.quotation_id
-            WHERE po.po_number=? AND po.status='pending_approval'", (po_number,)).fetchone()
+            WHERE po.po_number=? AND po.status='pending_approval'""", (po_number,)).fetchone()
         if not pending:
             raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
         if status == "approved":
