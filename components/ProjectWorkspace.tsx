@@ -45,6 +45,9 @@ export default function ProjectWorkspace({ projectId, apiBase = "/api", onBack }
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail || "Unable to load project workspace");
       setProject(body.project);
+      const reported = Number(body.project.updates?.[0]?.progress_percent || 0);
+      setProgress(reported);
+      setForm((current) => ({ ...current, progress_percent: reported }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load project workspace");
     } finally { setLoading(false); }
