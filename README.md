@@ -79,3 +79,8 @@ python -m pytest -q
 ## Current architecture note
 
 The dashboard procurement register and the namespaced BOQ/workflow API currently use distinct table families inside the same SQLite database. They are not yet a single canonical supplier/quotation record set. Do not assume a supplier or quotation created in one workflow is automatically available in the other. A safe, ID-preserving consolidation migration is tracked as a separate hardening task; no existing production records should be deleted or silently merged.
+
+
+## Continuous integration
+
+GitHub Actions runs Python compilation and the regression suite on pull requests and pushes to `main`. The suite covers database backup integrity/restore checks, procurement approval gates, technical-review migrations, multi-line supplier quotation parsing, authenticated API/CSRF behaviour, and the main buyer → quotation → technical review → RFQ dispatch gate sequence. Integration tests use temporary SQLite databases and do not connect to production data.
