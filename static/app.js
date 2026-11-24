@@ -32,6 +32,7 @@ function showApp() {
 let currentPage = "overview";
 let dashboardData = {};
 let quoteRecords = [];
+let parsedQuoteLineItems = [];
 let projectRecords = [];
 let activeProjectId = null;
 let invoiceRecords = [];
@@ -1242,38 +1243,65 @@ document.getElementById("parseQuoteMessage").addEventListener("click", async () 
   const status = document.getElementById("quoteParseStatus");
   const review = document.getElementById("quoteParseReview");
   const button = document.getElementById("parseQuoteMessage");
+  const lineLabel = document.getElementById("quoteExtractedLineItemLabel");
+  const linePicker = document.getElementById("quoteExtractedLineItem");
   if (message.length < 3) { status.textContent = "Paste the supplier's message first."; return; }
   button.disabled = true; button.textContent = "Parsing…"; status.textContent = "Checking the message for quotation details…";
-  review.hidden = true; review.innerHTML = "";
+  review.hidden = true; review.innerHTML = ""; parsedQuoteLineItems = [];
+  lineLabel.hidden = true; linePicker.replaceChildren();
   try {
     const response = await apiFetch(API + "/quotes/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message})});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not parse supplier message");
     const x = data.extracted || {}, filled = [];
+    parsedQuoteLineItems = Array.isArray(x.line_items) ? x.line_items : [];
     const setValue = (key,value) => { if (value !== null && value !== undefined && form.elements[key]) { form.elements[key].value = value; filled.push(key); } };
-    setValue("unit_price",x.unit_price); setValue("freight",x.freight); setValue("tax_rate",x.tax_rate);
+    setValue("freight",x.freight); setValue("tax_rate",x.tax_rate);
     setValue("lead_days",x.lead_days); setValue("payment_days",x.payment_days);
+    if (parsedQuoteLineItems.length > 1) {
+      parsedQuoteLineItems.forEach((item,index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = item.description + " — " + Number(item.quantity).toLocaleString() + " " + item.unit + " @ ₦" + Number(item.unit_price).toLocaleString("en-NG") + "/" + item.price_unit;
+        linePicker.append(option);
+      });
+      lineLabel.hidden = false;
+      setValue("unit_price",parsedQuoteLineItems[0].unit_price);
+      filled.push("unit_price");
+    } else {
+      setValue("unit_price",x.unit_price);
+    }
     const selectedRequest = (dashboardData.requests || []).find(r => String(r.id) === String(form.elements.request_id.value));
     const normalizeUnit = value => ({kgs:"kg",kilogram:"kg",kilograms:"kg",pcs:"piece",pieces:"piece",units:"unit",ton:"tonne",tons:"tonne",mt:"tonne"}[String(value || "").toLowerCase()] || String(value || "").toLowerCase());
-    const quantityNote = x.quantity !== null
-      ? (selectedRequest ? (Math.abs(Number(selectedRequest.quantity)-Number(x.quantity)) < 0.000001 && normalizeUnit(selectedRequest.unit) === normalizeUnit(x.unit)
+    const chosen = parsedQuoteLineItems[0] || null;
+    const supplierQuantity = chosen ? chosen.quantity : x.quantity;
+    const supplierUnit = chosen ? chosen.unit : x.unit;
+    const quantityNote = supplierQuantity !== null && supplierQuantity !== undefined
+      ? (selectedRequest ? (Math.abs(Number(selectedRequest.quantity)-Number(supplierQuantity)) < 0.000001 && normalizeUnit(selectedRequest.unit) === normalizeUnit(supplierUnit)
         ? "Supplier quantity matches the selected request."
-        : "Supplier states " + Number(x.quantity).toLocaleString() + " " + x.unit + "; selected request is " + Number(selectedRequest.quantity).toLocaleString() + " " + selectedRequest.unit + ". Confirm the discrepancy manually.")
-        : "Supplier quantity detected: " + Number(x.quantity).toLocaleString() + " " + x.unit + ". Select the correct purchase request to compare.")
+        : "Supplier states " + Number(supplierQuantity).toLocaleString() + " " + supplierUnit + "; selected request is " + Number(selectedRequest.quantity).toLocaleString() + " " + selectedRequest.unit + ". Confirm the discrepancy manually.")
+        : "Supplier quantity detected: " + Number(supplierQuantity).toLocaleString() + " " + supplierUnit + ". Select the correct purchase request to compare.")
       : "No supplier quantity was confidently recognised.";
     const lines = [];
-    if (x.unit_price !== null) lines.push("Unit price: ₦" + Number(x.unit_price).toLocaleString("en-NG"));
+    if (x.line_items?.length > 1) lines.push(x.line_items.length + " separately priced material lines detected. Choose the matching line above; save each item against its own purchase request.");
+    if (x.unit_price !== null && !chosen) lines.push("Unit price: ₦" + Number(x.unit_price).toLocaleString("en-NG"));
     if (x.freight !== null) lines.push("Freight: ₦" + Number(x.freight).toLocaleString("en-NG"));
     if (x.tax_rate !== null) lines.push("Tax: " + x.tax_rate + "%");
     if (x.lead_days !== null) lines.push("Lead time: " + x.lead_days + " days");
     if (x.payment_days !== null) lines.push("Payment period: " + x.payment_days + " days");
-    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + ". The form stores payment periods in days, so verify the day-based field and retain this split in the original message.");
+    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + ". Verify the day-based field and retain the original terms in the source message.");
     lines.push(quantityNote);
-    review.innerHTML = "<strong>Extraction review</strong><ul>" + lines.map(line => "<li>" + escapeHtml(line) + "</li>").join("") + "</ul><small>Supplier quantity is checked against the purchase request, never used to overwrite the requirement. All extracted values remain editable.</small>";
+    review.innerHTML = "<strong>Extraction review</strong><ul>" + lines.map(line => "<li>" + escapeHtml(line) + "</li>").join("") + "</ul><small>Supplier quantities never overwrite requested quantities. Nothing is saved until you review and submit the quotation.</small>";
     review.hidden = false;
     status.textContent = filled.length ? "Recognised " + filled.length + " form field(s). Please verify them." : "No supported price or delivery fields found. Enter the values manually.";
   } catch(error) { status.textContent = error.message; }
   finally { button.disabled = false; button.textContent = "✦ Parse message"; }
+});
+document.getElementById("quoteExtractedLineItem").addEventListener("change", event => {
+  const item = parsedQuoteLineItems[Number(event.target.value)];
+  if (!item) return;
+  document.getElementById("quoteForm").elements.unit_price.value = item.unit_price;
+  document.getElementById("quoteParseStatus").textContent = "Selected " + item.description + ". Confirm the purchase request and quantity before saving.";
 });
 document.getElementById("quoteForm").addEventListener("submit", async (e) => {
   e.preventDefault();
