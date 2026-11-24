@@ -874,6 +874,7 @@ def dashboard_delete_request(request_id: int, request: Request):
         quote_count = db.execute("SELECT COUNT(*) FROM quotes WHERE request_id=?", (request_id,)).fetchone()[0]
         order_count = db.execute("SELECT COUNT(*) FROM orders WHERE request_id=?", (request_id,)).fetchone()[0]
         db.execute("DELETE FROM orders WHERE request_id=?", (request_id,))
+        db.execute("DELETE FROM project_quotations WHERE quote_id IN (SELECT id FROM quotes WHERE request_id=?)", (request_id,))
         db.execute("DELETE FROM quotes WHERE request_id=?", (request_id,))
         db.execute("DELETE FROM requests WHERE id=?", (request_id,))
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
@@ -988,10 +989,11 @@ def dashboard_delete_quote(quote_id: int, request: Request):
             raise HTTPException(status_code=409, detail="This quotation has a linked purchase-order proposal and cannot be deleted. Keep it for approval and audit history.")
         _ensure_supplier_request_email_table(db)
         email_removed = db.execute("DELETE FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).rowcount
+        project_links_removed = db.execute("DELETE FROM project_quotations WHERE quote_id=?", (quote_id,)).rowcount
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
             (getattr(request.state, "auth_user", ""), "delete", "quotation", str(quote_id),
-             json.dumps({"request_code": current["request_code"], "supplier": current["supplier_name"], "unit_price": current["unit_price"], "supplier_email_records_removed": email_removed}), _now()))
+             json.dumps({"request_code": current["request_code"], "supplier": current["supplier_name"], "unit_price": current["unit_price"], "supplier_email_records_removed": email_removed, "project_links_removed": project_links_removed}), _now()))
         db.execute("DELETE FROM quotes WHERE id=?", (quote_id,))
     return {"success": True, "deleted_quote_id": quote_id}
 
