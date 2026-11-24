@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b2d">
-  <title>ProcureAI — Procurement workspace</title>
+  <title>ProcureAI — Industrial operations workspace</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -20,19 +20,20 @@
 </section>
 <div class="app-shell" id="appShell" hidden>
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="#"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>CONSTRUCTION PROCUREMENT</small></span></a>
+    <a class="brand" href="#"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>INDUSTRIAL OPERATIONS</small></span></a>
     <div class="workspace-label">WORKSPACE</div>
     <nav class="nav">
       <button class="nav-item active" data-page="overview"><span>▦</span> Overview</button>
-      <button class="nav-item" data-page="requests"><span>▤</span> Purchase requests <i id="requestCount">5</i></button>
+      <button class="nav-item" data-page="requests"><span>▤</span> Purchase requests <i id="requestCount">0</i></button>
       <button class="nav-item" data-page="suppliers"><span>♧</span> Suppliers</button>
       <button class="nav-item" data-page="quotes"><span>⇄</span> RFQs & quotations</button>
       <button class="nav-item" data-page="analysis"><span>◈</span> Bid analysis</button>
       <button class="nav-item" data-page="orders"><span>▣</span> Purchase orders <i id="approvalCount">0</i></button>
+      <button class="nav-item" data-page="settings"><span>⚙</span> Company setup</button>
     </nav>
     <div class="sidebar-bottom">
       <div class="rule-card"><span class="rule-icon">✳</span><div><b>Built on clear decisions</b><p>AI reads. The math calculates. People approve.</p></div></div>
-      <div class="user-row"><div class="avatar">GO</div><div><b>Procurement team</b><small>Workspace admin</small></div><span class="dots">•••</span></div>
+      <div class="user-row"><div class="avatar">GO</div><div><b>Workspace administrator</b><small>Administrator</small></div><span class="dots">•••</span></div>
     </div>
   </aside>
 
@@ -45,7 +46,7 @@
 
     <section class="page active" id="page-overview">
       <div class="page-heading">
-        <div><div class="eyebrow">TUESDAY, <span id="today"></span></div><h1>Procurement overview</h1><p class="subheading">A clear view of materials, suppliers and purchasing decisions.</p></div>
+        <div><div class="eyebrow">TUESDAY, <span id="today"></span></div><h1>Operations overview</h1><p class="subheading">A live view of your organisation’s projects, procurement and operational decisions.</p></div>
         <button class="btn btn-primary" data-modal="requestModal">＋ New purchase request</button>
       </div>
       <div class="metric-grid">
@@ -89,6 +90,20 @@
       <div class="page-heading"><div><div class="eyebrow">DECISION INTELLIGENCE</div><h1>Bid analysis</h1><p class="subheading">Compare landed cost, delivery and supplier reliability before award.</p></div></div>
       <section class="panel analysis-picker"><div><label for="analysisRequest">Select a purchase request</label><select id="analysisRequest"></select></div><button class="btn btn-primary" id="runAnalysis">Analyse quotations →</button></section>
       <div id="analysisResult" class="analysis-result"><div class="empty-state"><span>◈</span><h3>Ready to compare offers</h3><p>Select a purchase request and run the analysis to see a cost breakdown and supplier recommendation.</p></div></div>
+    </section>
+
+    <section class="page" id="page-settings">
+      <div class="page-heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>Company setup</h1><p class="subheading">Enter your organisation details and operating scope. ProcureAI will use this configuration for your workspace.</p></div></div>
+      <section class="panel"><form id="companyProfileForm" class="form-grid">
+        <label class="wide">Company / organisation name<input id="companyName" required minlength="2" maxlength="200" placeholder="Enter registered company name"></label>
+        <label>Registration number<input id="companyRegistration" maxlength="80" placeholder="Optional"></label>
+        <label>Industry / expertise<input id="companyIndustry" maxlength="160" placeholder="Enter your industry"></label>
+        <label class="wide">Services provided<textarea id="companyServices" rows="3" placeholder="Enter services, one per line"></textarea></label>
+        <label class="wide">Service delivery modes<textarea id="companyModes" rows="2" placeholder="e.g. On-site repairs, workshop repairs"></textarea></label>
+        <label class="wide">Client segments<textarea id="companyClients" rows="2" placeholder="Enter client types, one per line"></textarea></label>
+        <label>Default currency<select id="companyCurrency"><option value="NGN">NGN — Nigerian Naira</option><option value="USD">USD — US Dollar</option><option value="GBP">GBP — British Pound</option><option value="EUR">EUR — Euro</option></select></label>
+        <div class="form-actions wide"><button class="btn btn-primary" type="submit">Save company configuration</button><span id="companyProfileStatus" role="status"></span></div>
+      </form></section>
     </section>
 
     <section class="page" id="page-orders">

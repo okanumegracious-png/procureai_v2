@@ -89,4 +89,15 @@ def init_store() -> None:
             created_at TEXT NOT NULL,
             decided_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS company_profile (
+            id INTEGER PRIMARY KEY CHECK(id = 1),
+            company_name TEXT NOT NULL DEFAULT '',
+            registration_number TEXT NOT NULL DEFAULT '',
+            industry TEXT NOT NULL DEFAULT '',
+            services_json TEXT NOT NULL DEFAULT '[]',
+            service_modes_json TEXT NOT NULL DEFAULT '[]',
+            client_segments_json TEXT NOT NULL DEFAULT '[]',
+            currency TEXT NOT NULL DEFAULT 'NGN',
+            updated_at TEXT NOT NULL
+        );
         """)

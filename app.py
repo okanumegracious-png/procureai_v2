@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -69,40 +69,48 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
-        if db.execute("SELECT COUNT(*) FROM suppliers").fetchone()[0] == 0:
-            db.executemany(
-                "INSERT INTO suppliers(name,city,rating,on_time,contact) VALUES(?,?,?,?,?)",
-                [
-                    ("Steelyard Ltd", "Lagos", 4.2, 88, "sales@steelyard.example"),
-                    ("Metrode Supplies", "Ikeja", 3.6, 79, "quotes@metrode.example"),
-                    ("BuildMart Distribution", "Lekki", 4.6, 94, "procurement@buildmart.example"),
-                    ("NaijaSteel Traders", "Ikorodu", 3.1, 68, "sales@naijasteel.example"),
-                    ("CrestCon Materials", "Apapa", 4.0, 85, "hello@crestcon.example"),
-                ],
+        # Never seed fictional suppliers, requests or quotations into an operational workspace.
+        # Remove only the exact legacy demo rows created by earlier ProcureAI versions.
+        demo_supplier_names = (
+            "Steelyard Ltd", "Metrode Supplies", "BuildMart Distribution",
+            "NaijaSteel Traders", "CrestCon Materials",
+        )
+        demo_request_materials = (
+            "Rebar T10 (12m)", "Rebar T16 (12m)", "OPC 42.5 Cement",
+            "Granite Aggregate 20mm", "Formwork Plywood 18mm",
+        )
+        supplier_marks = ",".join("?" for _ in demo_supplier_names)
+        request_marks = ",".join("?" for _ in demo_request_materials)
+        demo_supplier_ids = [
+            row[0] for row in db.execute(
+                f"SELECT id FROM suppliers WHERE name IN ({supplier_marks}) AND lower(contact) LIKE '%@%.example'",
+                demo_supplier_names,
+            ).fetchall()
+        ]
+        demo_request_ids = [
+            row[0] for row in db.execute(
+                f"SELECT id FROM requests WHERE code IN ('PR-0142','PR-0143','PR-0144','PR-0145','PR-0146') AND material IN ({request_marks})",
+                demo_request_materials,
+            ).fetchall()
+        ]
+        if demo_supplier_ids or demo_request_ids:
+            supplier_ids = demo_supplier_ids or [-1]
+            request_ids = demo_request_ids or [-1]
+            supplier_in = ",".join("?" for _ in supplier_ids)
+            request_in = ",".join("?" for _ in request_ids)
+            db.execute(
+                f"DELETE FROM orders WHERE supplier_id IN ({supplier_in}) OR request_id IN ({request_in})",
+                [*supplier_ids, *request_ids],
             )
-        if db.execute("SELECT COUNT(*) FROM requests").fetchone()[0] == 0:
-            today = date.today()
-            seed = [
-                ("PR-0142", "Rebar T10 (12m)", "Reinforcement", 14000, "kg", "Lagos Tower", today+timedelta(days=5), "Urgent", "Open"),
-                ("PR-0143", "Rebar T16 (12m)", "Reinforcement", 9000, "kg", "Lagos Tower", today+timedelta(days=5), "Normal", "Open"),
-                ("PR-0144", "OPC 42.5 Cement", "Cementitious", 30000, "kg", "Lagos Tower", today+timedelta(days=3), "Urgent", "Open"),
-                ("PR-0145", "Granite Aggregate 20mm", "Aggregate", 40000, "kg", "Lekki Phase II", today+timedelta(days=6), "Normal", "Open"),
-                ("PR-0146", "Formwork Plywood 18mm", "Formwork", 180, "ea", "Lagos Tower", today+timedelta(days=9), "Normal", "Open"),
-            ]
-            db.executemany("""INSERT INTO requests(code,material,category,quantity,unit,site,required_by,priority,status,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                [(a,b,c,d,e,f,g.isoformat(),h,i,datetime.utcnow().isoformat()) for a,b,c,d,e,f,g,h,i in seed])
-            # Seed comparable offers. Values are demo data, not live supplier quotes.
-            offers = [
-                (1,1,795,420000,7.5,4,30),(2,1,780,310000,7.5,6,45),(3,1,812,540000,7.5,3,60),
-                (1,2,768,420000,7.5,4,30),(2,2,755,310000,7.5,6,45),(3,2,781,540000,7.5,3,60),
-                (1,3,172,420000,7.5,3,30),(5,3,169,260000,7.5,5,30),(3,3,178,540000,7.5,2,60),
-                (2,4,21,310000,7.5,5,45),(5,4,19,260000,7.5,4,30),
-                (3,5,28500,540000,7.5,4,60),(5,5,27200,260000,7.5,6,30),
-            ]
-            db.executemany("""INSERT INTO quotes(supplier_id,request_id,unit_price,freight,tax_rate,lead_days,payment_days,created_at)
-                VALUES(?,?,?,?,?,?,?,?)""",
-                [(s,r,p,f,t,l,pt,datetime.utcnow().isoformat()) for s,r,p,f,t,l,pt in offers])
+            db.execute(
+                f"DELETE FROM quotes WHERE supplier_id IN ({supplier_in}) OR request_id IN ({request_in})",
+                [*supplier_ids, *request_ids],
+            )
+            if demo_request_ids:
+                db.execute(f"DELETE FROM requests WHERE id IN ({request_in})", request_ids)
+            if demo_supplier_ids:
+                db.execute(f"DELETE FROM suppliers WHERE id IN ({supplier_in})", supplier_ids)
+
 
 
 def rows(sql, args=()):
@@ -119,13 +127,9 @@ def one(sql, args=()):
 def dashboard():
     req = rows("SELECT * FROM requests ORDER BY id DESC")
     suppliers = rows("SELECT * FROM suppliers ORDER BY rating DESC")
-    for supplier in suppliers:
-        supplier["is_demo"] = str(supplier.get("contact", "")).lower().endswith(".example")
     recent_quotes = rows("""SELECT q.*,s.name supplier,s.contact,r.code request_code,r.material
             FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
             JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC LIMIT 8""")
-    for quote in recent_quotes:
-        quote["is_demo"] = str(quote.get("contact", "")).lower().endswith(".example")
     orders = rows("""SELECT o.*,s.name supplier,r.material FROM orders o
                      JOIN suppliers s ON s.id=o.supplier_id JOIN requests r ON r.id=o.request_id
                      ORDER BY o.id DESC""")
@@ -170,7 +174,7 @@ def analyse_request(request_id):
     results.sort(key=lambda x: (not x["feasible"], x["estimated_total"]))
     return {"request": req, "offers": results,
             "recommendation": next((x for x in results if x["feasible"]), None),
-            "disclaimer": "Demo evaluation: formula-based estimate from entered quote data. Confirm supplier capacity, quote validity and commercial terms before award."}
+            "disclaimer": "Illustrative estimate based on entered quotation data. Confirm supplier capacity, quote validity and commercial terms before award."}
 
 
 class Handler(BaseHTTPRequestHandler):

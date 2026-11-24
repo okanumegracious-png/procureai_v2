@@ -277,6 +277,41 @@ document.getElementById("quoteForm").addEventListener("submit", async (e) => {
     showToast(err.error, true);
   }
 });
+// --- Administrator company configuration ---
+function splitLines(value) { return value.split(/\r?\n|,/).map(item => item.trim()).filter(Boolean); }
+async function loadCompanyProfile() {
+  const response = await apiFetch(API + "/admin/company-profile");
+  if (!response.ok) return;
+  const profile = await response.json();
+  document.getElementById("companyName").value = profile.company_name || "";
+  document.getElementById("companyRegistration").value = profile.registration_number || "";
+  document.getElementById("companyIndustry").value = profile.industry || "";
+  document.getElementById("companyServices").value = (profile.services || []).join("\n");
+  document.getElementById("companyModes").value = (profile.service_modes || []).join("\n");
+  document.getElementById("companyClients").value = (profile.client_segments || []).join("\n");
+  document.getElementById("companyCurrency").value = profile.currency || "NGN";
+}
+document.getElementById("companyProfileForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const status = document.getElementById("companyProfileStatus");
+  status.textContent = "Saving…";
+  const payload = {
+    company_name: document.getElementById("companyName").value.trim(),
+    registration_number: document.getElementById("companyRegistration").value.trim(),
+    industry: document.getElementById("companyIndustry").value.trim(),
+    services: splitLines(document.getElementById("companyServices").value),
+    service_modes: splitLines(document.getElementById("companyModes").value),
+    client_segments: splitLines(document.getElementById("companyClients").value),
+    currency: document.getElementById("companyCurrency").value
+  };
+  try {
+    const response = await apiFetch(API + "/admin/company-profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not save company configuration");
+    status.textContent = "Company configuration saved.";
+    showToast("Company configuration saved");
+  } catch (error) { status.textContent = error.message; showToast(error.message, true); }
+});
 // --- Utilities ---
 function showToast(msg, isError = false) {
   const toast = document.getElementById("toast");
@@ -306,7 +341,7 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
     if (!response.ok) throw new Error(data.detail || data.error || "Unable to sign in");
     document.getElementById("loginPassword").value = "";
     showApp();
-    await fetchDashboard();
+    await Promise.all([fetchDashboard(), loadCompanyProfile()]);
   } catch (err) {
     error.textContent = err.message || "Sign-in failed. Please try again.";
   } finally { button.disabled = false; }
@@ -321,7 +356,7 @@ async function initializeApp() {
     const response = await apiFetch(`${API}/auth/me`);
     if (!response.ok) return showLogin();
     showApp();
-    await fetchDashboard();
+    await Promise.all([fetchDashboard(), loadCompanyProfile()]);
   } catch { showLogin("Unable to reach ProcureAI. Check your connection and try again."); }
 }
 initializeApp();
