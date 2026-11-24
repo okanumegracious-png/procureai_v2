@@ -80,3 +80,5 @@
 
 /* Supplier request email gate in PO preview */
 .po-email-step{margin:18px 0;padding:16px;border:1px solid #d9e4de;border-radius:12px;background:#f7faf8}.po-email-step p{font-size:13px;color:#61736a;margin:7px 0 12px}.po-email-step button{margin-top:4px}
+
+.supplier-card-actions{display:flex;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid #edf0f3}.edit-seller-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 10px}.edit-seller-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.edit-seller-btn:hover{background:#edf8f3;border-color:#b9e2d1}
