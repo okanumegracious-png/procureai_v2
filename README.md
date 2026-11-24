@@ -30,7 +30,11 @@ Required production configuration:
 
 Keep all API secrets in Railway server environment variables only. Never expose them in browser JavaScript.
 
-## Company setup\n\nAfter signing in, open **Company setup** to enter the organisation name, registration number, industry, services, delivery modes, client segments and default currency. These values are stored in the shared application database; the workspace does not assume a particular customer or pre-populate fictional company information.\n\nThe application does not seed fictional suppliers, requests or quotations. On startup it removes only the exact legacy sample suppliers and purchase requests shipped by the earlier demo dataset, including their linked quotations and orders. Other records are retained.\n\n## Unified data
+## Company setup\n\nAfter signing in, open **Company setup** to enter the organisation name, registration number, industry, services, delivery modes, client segments and default currency. These values are stored in the shared application database; the workspace does not assume a particular customer or pre-populate fictional company information.\n\nThe application does not seed fictional suppliers, requests or quotations. On startup it removes only the exact legacy sample suppliers and purchase requests shipped by the earlier demo dataset, including their linked quotations and orders. Other records are retained.\n\n## Project workspaces
+
+ProcureAI includes per-project overviews, due-date tracking, procurement milestones, calculated progress and an attributed daily activity feed. See [Project Workspace documentation](docs/PROJECT_WORKSPACE.md) for the database schema, API contract, progress formula and reusable Next.js component source.
+
+## Unified data
 
 The dashboard, BOQ workflow tables and agentic intake use the same SQLite file through `PROCUREAI_DB_PATH`. Back up that file and its WAL state using a SQLite-aware backup process. Do not commit production database files or secrets.
 

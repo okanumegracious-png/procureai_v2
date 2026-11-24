@@ -32,6 +32,8 @@ function showApp() {
 let currentPage = "overview";
 let dashboardData = {};
 let quoteRecords = [];
+let projectRecords = [];
+let activeProjectId = null;
 // --- Navigation ---
 document.querySelectorAll(".nav-item").forEach(btn => {
   btn.addEventListener("click", (e) => {
@@ -41,6 +43,12 @@ document.querySelectorAll(".nav-item").forEach(btn => {
     const page = btn.dataset.page;
     document.getElementById(`page-${page}`).classList.add("active");
     document.getElementById("crumbTitle").textContent = btn.textContent.trim().split(" ")[0];
+    if (page === "projects") {
+      activeProjectId = null;
+      document.getElementById("projectWorkspaceView").hidden = true;
+      document.getElementById("projectsListView").hidden = false;
+      loadProjects();
+    }
     if (window.innerWidth < 800) document.getElementById("sidebar").classList.remove("open");
   });
 });
@@ -52,6 +60,70 @@ document.querySelectorAll("[data-goto]").forEach(btn => {
 document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
+document.getElementById("projectCards").addEventListener("click", event => {
+  const create = event.target.closest('[data-modal="projectModal"]');
+  if (create) { document.querySelector('.project-page-heading [data-modal="projectModal"]')?.click(); return; }
+  const retry = event.target.closest("#retryProjects");
+  if (retry) return loadProjects();
+  const open = event.target.closest("[data-open-project]");
+  if (open) openProjectWorkspace(open.dataset.openProject);
+});
+document.getElementById("backToProjects").addEventListener("click", () => {
+  activeProjectId = null;
+  document.getElementById("projectWorkspaceView").hidden = true;
+  document.getElementById("projectsListView").hidden = false;
+  loadProjects();
+});
+document.getElementById("recalculateProject").addEventListener("click", async () => {
+  if (!activeProjectId) return;
+  const button = document.getElementById("recalculateProject");
+  button.disabled = true;
+  try {
+    const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/recalculate`, {method:"POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not recalculate progress");
+    renderProjectWorkspace(data.project);
+    showToast("Project progress recalculated");
+  } catch(error) { showToast(error.message,true); }
+  finally { button.disabled = false; }
+});
+document.getElementById("projectWorkspaceContent").addEventListener("submit", async event => {
+  if (event.target.id !== "projectUpdateForm") return;
+  event.preventDefault();
+  const form = event.target;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.progress_percent = Number(payload.progress_percent || 0);
+  payload.completed_milestones = [...form.querySelectorAll('input[name="completed_milestones"]:checked')].map(input => input.value);
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/updates`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not save project update");
+    renderProjectWorkspace(data.project);
+    showToast("Daily project update saved");
+  } catch(error) { showToast(error.message,true); }
+  finally { button.disabled = false; }
+});
+document.getElementById("projectForm").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.deliverables = String(payload.deliverables || "").split("\n").map(value=>value.trim()).filter(Boolean);
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const response = await apiFetch(`${API}/projects`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not create project");
+    form.reset();
+    document.getElementById("projectModal").classList.remove("open");
+    showToast("Project workspace created");
+    await loadProjects();
+    await openProjectWorkspace(data.project.project_id);
+  } catch(error) { showToast(error.message,true); }
+  finally { button.disabled = false; }
+});
 // --- Data Fetching ---
 async function fetchDashboard() {
   const res = await apiFetch(`${API}/dashboard`);
@@ -61,6 +133,111 @@ async function fetchDashboard() {
   const quoteData = quoteResponse.ok ? await quoteResponse.json() : { quotes: [] };
   quoteRecords = quoteData.quotes || [];
   renderDashboard();
+}
+function projectDate(value) {
+  if (!value) return "Not set";
+  const parsed = new Date(value + "T00:00:00");
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("en-GB", {day:"numeric",month:"short",year:"numeric"});
+}
+function dueBadge(status, label) {
+  const tone = status === "overdue" ? "overdue" : status === "due_soon" || status === "due_today" ? "soon" : status === "complete" ? "complete" : "ontime";
+  return `<span class="project-due-badge ${tone}">${escapeHtml(label || "No due date")}</span>`;
+}
+async function loadProjects() {
+  const grid = document.getElementById("projectCards");
+  if (!grid) return;
+  grid.innerHTML = '<div class="project-loading">Loading project workspaces…</div>';
+  try {
+    const response = await apiFetch(`${API}/projects`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load projects");
+    projectRecords = data.projects || [];
+    renderProjectCards();
+  } catch (error) {
+    grid.innerHTML = `<div class="project-empty"><h3>Projects could not be loaded</h3><p>${escapeHtml(error.message)}</p><button class="btn btn-ghost" id="retryProjects">Try again</button></div>`;
+  }
+}
+function renderProjectCards() {
+  const grid = document.getElementById("projectCards");
+  document.getElementById("projectCount").textContent = `${projectRecords.length} ${projectRecords.length === 1 ? "project" : "projects"}`;
+  if (!projectRecords.length) {
+    grid.innerHTML = '<div class="project-empty"><span>▦</span><h3>No project workspaces yet</h3><p>Create your first project to start tracking its procurement lifecycle and daily progress.</p><button class="btn btn-primary" data-modal="projectModal">Create first project</button></div>';
+    return;
+  }
+  grid.innerHTML = projectRecords.map(project => `
+    <article class="project-card">
+      <div class="project-card-top"><span class="project-status">${escapeHtml((project.status || "active").replace("_"," "))}</span>${dueBadge(project.due_status,project.due_label)}</div>
+      <h3>${escapeHtml(project.title)}</h3><p class="project-client">${escapeHtml(project.client_name || "Client not specified")}</p>
+      <div class="project-card-meta"><span>Lead</span><b>${escapeHtml(project.procurement_lead || "Unassigned")}</b></div>
+      <div class="project-card-progress"><div><span>Overall progress</span><b>${Number(project.progress_percent || 0).toFixed(0)}%</b></div><div class="project-progress-track"><i style="width:${Math.max(0,Math.min(100,Number(project.progress_percent||0)))}%"></i></div></div>
+      <div class="project-card-footer"><span>Due ${projectDate(project.due_date)}</span><button type="button" class="text-btn" data-open-project="${escapeHtml(project.project_id)}">Open workspace →</button></div>
+    </article>`).join("");
+}
+async function openProjectWorkspace(projectId) {
+  activeProjectId = projectId;
+  document.getElementById("projectsListView").hidden = true;
+  document.getElementById("projectWorkspaceView").hidden = false;
+  const container = document.getElementById("projectWorkspaceContent");
+  container.innerHTML = '<div class="project-loading">Loading project overview and activity…</div>';
+  try {
+    const response = await apiFetch(`${API}/projects/${encodeURIComponent(projectId)}/overview`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load project workspace");
+    renderProjectWorkspace(data.project);
+  } catch (error) {
+    container.innerHTML = `<div class="project-empty"><h3>Workspace unavailable</h3><p>${escapeHtml(error.message)}</p></div>`;
+  }
+}
+function renderProjectWorkspace(project) {
+  const container = document.getElementById("projectWorkspaceContent");
+  const milestones = project.milestones || [];
+  const updates = project.updates || [];
+  const deliverables = project.deliverables || [];
+  const progress = Math.max(0,Math.min(100,Number(project.progress_percent || 0)));
+  const latestReported = updates.length ? Number(updates[0].progress_percent || 0) : 0;
+  const milestoneMarkup = milestones.map(item => `
+    <div class="project-milestone ${item.completed ? "is-complete" : ""}">
+      <span class="project-milestone-check">${item.completed ? "✓" : "○"}</span><div><b>${escapeHtml(item.label)}</b><small>${item.completed ? "Completed" + (item.completed_at ? " · " + projectDate(item.completed_at.slice(0,10)) : "") : "Awaiting completion"}</small></div><strong>${Number(item.weight || 0)}%</strong>
+    </div>`).join("");
+  const updateMarkup = updates.length ? updates.map(item => `
+    <article class="project-update-item">
+      <div class="project-update-avatar">${escapeHtml((item.author || "U").slice(0,1).toUpperCase())}</div>
+      <div class="project-update-body"><div class="project-update-meta"><b>${escapeHtml(item.author)}</b><span>${escapeHtml(item.update_type.replace("_"," "))}</span><time>${new Date(item.created_at).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</time></div>
+      <div class="project-update-status">${escapeHtml(item.status)} · Reported workstream progress ${Number(item.progress_percent).toFixed(0)}%</div>
+      ${item.field_notes ? `<p>${escapeHtml(item.field_notes)}</p>` : ""}
+      ${item.blockers ? `<div class="project-update-blocker"><b>Blocker</b><p>${escapeHtml(item.blockers)}</p></div>` : ""}
+      ${item.next_steps ? `<div class="project-update-next"><b>Next steps</b><p>${escapeHtml(item.next_steps)}</p></div>` : ""}
+      ${item.completed_milestones?.length ? `<small class="project-update-milestones">Milestones completed: ${item.completed_milestones.map(escapeHtml).join(", ")}</small>` : ""}
+      </div>
+    </article>`).join("") : '<div class="project-feed-empty">No daily updates yet. Record the first field or procurement update below.</div>';
+  container.innerHTML = `
+    <section class="project-workspace-hero">
+      <div><div class="eyebrow">PROJECT WORKSPACE · ${escapeHtml(project.project_id)}</div><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.client_name || "Client not specified")} · Procurement lead: ${escapeHtml(project.procurement_lead || "Unassigned")}</p></div>
+      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>Target completion · ${projectDate(project.due_date)}</small></div>
+    </section>
+    <section class="project-overview-grid">
+      <article class="project-overview-card project-summary-card"><span class="eyebrow">PROJECT INTRODUCTION</span><h2>Overview & scope</h2><p>${escapeHtml(project.executive_summary || "No executive summary has been added.")}</p><div class="project-client-details"><b>Client / agency</b><span>${escapeHtml(project.client_name || "Not specified")}</span><b>Agency details</b><span>${escapeHtml(project.agency_details || "Not provided")}</span><b>Procurement lead</b><span>${escapeHtml(project.procurement_lead || "Unassigned")}</span></div></article>
+      <article class="project-overview-card project-progress-card"><span class="eyebrow">DELIVERY HEALTH</span><h2>Project progress</h2><div class="project-progress-number">${progress.toFixed(0)}<small>%</small></div><div class="project-progress-track large"><i style="width:${progress}%"></i></div><div class="project-progress-legend"><span>Milestones <b>${Number(project.progress_breakdown?.milestones || 0).toFixed(0)}%</b></span><span>Daily updates <b>${Number(project.progress_breakdown?.daily_updates || 0).toFixed(0)}%</b></span></div><p>Calculated from 4 procurement milestones (60%) and the latest reported workstream progress (40%).</p></article>
+    </section>
+    <section class="project-overview-card project-timeline-card"><div class="project-section-heading"><div><span class="eyebrow">TIMELINE & DUE DATE TRACKER</span><h2>Procurement milestones</h2></div><div class="project-date-pair"><span>Start <b>${projectDate(project.start_date)}</b></span><span>Due <b>${projectDate(project.due_date)}</b></span></div></div><div class="project-milestones">${milestoneMarkup}</div></section>
+    <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
+    <section class="project-activity-layout">
+      <article class="project-overview-card project-feed-card"><div class="project-section-heading"><div><span class="eyebrow">TEAM JOURNAL</span><h2>Daily activity log</h2><p>Field notes, procurement updates, blockers and next actions.</p></div><span class="project-deliverable-count">${updates.length} entries</span></div><div class="project-update-feed">${updateMarkup}</div></article>
+      <article class="project-overview-card project-update-form-card"><span class="eyebrow">ADD AN ENTRY</span><h2>Submit daily update</h2><p class="project-muted">Your signed-in account is recorded automatically as the author.</p>
+        <form id="projectUpdateForm">
+          <label>Update type<select name="update_type"><option value="daily">Daily update</option><option value="field_note">Field note</option><option value="blocker">Blocker / issue</option><option value="milestone">Milestone update</option></select></label>
+          <label>Current status<input name="status" maxlength="80" value="In progress" required></label>
+          <label>Reported workstream progress <strong id="projectReportedProgressValue">${latestReported}%</strong><input name="progress_percent" type="range" min="0" max="100" value="${latestReported}" step="5" id="projectReportedProgress"></label>
+          <label>Field notes<textarea name="field_notes" rows="4" placeholder="What was completed today? Include inspections, supplier contact, site findings…"></textarea></label>
+          <label>Blockers / risks<textarea name="blockers" rows="2" placeholder="Delays, access issues, missing documents or dependencies"></textarea></label>
+          <label>Next steps<textarea name="next_steps" rows="2" placeholder="Actions planned for the next work period"></textarea></label>
+          <div class="project-milestone-checklist"><b>Mark milestones completed</b>${milestones.map(item=>`<label class="project-check-option"><input type="checkbox" name="completed_milestones" value="${escapeHtml(item.key)}" ${item.completed ? "disabled" : ""}><span>${escapeHtml(item.label)}${item.completed ? " · already complete" : ""}</span></label>`).join("")}</div>
+          <button class="btn btn-primary project-submit-update" type="submit">Post project update</button>
+        </form>
+      </article>
+    </section>`;
+  const progressInput = document.getElementById("projectReportedProgress");
+  progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
 }
 function formatMoney(val) {
   return "₦" + Number(val).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -410,7 +587,17 @@ document.querySelector('[data-modal="supplierModal"]').addEventListener("click",
   setFormSubmitLabel(form, "Save seller");
 });
 document.querySelectorAll("[data-modal]").forEach(btn => {
-  btn.addEventListener("click", () => document.getElementById(btn.dataset.modal).classList.add("open"));
+  btn.addEventListener("click", () => {
+    const modal = document.getElementById(btn.dataset.modal);
+    modal.classList.add("open");
+    if (btn.dataset.modal === "projectModal") {
+      const form = document.getElementById("projectForm");
+      const today = new Date();
+      const due = new Date(today); due.setDate(due.getDate()+30);
+      if (!form.elements.start_date.value) form.elements.start_date.value = today.toISOString().slice(0,10);
+      if (!form.elements.due_date.value) form.elements.due_date.value = due.toISOString().slice(0,10);
+    }
+  });
 });
 document.querySelectorAll("[data-close]").forEach(btn => {
   btn.addEventListener("click", () => {

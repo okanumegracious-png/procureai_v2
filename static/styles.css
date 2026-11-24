@@ -119,3 +119,107 @@
 #page-quotes .quote-actions .icon-action{width:31px;height:31px;border-radius:7px;font-size:16px;color:#176b4e}
 #page-quotes .quote-actions .action-btn.reject{color:#b64d55}
 @media(max-width:600px){.quote-edit-modal{padding:19px 16px}.quote-edit-modal .modal-head h2{font-size:18px}#quoteForm.form-grid{grid-template-columns:1fr}#quoteForm .wide{grid-column:1}#quoteForm .form-actions{grid-column:1;flex-direction:column-reverse}#quoteForm .form-actions .btn{width:100%}}
+
+
+/* Project workspace dashboard */
+.project-page-heading{margin-bottom:22px}
+.project-list-toolbar,.project-section-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-bottom:16px}
+.project-list-toolbar h2,.project-section-heading h2{font:700 17px Manrope,sans-serif;margin:5px 0 4px;letter-spacing:-.35px}
+.project-list-toolbar p,.project-section-heading p{margin:0;color:var(--muted);font-size:11px;line-height:1.55}
+.project-list-count,.project-deliverable-count{font-size:10px;font-weight:700;color:#536176;background:#eef2f6;border-radius:20px;padding:7px 10px;white-space:nowrap}
+.project-cards-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.project-card,.project-overview-card{background:#fff;border:1px solid var(--line);border-radius:13px;box-shadow:0 3px 14px #16253a05}
+.project-card{padding:19px;min-width:0;transition:transform .16s,box-shadow .16s,border-color .16s}
+.project-card:hover{transform:translateY(-2px);box-shadow:0 9px 24px #16253a0c;border-color:#d6e6df}
+.project-card-top,.project-card-meta,.project-card-progress>div,.project-card-footer{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.project-status{font-size:9px;text-transform:uppercase;letter-spacing:.7px;font-weight:800;color:#5c6c80}
+.project-due-badge{display:inline-flex;align-items:center;border-radius:30px;padding:6px 9px;font-size:9px;font-weight:700;white-space:nowrap;background:#edf3ff;color:#4779c8}
+.project-due-badge.ontime{background:#e8f6f0;color:#16815e}.project-due-badge.soon{background:#fff5df;color:#a66a10}.project-due-badge.overdue{background:#fff0f0;color:#b6424b}.project-due-badge.complete{background:#e8f6f0;color:#16815e}
+.project-card h3{font:700 16px Manrope,sans-serif;letter-spacing:-.35px;margin:17px 0 4px;line-height:1.4}
+.project-client{margin:0 0 17px;color:var(--muted);font-size:11px}
+.project-card-meta{padding:11px 0;border-top:1px solid #f0f2f5;border-bottom:1px solid #f0f2f5;font-size:10px;color:var(--muted)}
+.project-card-meta b{color:#314158;font-size:10px}
+.project-card-progress{padding:15px 0 13px}
+.project-card-progress>div:first-child{font-size:10px;color:#718095;margin-bottom:8px}
+.project-card-progress b{color:#24354b;font-size:11px}
+.project-progress-track{height:7px;background:#edf1f4;border-radius:10px;overflow:hidden}
+.project-progress-track i{height:100%;display:block;border-radius:10px;background:linear-gradient(90deg,#15966c,#52c69b);transition:width .3s}
+.project-progress-track.large{height:10px;margin:14px 0 10px}
+.project-card-footer{padding-top:11px;border-top:1px solid #f0f2f5;font-size:10px;color:#7b8798}
+.project-empty,.project-loading{grid-column:1/-1;text-align:center;padding:54px 22px;background:#fff;border:1px dashed #d8e0e8;border-radius:13px;color:var(--muted)}
+.project-empty>span{display:inline-grid;place-items:center;width:44px;height:44px;border-radius:13px;background:#e8f6f0;color:#15966c;font-size:22px}
+.project-empty h3{color:#26374c;font:700 16px Manrope;margin:13px 0 5px}
+.project-empty p{font-size:11px;max-width:410px;line-height:1.6;margin:0 auto 16px}
+.project-loading{padding:35px}
+.project-back-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:17px}
+.project-workspace-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:24px 25px;background:linear-gradient(120deg,#14253b,#1e3a4d);border-radius:14px;color:#fff;margin-bottom:16px}
+.project-workspace-hero .eyebrow{color:#8ed9bb}
+.project-workspace-hero h1{font:800 24px Manrope;letter-spacing:-.8px;margin:8px 0}
+.project-workspace-hero p{color:#c2d0dc;margin:0;font-size:11px}
+.project-hero-due{display:flex;flex-direction:column;align-items:flex-end;gap:9px;min-width:145px}
+.project-hero-due small{font-size:10px;color:#c2d0dc;text-align:right}
+.project-overview-grid{display:grid;grid-template-columns:1.35fr .9fr;gap:15px;margin-bottom:15px}
+.project-overview-card{padding:20px;min-width:0}
+.project-overview-card .eyebrow{font-size:9px}
+.project-overview-card h2{font:700 16px Manrope;letter-spacing:-.3px;margin:6px 0 10px}
+.project-summary-card>p{font-size:11px;line-height:1.7;color:#657388;margin:0 0 16px;white-space:pre-wrap}
+.project-client-details{display:grid;grid-template-columns:130px 1fr;gap:9px 13px;padding-top:14px;border-top:1px solid #eef1f4;font-size:10px}
+.project-client-details b{color:#778497;font-weight:600}.project-client-details span{color:#293a50;overflow-wrap:anywhere}
+.project-progress-card{background:linear-gradient(145deg,#fff,#f8fbfa)}
+.project-progress-number{font:800 38px Manrope;letter-spacing:-1.5px;color:#18364a;margin-top:10px}
+.project-progress-number small{font-size:18px;color:#15966c;margin-left:3px}
+.project-progress-legend{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:#7a8798}
+.project-progress-legend b{color:#34445a}
+.project-progress-card>p{font-size:9px;color:#8a95a3;line-height:1.55;margin:12px 0 0}
+.project-timeline-card,.project-deliverables-card{margin-bottom:15px}
+.project-section-heading{align-items:flex-start}
+.project-date-pair{display:flex;gap:17px;font-size:9px;color:#8390a0}
+.project-date-pair span{display:grid;gap:5px}.project-date-pair b{color:#34445a;font-size:10px}
+.project-milestones{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.project-milestone{display:flex;align-items:flex-start;gap:8px;padding:12px 10px;border:1px solid #edf0f3;border-radius:9px;min-width:0}
+.project-milestone-check{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:#f0f2f5;color:#9aa5b1;font-size:11px;flex:0 0 auto}
+.project-milestone.is-complete{border-color:#d7eee4;background:#f7fcf9}
+.project-milestone.is-complete .project-milestone-check{background:#15966c;color:white}
+.project-milestone>div{display:grid;gap:5px;min-width:0}.project-milestone b{font-size:9px;line-height:1.4;color:#34445a}.project-milestone small{font-size:8px;color:#8793a1}
+.project-milestone>strong{margin-left:auto;color:#8b96a3;font-size:9px}
+.project-deliverables{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 22px;padding:0;margin:0;list-style:none}
+.project-deliverables li{font-size:10px;color:#45556a;display:flex;gap:9px;line-height:1.5}
+.project-deliverables li:before{content:"✓";color:#15966c;font-weight:800}
+.project-muted{font-size:10px;color:#8793a1;line-height:1.6}
+.project-activity-layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:15px;align-items:start}
+.project-feed-card .project-section-heading{margin-bottom:19px}
+.project-update-feed{display:grid}
+.project-update-item{display:flex;gap:11px;padding:0 0 18px;margin-bottom:18px;border-bottom:1px solid #eef1f4}
+.project-update-item:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+.project-update-avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:#e8f6f0;color:#16815e;font-size:11px;font-weight:800;flex:0 0 auto}
+.project-update-body{min-width:0;flex:1}
+.project-update-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.project-update-meta b{font-size:10px;color:#304158}.project-update-meta span{font-size:8px;text-transform:uppercase;letter-spacing:.6px;color:#16815e;background:#e8f6f0;border-radius:20px;padding:4px 7px}
+.project-update-meta time{margin-left:auto;font-size:8px;color:#9aa4b0}
+.project-update-status{font-size:9px;color:#718095;margin:8px 0}
+.project-update-body>p,.project-update-blocker p,.project-update-next p{font-size:10px;line-height:1.6;color:#526176;margin:5px 0 0;white-space:pre-wrap}
+.project-update-blocker,.project-update-next{padding:9px 11px;margin-top:8px;border-radius:8px;background:#fff8ed}
+.project-update-blocker b,.project-update-next b{font-size:9px;color:#9b691c}
+.project-update-next{background:#f1f8f5}.project-update-next b{color:#16815e}
+.project-update-milestones{display:block;margin-top:9px;font-size:8px;color:#16815e}
+.project-feed-empty{padding:28px 12px;text-align:center;color:#8995a3;font-size:10px;line-height:1.6}
+.project-update-form-card form{display:grid;gap:12px;margin-top:15px}
+.project-update-form-card label,.project-create-modal label{display:grid;gap:6px;color:#526176;font-size:10px;font-weight:700}
+.project-update-form-card input:not([type=checkbox]):not([type=range]),.project-update-form-card select,.project-update-form-card textarea,.project-create-modal input,.project-create-modal textarea{width:100%;padding:10px 11px;border:1px solid #dce3e9;border-radius:8px;background:#fff;color:#26374c;font:11px 'DM Sans',sans-serif}
+.project-update-form-card textarea,.project-create-modal textarea{resize:vertical;line-height:1.5}
+.project-update-form-card input:focus,.project-update-form-card select:focus,.project-update-form-card textarea:focus,.project-create-modal input:focus,.project-create-modal textarea:focus{outline:0;border-color:#15966c;box-shadow:0 0 0 3px #15966c15}
+.project-update-form-card input[type=range]{width:100%;accent-color:#15966c}
+.project-update-form-card label strong{float:right;color:#15966c}
+.project-milestone-checklist{display:grid;gap:8px;padding:12px;border-radius:9px;background:#f7f9fb}
+.project-milestone-checklist>b{font-size:9px;color:#34445a;margin-bottom:3px}
+.project-check-option{display:flex!important;align-items:center;gap:8px!important;font-weight:500!important;color:#647286!important}
+.project-check-option input{accent-color:#15966c}.project-check-option span{font-size:9px}
+.project-submit-update{width:100%;justify-content:center}
+.project-create-modal{width:min(680px,calc(100vw - 28px));padding:24px}
+.project-create-modal .modal-head{margin-bottom:17px;padding-bottom:14px;border-bottom:1px solid #edf0f3}
+.project-create-modal .form-grid{gap:14px}
+.project-create-modal .form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;padding-top:14px;border-top:1px solid #edf0f3}
+.project-create-modal small{font-size:9px;color:#8793a1;font-weight:400}
+@media(max-width:1000px){.project-milestones{grid-template-columns:repeat(2,minmax(0,1fr))}.project-activity-layout{grid-template-columns:1fr}.project-update-form-card{order:-1}}
+@media(max-width:760px){.project-cards-grid{grid-template-columns:1fr}.project-overview-grid{grid-template-columns:1fr}.project-workspace-hero{flex-direction:column}.project-hero-due{align-items:flex-start}.project-hero-due small{text-align:left}.project-date-pair{flex-direction:column;gap:7px}.project-deliverables{grid-template-columns:1fr}.project-create-modal{padding:18px}.project-create-modal .form-grid{grid-template-columns:1fr}.project-create-modal .form-actions{grid-column:1;flex-direction:column-reverse}.project-create-modal .form-actions .btn{width:100%}}
+@media(max-width:480px){.project-milestones{grid-template-columns:1fr}.project-client-details{grid-template-columns:100px 1fr}.project-workspace-hero{padding:20px}.project-workspace-hero h1{font-size:20px}.project-section-heading{flex-direction:column}.project-back-row{align-items:flex-start}.project-update-meta time{width:100%;margin-left:0}}
