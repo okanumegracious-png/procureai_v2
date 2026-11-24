@@ -328,7 +328,7 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
         solution = "Invite suitable suppliers, request comparable itemised quotations, and confirm specifications, delivery lead time, warranty and payment terms."
     elif eligible:
         action = "Proceed to human review"
-        reason = "At least one offer passes the current delivery and minimum-rating checks. This is a shortlist recommendation, not an award decision."
+        reason = "At least one offer passes all currently recorded feasibility checks. This is a shortlist recommendation, not an award decision."
         solution = "Validate the recommended seller's technical compliance, stock, quotation validity, references and final landed cost before approval."
     else:
         action = "Do not award yet — seek revisions or alternatives"
