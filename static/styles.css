@@ -338,3 +338,15 @@
 .bid-disclaimer{margin:0;color:#98a2af;font-size:9px;line-height:1.6}
 .bid-no-quotes h3{font:700 13px Manrope;color:#35445a;margin:0 0 7px}
 @media(max-width:700px){.bid-review-columns,.bid-alternative-grid{grid-template-columns:1fr}.bid-judgement,.bid-no-quotes,.bid-alternatives,.bid-seller-review{padding:14px}}
+
+
+/* Project termination / archive controls */
+.project-archive-panel{border-color:#e6d9d9}
+.project-archive-actions{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:15px;border:1px solid #f0dddd;border-radius:10px;background:#fffafa}
+.project-archive-actions>div{display:grid;gap:5px;min-width:0}
+.project-archive-actions>div b{font-size:12px;color:#7f3030}
+.project-archive-actions>div span{font-size:10px;line-height:1.55;color:#7c6a6a}
+.btn-danger{flex:0 0 auto;background:#a93636;border:1px solid #a93636;color:#fff}
+.btn-danger:hover{background:#882b2b;border-color:#882b2b}
+.project-closure-notice p{margin:3px 0 0;color:#61766a;font-size:10px;line-height:1.5;white-space:pre-wrap}
+@media(max-width:620px){.project-archive-actions{align-items:stretch;flex-direction:column}.project-archive-actions .btn-danger{width:100%}}
