@@ -150,8 +150,9 @@ function renderDashboard() {
       <p class="supplier-capabilities">${escapeHtml([s.email,s.website,s.address].filter(Boolean).join(" · "))}</p>
       <div class="supplier-stats">
         <div><b>${s.on_time}%</b><small>On-time</small></div>
-        <div><b>${s.status}</b><small>Status</small></div>
+        <div><b>${escapeHtml(s.status)}</b><small>Status</small></div>
       </div>
+      <div class="supplier-card-actions"><button type="button" class="action-btn edit-seller-btn" data-edit-seller="${s.id}" aria-label="Edit ${escapeHtml(s.name)}" title="Edit seller"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg><span>Edit details</span></button></div>
     </div>
   `).join("");
   // Recent Quotes
@@ -204,6 +205,23 @@ function renderDashboard() {
     ).join("");
   }
 }
+document.addEventListener("click", event => {
+  const editButton = event.target.closest("[data-edit-seller]");
+  if (!editButton) return;
+  const seller = (dashboardData.suppliers || []).find(item => Number(item.id) === Number(editButton.dataset.editSeller));
+  if (!seller) return showToast("Seller record could not be found. Refresh and try again.", true);
+  const form = document.getElementById("supplierForm");
+  form.reset();
+  ["name","city","contact","email","phone","website","address","services","rating","on_time","status"].forEach(key => {
+    if (form.elements[key]) form.elements[key].value = seller[key] ?? "";
+  });
+  form.dataset.sellerId = String(seller.id);
+  document.getElementById("supplierModalTitle").textContent = "Edit seller information";
+  document.getElementById("supplierModalDescription").textContent = "Update this seller's contact details, technical capabilities and verification status.";
+  form.querySelector('button[type="submit"]').textContent = "Save changes";
+  document.getElementById("supplierModal").classList.add("open");
+});
+
 // --- Administrator request and quotation controls ---
 document.addEventListener("click", event => {
   const deleteButton = event.target.closest("[data-delete-request]");
@@ -348,6 +366,13 @@ document.getElementById("runAnalysis").addEventListener("click", async () => {
 });
 document.addEventListener("click", event => { const trigger=event.target.closest("[data-generate-po]"); if(trigger) openPoPreview(trigger.dataset.generatePo); });
 // --- Modals & Forms ---
+document.querySelector('[data-modal="supplierModal"]').addEventListener("click", () => {
+  const form = document.getElementById("supplierForm");
+  form.reset(); delete form.dataset.sellerId;
+  document.getElementById("supplierModalTitle").textContent = "Add seller information";
+  document.getElementById("supplierModalDescription").textContent = "Capture the seller's identity and technical capabilities. New sellers start unverified.";
+  form.querySelector('button[type="submit"]').textContent = "Save seller";
+});
 document.querySelectorAll("[data-modal]").forEach(btn => {
   btn.addEventListener("click", () => document.getElementById(btn.dataset.modal).classList.add("open"));
 });
@@ -416,12 +441,17 @@ document.getElementById("supplierForm").addEventListener("submit", async event =
   const button = form.querySelector('button[type="submit"], button:not([type])');
   if (button) button.disabled = true;
   try {
-    const response = await apiFetch(API + "/suppliers", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
+    const sellerId = form.dataset.sellerId;
+    const response = await apiFetch(API + (sellerId ? "/suppliers/" + encodeURIComponent(sellerId) : "/suppliers"), { method:sellerId ? "PUT" : "POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "Could not save seller");
+    if (!response.ok) throw new Error(result.detail || (sellerId ? "Could not update seller" : "Could not save seller"));
     document.getElementById("supplierModal").classList.remove("open");
     form.reset();
-    showToast("Seller information saved");
+    delete form.dataset.sellerId;
+    document.getElementById("supplierModalTitle").textContent = "Add seller information";
+    document.getElementById("supplierModalDescription").textContent = "Capture the seller's identity and technical capabilities. New sellers start unverified.";
+    form.querySelector('button[type="submit"]').textContent = "Save seller";
+    showToast(sellerId ? "Seller details updated" : "Seller information saved");
     await fetchDashboard();
   } catch (error) { showToast(error.message, true); }
   finally { if (button) button.disabled = false; }
