@@ -118,3 +118,27 @@ def test_budget_feasibility_warns_about_other_unpriced_open_requests():
     )
     assert result["budget_feasibility"] == "within_budget"
     assert any("2 other open project request" in issue for issue in result["issues"])
+
+
+@pytest.mark.parametrize("status", ["completed", "terminated", "cancelled"])
+def test_workflow_buyer_gate_rejects_closed_projects(status):
+    db = _gate_db(status=status, confirmation=("confirmed", "yes"))
+    with pytest.raises(HTTPException) as exc:
+        procureai_main._require_buyer_confirmation(db, "PRJ-1")
+    assert exc.value.status_code == 409
+    db.close()
+
+
+def test_workflow_purchase_order_gate_rechecks_supplier_verification():
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.execute("""CREATE TABLE workflow_suppliers (
+        supplier_id TEXT PRIMARY KEY, verification_status TEXT NOT NULL
+    )""")
+    db.execute("INSERT INTO workflow_suppliers VALUES('SUP-1','pending')")
+    with pytest.raises(HTTPException) as exc:
+        procureai_main._require_verified_workflow_supplier(db, "SUP-1")
+    assert exc.value.status_code == 409
+    db.execute("UPDATE workflow_suppliers SET verification_status='verified' WHERE supplier_id='SUP-1'")
+    assert procureai_main._require_verified_workflow_supplier(db, "SUP-1")["verification_status"] == "verified"
+    db.close()
