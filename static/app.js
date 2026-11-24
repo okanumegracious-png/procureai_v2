@@ -520,8 +520,11 @@ async function loadInvoices() {
   if (!body) return;
   try {
     const response = await apiFetch(`${API}/invoices`);
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Could not load invoices");
+    const raw = await response.text();
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; }
+    catch { throw new Error(`Invoice register returned an unexpected server response (HTTP ${response.status}). Please refresh and try again.`); }
+    if (!response.ok) throw new Error(data.detail || `Could not load invoices (HTTP ${response.status})`);
     invoiceRecords = data.invoices || [];
     const search = document.getElementById("invoiceSearch")?.value || "";
     const status = document.getElementById("invoiceStatusFilter")?.value || "";
@@ -546,8 +549,11 @@ async function createInvoice(orderId) {
   if (!window.confirm("Generate an invoice from this approved purchase order? The invoice will use the approved PO quantities and totals.")) return;
   try {
     const response = await apiFetch(`${API}/orders/${encodeURIComponent(orderId)}/invoice`, {method:"POST"});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Could not create invoice");
+    const raw = await response.text();
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; }
+    catch { throw new Error(`Invoice request returned an unexpected server response (HTTP ${response.status}). Check the invoice register before retrying to avoid duplicates.`); }
+    if (!response.ok) throw new Error(data.detail || `Could not create invoice (HTTP ${response.status})`);
     showToast("Invoice " + data.invoice_number + " created");
     await fetchDashboard();
     document.querySelector('.nav-item[data-page="invoices"]')?.click();
