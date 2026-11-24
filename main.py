@@ -532,7 +532,7 @@ def _recalculate_project(db, project_id: str) -> dict:
     latest = db.execute("SELECT progress_percent FROM project_updates WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
     daily_progress = float(latest["progress_percent"]) if latest else 0.0
     milestone_progress = sum(float(item["weight"]) for item in milestones if item["completed"])
-    overall = round(min(100.0, milestone_progress + daily_progress * 0.4), 1)
+    overall = 100.0 if project["status"] == "completed" else round(min(100.0, milestone_progress + daily_progress * 0.4), 1)
     db.execute("UPDATE projects SET milestones_json=?,progress_percent=?,updated_at=? WHERE project_id=?",
                (json.dumps(milestones), overall, _now(), project_id))
     return {"progress_percent": overall, "milestone_progress": round(milestone_progress, 1),
@@ -1082,8 +1082,12 @@ def dashboard_create_request(payload: DashboardRequestPayload):
     except ValueError:
         raise HTTPException(status_code=422, detail="required_by must be an ISO date")
     with dashboard_module.connect() as db:
-        if payload.project_id and not db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Selected project was not found")
+        if payload.project_id:
+            selected_project = db.execute("SELECT status FROM projects WHERE project_id=?", (payload.project_id,)).fetchone()
+            if not selected_project:
+                raise HTTPException(status_code=404, detail="Selected project was not found")
+            if selected_project["status"] == "completed":
+                raise HTTPException(status_code=409, detail="This project is closed. Reopen it through an authorised process before adding requests.")
         next_id = db.execute("SELECT COALESCE(MAX(id),0)+1 FROM requests").fetchone()[0]
         code = f"PR-{next_id+141:04d}"
         created_at = _now()
@@ -1460,9 +1464,11 @@ def link_quotation_to_project(project_id: str, quote_id: int, request: Request):
     now = _now()
     actor = getattr(request.state, "auth_user", "") or "Workspace user"
     with connect() as db:
-        project = db.execute("SELECT title FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        project = db.execute("SELECT title,status FROM projects WHERE project_id=?", (project_id,)).fetchone()
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] == "completed":
+            raise HTTPException(status_code=409, detail="This project is closed. Linked quotations are read-only.")
         quote = db.execute("""SELECT q.id,s.name AS supplier,r.code AS request_code,r.material
             FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id
             WHERE q.id=?""", (quote_id,)).fetchone()
@@ -1519,8 +1525,11 @@ def add_project_daily_update(project_id: str, payload: ProjectDailyUpdatePayload
     now = _now()
     author = getattr(request.state, "auth_user", "") or "Workspace user"
     with connect() as db:
-        if not db.execute("SELECT 1 FROM projects WHERE project_id=?", (project_id,)).fetchone():
+        project_row = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project_row:
             raise HTTPException(status_code=404, detail="Project not found")
+        if project_row["status"] == "completed":
+            raise HTTPException(status_code=409, detail="This project is closed. Daily updates are read-only.")
         db.execute("""INSERT INTO project_updates
             (project_id,author,update_type,status,progress_percent,field_notes,blockers,next_steps,
              completed_milestones_json,created_at)
