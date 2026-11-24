@@ -374,6 +374,17 @@ def startup():
             UNIQUE(request_id)
         )""")
         db.execute("CREATE INDEX IF NOT EXISTS idx_project_purchase_requests_project ON project_purchase_requests(project_id)")
+        db.execute("""CREATE TABLE IF NOT EXISTS project_closures (
+            project_id TEXT PRIMARY KEY REFERENCES projects(project_id) ON DELETE CASCADE,
+            completed_at TEXT NOT NULL,
+            closed_by TEXT NOT NULL DEFAULT '',
+            completion_note TEXT NOT NULL DEFAULT '',
+            progress_at_close REAL NOT NULL DEFAULT 0
+        )""")
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+        )""")
 
 
 class BOQItem(BaseModel):
@@ -457,6 +468,10 @@ class ProjectDailyUpdatePayload(BaseModel):
     blockers: str = Field(default="", max_length=4000)
     next_steps: str = Field(default="", max_length=4000)
     completed_milestones: List[str] = Field(default_factory=list)
+
+
+class ProjectCompletionPayload(BaseModel):
+    completion_note: str = Field(default="", max_length=3000)
 
 
 def _now() -> str:
@@ -554,6 +569,11 @@ def _project_overview(db, project_id: str) -> dict:
     project["progress_percent"] = progress["progress_percent"]
     project["progress_breakdown"] = {"milestones": progress["milestone_progress"], "daily_updates": round(progress["daily_progress"] * 0.4, 1)}
     project.update(_project_due_status(project))
+    closure = db.execute("SELECT completed_at,closed_by,completion_note,progress_at_close FROM project_closures WHERE project_id=?", (project_id,)).fetchone()
+    project["completed_at"] = closure["completed_at"] if closure else None
+    project["closed_by"] = closure["closed_by"] if closure else None
+    project["completion_note"] = closure["completion_note"] if closure else ""
+    project["progress_at_close"] = closure["progress_at_close"] if closure else None
     project["boq_items_count"] = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
     project["quotations_count"] = db.execute("SELECT COUNT(*) FROM workflow_quotations WHERE project_id=?", (project_id,)).fetchone()[0]
     project["purchase_orders_count"] = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=?", (project_id,)).fetchone()[0]
@@ -1363,6 +1383,58 @@ def create_project_workspace(payload: ProjectCreatePayload, request: Request):
     return {"success": True, "project": result}
 
 
+@app.post("/api/projects/{project_id}/complete")
+def complete_project(project_id: str, payload: ProjectCompletionPayload, request: Request):
+    now = _now()
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    with connect() as db:
+        project = db.execute("SELECT project_id,title,status,progress_percent FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        if project["status"] == "completed":
+            raise HTTPException(status_code=409, detail="This project is already closed.")
+        if project["status"] == "cancelled":
+            raise HTTPException(status_code=409, detail="A cancelled project cannot be marked as completed.")
+        db.execute("""INSERT INTO project_closures(project_id,completed_at,closed_by,completion_note,progress_at_close)
+            VALUES(?,?,?,?,?)""",
+            (project_id,now,actor,payload.completion_note.strip(),float(project["progress_percent"] or 0)))
+        db.execute("UPDATE projects SET status='completed',progress_percent=100,updated_at=? WHERE project_id=?",
+                   (now,project_id))
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor,"complete","project",project_id,json.dumps({
+                "project_title":project["title"],"completion_note":payload.completion_note.strip(),
+                "progress_at_close":float(project["progress_percent"] or 0)
+            }),now))
+        overview = _project_overview(db, project_id)
+    return {"success":True,"project":overview}
+
+
+@app.get("/api/projects/trends")
+def project_completion_trends():
+    today = date.today()
+    cursor = today.replace(day=1)
+    months = []
+    for _ in range(12):
+        key = cursor.strftime("%Y-%m")
+        rows = []
+        with connect() as db:
+            rows = db.execute("""SELECT p.project_id,p.title,p.client_name,p.procurement_lead,
+                c.completed_at,c.closed_by,c.completion_note
+                FROM project_closures c JOIN projects p ON p.project_id=c.project_id
+                WHERE substr(c.completed_at,1,7)=?
+                ORDER BY c.completed_at DESC,p.title ASC""", (key,)).fetchall()
+        months.append({"month":key,"label":cursor.strftime("%b %Y"),"count":len(rows),
+                       "projects":[dict(row) for row in rows]})
+        cursor = (cursor.replace(day=1) - __import__("datetime").timedelta(days=1)).replace(day=1)
+    current_key = today.strftime("%Y-%m")
+    current_month = next((item for item in months if item["month"] == current_key), None)
+    featured = current_month["projects"][0] if current_month and current_month["projects"] else None
+    return {"months":list(reversed(months)),"current_month":today.strftime("%B %Y"),
+            "completed_this_month":current_month["count"] if current_month else 0,
+            "project_of_the_month":featured}
+
+
 @app.get("/api/projects/{project_id}/quotations")
 def list_project_quotation_candidates(project_id: str):
     with connect() as db:
@@ -1458,6 +1530,9 @@ def add_project_daily_update(project_id: str, payload: ProjectDailyUpdatePayload
              json.dumps(payload.completed_milestones),now))
         for key in payload.completed_milestones:
             _complete_project_milestone(db, project_id, key, "Daily team update")
+        project_row = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if project_row and project_row["status"] == "completed":
+            raise HTTPException(status_code=409, detail="This project is closed. Reopen it through an authorised process before adding updates.")
         project = _project_overview(db, project_id)
     return {"success": True, "project": project}
 
