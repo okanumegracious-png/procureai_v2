@@ -135,10 +135,17 @@
     <label class="wide">Project title<input name="title" required minlength="2" maxlength="220" placeholder="e.g. Industrial generator overhaul — Site A"></label>
     <label>Client / agency name<input name="client_name" maxlength="200" placeholder="Client or commissioning agency"></label>
     <label>Assigned procurement lead<input name="procurement_lead" maxlength="160" placeholder="Responsible lead"></label>
-    <label class="wide">Client / agency details<textarea name="agency_details" rows="2" maxlength="1200" placeholder="Client contact, department, location or engagement reference"></textarea></label>
-    <label class="wide">Executive summary & scope<textarea name="executive_summary" rows="3" maxlength="5000" placeholder="Describe the project objective, scope, operational context and expected outcome"></textarea></label>
+    <label class="wide">Project location<input name="project_location" required maxlength="240" placeholder="e.g. Oyigbo, Rivers State"></label>
+    <label>Project category<input name="project_category" required maxlength="120" placeholder="e.g. Electrical / Engineering"></label>
+    <label>Estimated budget (₦)<input name="estimated_budget" type="number" min="0" step="0.01" required placeholder="e.g. 8500000"></label>
+    <label>Expected duration (days)<input name="expected_duration_days" type="number" min="1" max="3650" value="30" required></label>
+    <label>Priority<select name="priority" required><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+    <label>Project status<select name="status" required><option value="active" selected>Active</option><option value="on_hold">On hold</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
+    <label>Number of purchase requests<input name="planned_purchase_requests" type="number" min="0" max="500" value="1" required></label>
     <label>Project start date<input name="start_date" type="date" required></label>
     <label>Target completion date<input name="due_date" type="date" required></label>
+    <label class="wide">Client / agency details<textarea name="agency_details" rows="2" maxlength="1200" placeholder="Client contact, department or engagement reference"></textarea></label>
+    <label class="wide">Executive summary & scope<textarea name="executive_summary" rows="3" maxlength="5000" placeholder="Describe the project objective, scope, operational context and expected outcome"></textarea></label>
     <label class="wide">Key deliverables <small>Enter one deliverable per line.</small><textarea name="deliverables" rows="3" placeholder="Approved BOQ and procurement schedule&#10;Verified supplier quotations&#10;Approved purchase order"></textarea></label>
     <div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">Create workspace</button></div>
   </form>
