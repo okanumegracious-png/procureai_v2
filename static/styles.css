@@ -223,3 +223,5 @@
 @media(max-width:1000px){.project-milestones{grid-template-columns:repeat(2,minmax(0,1fr))}.project-activity-layout{grid-template-columns:1fr}.project-update-form-card{order:-1}}
 @media(max-width:760px){.project-cards-grid{grid-template-columns:1fr}.project-overview-grid{grid-template-columns:1fr}.project-workspace-hero{flex-direction:column}.project-hero-due{align-items:flex-start}.project-hero-due small{text-align:left}.project-date-pair{flex-direction:column;gap:7px}.project-deliverables{grid-template-columns:1fr}.project-create-modal{padding:18px}.project-create-modal .form-grid{grid-template-columns:1fr}.project-create-modal .form-actions{grid-column:1;flex-direction:column-reverse}.project-create-modal .form-actions .btn{width:100%}}
 @media(max-width:480px){.project-milestones{grid-template-columns:1fr}.project-client-details{grid-template-columns:100px 1fr}.project-workspace-hero{padding:20px}.project-workspace-hero h1{font-size:20px}.project-section-heading{flex-direction:column}.project-back-row{align-items:flex-start}.project-update-meta time{width:100%;margin-left:0}}
+
+.project-due-badge.unscheduled{background:#eef1f4;color:#68778a}
