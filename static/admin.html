@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2d">
+  <title>ProcureAI — Administration</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+<div class="login-wrap" id="loginView" hidden>
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <div class="brand login-brand"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>ADMINISTRATION</small></span></div>
+    <h1>Administrator sign in</h1>
+    <p class="subheading">Restricted area. Activity is recorded in the audit log.</p>
+    <label>Email<input name="email" type="email" autocomplete="username" required autofocus></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+    <div class="login-error" id="loginError" role="alert"></div>
+    <button class="btn btn-primary" id="loginBtn">Sign in</button>
+    <a class="back-link" href="/">← Back to workspace</a>
+  </form>
+</div>
+
+<div class="app-shell" id="appView" hidden>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/admin"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>ADMINISTRATION</small></span></a>
+    <div class="workspace-label">MANAGE</div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-bottom">
+      <a class="admin-link" href="/">← Back to workspace</a>
+      <div class="user-row"><div class="avatar" id="meAvatar">AD</div><div><b id="meName">Administrator</b><small id="meEmail"></small></div></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+      <div class="crumb">Administration <span>/</span> <b id="crumbTitle">Overview</b></div>
+      <div class="top-actions">
+        <button class="btn btn-ghost" id="passwordBtn">Change password</button>
+        <button class="btn btn-ghost" id="logoutBtn">Sign out</button>
+      </div>
+    </header>
+    <section class="page active" id="content"></section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modal"><div class="modal">
+  <div class="modal-head"><div><span class="eyebrow" id="modalEyebrow"></span><h2 id="modalTitle"></h2></div><button class="close" id="modalClose" aria-label="Close">×</button></div>
+  <div id="modalBody"></div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script src="/static/admin.js"></script>
+</body></html>

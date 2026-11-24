@@ -15,10 +15,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+import admin
+
 BASE = Path(__file__).resolve().parent
 DB = BASE / "procureai.db"
 STATIC = BASE / "static"
 D = Decimal
+admin.configure(lambda: connect())
 
 
 def money(value):
@@ -66,6 +69,7 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
+        admin.init_schema(db)
         if db.execute("SELECT COUNT(*) FROM suppliers").fetchone()[0] == 0:
             db.executemany(
                 "INSERT INTO suppliers(name,city,rating,on_time,contact) VALUES(?,?,?,?,?)",
@@ -123,7 +127,7 @@ def dashboard():
     pending = sum(1 for o in orders if o["status"] == "Pending approval")
     total_spend = sum(float(o["total"]) for o in orders if o["status"] == "Approved")
     return {
-        "metrics": {"open_requests": open_requests, "suppliers": len(suppliers),
+        "metrics": {"open_requests": open_requests, "suppliers": sum(1 for s in suppliers if s["status"] == "Active"),
                     "pending_approvals": pending, "approved_spend": round(total_spend,2)},
         "requests": req, "suppliers": suppliers, "orders": orders,
         "recent_quotes": rows("""SELECT q.*,s.name supplier,r.code request_code,r.material
@@ -171,12 +175,14 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print("%s - %s" % (self.address_string(), fmt % args))
 
-    def send_json(self, payload, status=200):
+    def send_json(self, payload, status=200, headers=None):
         body = json.dumps(payload, default=str).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -188,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if admin.handle(self, "GET", path):
+            return
         try:
             if path == "/api/dashboard":
                 return self.send_json(dashboard())
@@ -203,6 +211,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"orders": dashboard()["orders"]})
             if path == "/":
                 return self.serve_file(STATIC / "index.html", "text/html; charset=utf-8")
+            if path in ("/admin", "/admin/"):
+                return self.serve_file(STATIC / "admin.html", "text/html; charset=utf-8",
+                                       {"X-Frame-Options": "DENY", "Cache-Control": "no-store"})
             if path.startswith("/static/"):
                 name = path.removeprefix("/static/")
                 if "/" in name or "\\" in name:
@@ -215,18 +226,31 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self.send_json({"error":f"Server error: {e}"},500)
 
-    def serve_file(self, path, mime):
+    def serve_file(self, path, mime, headers=None):
         if not path.is_file():
             return self.send_json({"error":"Application asset missing"},404)
         body = path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type",mime)
         self.send_header("Content-Length",str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
+    def _admin_only(self, method):
+        if not admin.handle(self, method, urlparse(self.path).path):
+            self.send_json({"error": "Not found"}, 404)
+
+    def do_PUT(self): self._admin_only("PUT")
+    def do_PATCH(self): self._admin_only("PATCH")
+    def do_DELETE(self): self._admin_only("DELETE")
+
     def do_POST(self):
         path = urlparse(self.path).path
+        if admin.handle(self, "POST", path):
+            return
         try:
             data = self.body()
             if path == "/api/requests":
@@ -275,9 +299,10 @@ class Handler(BaseHTTPRequestHandler):
                 qty=D(str(req["quantity"])); price=D(str(quote["unit_price"]))
                 tax=(qty*price*D(str(quote["tax_rate"]))/D("100"))
                 freight=D(str(quote["freight"])); subtotal=qty*price; total=subtotal+tax+freight
+                if supplier["status"] != "Active": raise ValueError("Supplier is suspended and cannot receive orders")
                 reasons=[]
-                if total>D("2500000"): reasons.append("Order exceeds the automatic approval limit")
-                if supplier["rating"]<3.5: reasons.append("Supplier rating is below the preferred threshold")
+                if total>D(admin.get_setting("approval_limit")): reasons.append("Order exceeds the automatic approval limit")
+                if supplier["rating"]<float(admin.get_setting("min_supplier_rating")): reasons.append("Supplier rating is below the preferred threshold")
                 if quote["lead_days"] > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
                     reasons.append("Quoted lead time misses the requested delivery date")
                 status="Pending approval" if reasons else "Approved"
@@ -299,6 +324,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     init_db()
+    admin.ensure_admin()
     host, port = "127.0.0.1", 8000
     print("\\n  ProcureAI is running")
     print(f"  Open http://{host}:{port} in your browser")
