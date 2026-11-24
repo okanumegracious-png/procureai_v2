@@ -92,9 +92,22 @@
     loading=true;lastProject=projectId;
     const section=document.createElement("section");section.className="job-report";section.innerHTML='<div class="jr-muted">JOB CLOSE-OUT · BEFORE & AFTER DOCUMENTATION</div><h2>Job completion report</h2><p class="jr-muted">Record the equipment condition before work, attach the two photographs, and document the work completed and final condition.</p><div class="jr-loading">Loading report…</div>';
     container.append(section);
+    const archivePanel=document.createElement("section");
+    archivePanel.className="project-overview-card project-archive-panel";
+    archivePanel.innerHTML='<div class="project-section-heading"><div><span class="eyebrow">PROJECT CONTROL</span><h2>Project closure &amp; archive</h2><p>Terminate this project if work has been discontinued. Existing records remain available for audit and reference.</p></div></div>'+
+      (projectStatus==="terminated" ? '<div class="project-closure-notice"><b>Project archived</b><span>This project is read-only. Requests, quotations, purchase orders, invoices, job completion reports and audit history are retained.</span></div>' :
+       projectStatus==="completed" ? '<p class="project-muted">This project is already completed and closed. Its records remain available for reference.</p>' :
+       '<div class="project-archive-actions"><div><b>Terminate / archive project</b><span>Stops further project activity without deleting any records. This action cannot be reversed from the workspace.</span></div><button type="button" class="btn btn-danger" data-terminate-project>Terminate project</button></div>');
+    container.append(archivePanel);
     try{
       const data=await request(API+"/projects/"+encodeURIComponent(projectId)+"/job-completion-report");
       let saved=data.report;
+      if(projectStatus==="terminated"){
+        section.innerHTML='<div class="jr-muted">JOB CLOSE-OUT · ARCHIVED RECORD</div><h2>Job completion report</h2><p class="jr-muted">This project is terminated. The report is available for review and PDF export only.</p><div class="jr-existing"></div>';
+        if(saved){section.__savedReport=saved;renderSaved(section.querySelector(".jr-existing"),saved);}
+        else section.querySelector(".jr-existing").innerHTML='<p class="jr-muted">No job completion report was saved before the project was archived.</p>';
+        return;
+      }
       section.innerHTML=`<div class="jr-muted">JOB CLOSE-OUT · BEFORE & AFTER DOCUMENTATION</div><h2>Job completion report</h2><p class="jr-muted">This report is attached to this project and retained in its history.</p>
         <div class="jr-existing"></div>
         <form class="jr-form">
@@ -155,7 +168,7 @@
     if(!content)return;
     const hero=content.querySelector(".project-workspace-hero");
     const projectId=hero?.querySelector(".eyebrow")?.textContent.match(/PROJECT WORKSPACE\s*·\s*(\S+)/)?.[1];
-    if(projectId&&(projectId!==lastProject||!content.querySelector(".job-report"))){lastProject=projectId;loading=false;mount(content,projectId,hero.textContent);}
+    if(projectId&&(projectId!==lastProject||!content.querySelector(".job-report"))){lastProject=projectId;loading=false;mount(content,projectId,hero.dataset.projectStatus||"active");}
   });
   observer.observe(document.documentElement,{childList:true,subtree:true});
 })();

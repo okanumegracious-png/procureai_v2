@@ -110,6 +110,25 @@ document.getElementById("projectWorkspaceContent").addEventListener("click", asy
     finally { if (closeButton.isConnected) closeButton.disabled = false; }
     return;
   }
+  const terminateButton = event.target.closest("[data-terminate-project]");
+  if (terminateButton && activeProjectId) {
+    const note = window.prompt("Optional: record why this project is being terminated. Existing records will be retained.");
+    if (note === null) return;
+    if (!window.confirm("Terminate and archive this project? New work will be blocked, but all existing requests, quotations, purchase orders, invoices, reports and audit history will be retained.")) return;
+    terminateButton.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/terminate`, {
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({termination_note:note})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not terminate project");
+      renderProjectWorkspace(data.project);
+      await loadProjects();
+      showToast("Project terminated and archived. Existing records were retained.");
+    } catch(error) { showToast(error.message,true); }
+    finally { if (terminateButton.isConnected) terminateButton.disabled = false; }
+    return;
+  }
   const button = event.target.closest("[data-add-project-request]");
   if (!button || !activeProjectId) return;
   const form = document.getElementById("requestForm");
@@ -264,12 +283,14 @@ function renderProjectCards() {
   const grid = document.getElementById("projectCards");
   const filter = document.getElementById("projectStatusFilter")?.value || "all";
   const filteredProjects = projectRecords.filter(project => {
-    const completed = String(project.status || "").toLowerCase() === "completed";
-    return filter === "all" || (filter === "completed" && completed) || (filter === "uncompleted" && !completed);
+    const status = String(project.status || "").toLowerCase();
+    const completed = status === "completed";
+    const terminated = status === "terminated";
+    return filter === "all" || (filter === "completed" && completed) || (filter === "terminated" && terminated) || (filter === "uncompleted" && !completed && !terminated);
   });
   document.getElementById("projectCount").textContent = `${filteredProjects.length} ${filteredProjects.length === 1 ? "project" : "projects"}`;
   if (!filteredProjects.length) {
-    const message = filter === "completed" ? "No completed projects yet." : filter === "uncompleted" ? "No uncompleted projects. Great work!" : "No project workspaces yet.";
+    const message = filter === "completed" ? "No completed projects yet." : filter === "terminated" ? "No terminated projects." : filter === "uncompleted" ? "No uncompleted projects. Great work!" : "No project workspaces yet.";
     grid.innerHTML = `<div class="project-empty"><span>▦</span><h3>${escapeHtml(message)}</h3><p>${filter === "all" ? "Create your first project to get started." : "Try another filter or update a project's completion status."}</p>${filter === "all" ? '<button class="btn btn-primary" data-modal="projectModal">Create first project</button>' : ""}</div>`;
     return;
   }
@@ -299,6 +320,7 @@ async function openProjectWorkspace(projectId) {
 }
 function renderProjectWorkspace(project) {
   const container = document.getElementById("projectWorkspaceContent");
+  const projectLocked = ["completed","terminated"].includes(String(project.status || "").toLowerCase());
   const milestones = project.milestones || [];
   const updates = project.updates || [];
   const deliverables = project.deliverables || [];
@@ -322,11 +344,12 @@ function renderProjectWorkspace(project) {
       </div>
     </article>`).join("") : '<div class="project-feed-empty">No daily updates yet. Record the first field or procurement update below.</div>';
   container.innerHTML = `
-    <section class="project-workspace-hero">
+    <section class="project-workspace-hero" data-project-status="${escapeHtml(project.status || "active")}">
       <div><div class="eyebrow">PROJECT WORKSPACE · ${escapeHtml(project.project_id)}</div><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.client_name || "Client not specified")} · Procurement lead: ${escapeHtml(project.procurement_lead || "Unassigned")}</p></div>
-      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project closed</span>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
+      <div class="project-hero-due">${dueBadge(project.due_status,project.due_label)}<small>${project.completed_at ? "Completed " + projectDate(project.completed_at.slice(0,10)) : "Target completion · " + projectDate(project.due_date)}</small>${project.status === "completed" ? '<span class="project-closed-label">✓ Project completed</span>' : project.status === "terminated" ? '<span class="project-closed-label">Archived / terminated</span>' : '<button type="button" class="btn btn-primary project-close-btn" data-close-project>✓ Close project</button>'}</div>
     </section>
-    ${project.status === "completed" ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
+${project.status === "completed" ? `<div class="project-closure-notice"><b>Project completed and closed</b><span>Closed by ${escapeHtml(project.closed_by || "Workspace user")} on ${projectDate((project.completed_at || "").slice(0,10))}. This project remains available for reporting and reference.</span></div>` : ""}
+    ${project.status === "terminated" ? `<div class="project-closure-notice"><b>Project terminated and archived</b><span>Archived by ${escapeHtml(project.terminated_by || "Workspace user")} on ${projectDate((project.terminated_at || "").slice(0,10))}. Existing procurement records and reports are retained.</span>${project.termination_note ? `<p>${escapeHtml(project.termination_note)}</p>` : ""}</div>` : ""}
     <section class="project-intake-details">
       <div class="project-section-heading"><div><span class="eyebrow">PROJECT BRIEF</span><h2>Project requirements</h2></div></div>
       <div class="project-intake-grid">
@@ -346,13 +369,13 @@ function renderProjectWorkspace(project) {
     </section>
     <section class="project-overview-card project-timeline-card"><div class="project-section-heading"><div><span class="eyebrow">TIMELINE & DUE DATE TRACKER</span><h2>Procurement milestones</h2></div><div class="project-date-pair"><span>Start <b>${projectDate(project.start_date)}</b></span><span>Due <b>${projectDate(project.due_date)}</b></span></div></div><div class="project-milestones">${milestoneMarkup}</div></section>
     <section class="project-overview-card project-purchase-requests-card">
-      <div class="project-section-heading"><div><span class="eyebrow">PROJECT PROCUREMENT</span><h2>Purchase requests</h2><p>Manage multiple independent material and service requests under this project.</p></div><div class="project-request-actions"><span class="project-deliverable-count">${purchaseRequests.length} requests</span>${project.status === "completed" ? '<span class="project-closed-label">Project closed</span>' : '<button type="button" class="btn btn-primary" data-add-project-request>＋ Add request</button>'}</div></div>
+      <div class="project-section-heading"><div><span class="eyebrow">PROJECT PROCUREMENT</span><h2>Purchase requests</h2><p>Manage multiple independent material and service requests under this project.</p></div><div class="project-request-actions"><span class="project-deliverable-count">${purchaseRequests.length} requests</span>${projectLocked ? '<span class="project-closed-label">Project closed</span>' : '<button type="button" class="btn btn-primary" data-add-project-request>＋ Add request</button>'}</div></div>
       <div class="project-request-list">${purchaseRequestsMarkup}</div>
     </section>
     <section class="project-overview-card project-buyer-confirmation-card">
       <div class="project-section-heading"><div><span class="eyebrow">PROCUREMENT GATE · STAGE 3</span><h2>Buyer confirmation</h2><p>Record the buyer's response received by email, WhatsApp or phone. No buyer login or automated email link is required.</p></div><span class="project-deliverable-count" id="buyerConfirmationStatus">Loading status…</span></div>
       <div id="buyerConfirmationHistory" class="project-linked-quote-list"><div class="project-feed-empty">Loading confirmation history…</div></div>
-      ${project.status === "completed" ? '<p class="project-muted">This project is closed. Buyer confirmation records are read-only.</p>' : `<form id="buyerConfirmationForm" class="project-link-quote-form buyer-confirmation-form">
+      ${projectLocked ? '<p class="project-muted">This project is closed. Buyer confirmation records are read-only.</p>' : `<form id="buyerConfirmationForm" class="project-link-quote-form buyer-confirmation-form">
         <label>Buyer name<input name="buyer_name" required minlength="2" maxlength="200" placeholder="Name of the person who responded"></label>
         <label>Buyer organisation<input name="organisation" maxlength="200" placeholder="Organisation / department (optional)"></label>
         <label>Response received through<select name="channel" required><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="phone">Phone call</option></select></label>
@@ -366,7 +389,7 @@ function renderProjectWorkspace(project) {
     <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
     <section class="project-overview-card project-linked-quotes">
       <div class="project-section-heading"><div><span class="eyebrow">COMMERCIAL RECORDS</span><h2>Linked quotations</h2><p>Attach quotations already recorded in ProcureAI without changing their original purchase request.</p></div><span class="project-deliverable-count">${(project.linked_quotations || []).length} linked</span></div>
-      ${project.status === "completed" ? '<p class="project-muted">This project is closed. Linked quotations are retained as read-only records.</p>' : `<form id="projectLinkQuotationForm" class="project-link-quote-form">
+      ${projectLocked ? '<p class="project-muted">This project is closed. Linked quotations are retained as read-only records.</p>' : `<form id="projectLinkQuotationForm" class="project-link-quote-form">
         <label>Choose an existing quotation<select name="quote_id" id="projectQuotationSelect" required><option value="">Loading available quotations…</option></select></label>
         <button class="btn btn-primary" type="submit">Link quotation to project</button>
       </form>`}
@@ -379,8 +402,8 @@ function renderProjectWorkspace(project) {
     </section>
     <section class="project-activity-layout">
       <article class="project-overview-card project-feed-card"><div class="project-section-heading"><div><span class="eyebrow">TEAM JOURNAL</span><h2>Daily activity log</h2><p>Field notes, procurement updates, blockers and next actions.</p></div><span class="project-deliverable-count">${updates.length} entries</span></div><div class="project-update-feed">${updateMarkup}</div></article>
-      <article class="project-overview-card project-update-form-card"><span class="eyebrow">TEAM JOURNAL</span><h2>${project.status === "completed" ? "Project updates locked" : "Submit daily update"}</h2><p class="project-muted">${project.status === "completed" ? "This project is closed. Historical updates remain available above." : "Your signed-in account is recorded automatically as the author."}</p>
-        ${project.status === "completed" ? ""  : `<form id="projectUpdateForm">
+      <article class="project-overview-card project-update-form-card"><span class="eyebrow">TEAM JOURNAL</span><h2>${projectLocked ? "Project updates locked" : "Submit daily update"}</h2><p class="project-muted">${projectLocked ? "This project is closed. Historical updates remain available above." : "Your signed-in account is recorded automatically as the author."}</p>
+        ${projectLocked ? ""  : `<form id="projectUpdateForm">
           <label>Update type<select name="update_type"><option value="daily">Daily update</option><option value="field_note">Field note</option><option value="blocker">Blocker / issue</option><option value="milestone">Milestone update</option></select></label>
           <label>Current status<input name="status" maxlength="80" value="In progress" required></label>
           <label>Reported workstream progress <strong id="projectReportedProgressValue">${latestReported}%</strong><input name="progress_percent" type="range" min="0" max="100" value="${latestReported}" step="5" id="projectReportedProgress"></label>
@@ -391,7 +414,8 @@ function renderProjectWorkspace(project) {
           <button class="btn btn-primary project-submit-update" type="submit">Post project update</button>
         </form>`}
       </article>
-    </section>`;
+    </section>
+`;
   const progressInput = document.getElementById("projectReportedProgress");
   progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
   loadProjectQuotationOptions(project.project_id);
