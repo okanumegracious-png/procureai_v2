@@ -43,6 +43,7 @@ document.querySelectorAll(".nav-item").forEach(btn => {
     const page = btn.dataset.page;
     document.getElementById(`page-${page}`).classList.add("active");
     document.getElementById("crumbTitle").textContent = btn.textContent.trim().split(" ")[0];
+    if (page === "overview") loadProjectTrends();
     if (page === "projects") {
       activeProjectId = null;
       document.getElementById("projectWorkspaceView").hidden = true;
@@ -101,6 +102,7 @@ document.getElementById("projectWorkspaceContent").addEventListener("click", asy
       if (!response.ok) throw new Error(data.detail || "Could not close project");
       renderProjectWorkspace(data.project);
       await loadProjects();
+      await loadProjectTrends();
       showToast("Project closed and added to completion trends");
     } catch(error) { showToast(error.message,true); }
     finally { if (closeButton.isConnected) closeButton.disabled = false; }
@@ -197,7 +199,6 @@ async function loadProjects() {
     if (!response.ok) throw new Error(data.detail || "Could not load projects");
     projectRecords = data.projects || [];
     renderProjectCards();
-    loadProjectTrends();
   } catch (error) {
     grid.innerHTML = `<div class="project-empty"><h3>Projects could not be loaded</h3><p>${escapeHtml(error.message)}</p><button class="btn btn-ghost" id="retryProjects">Try again</button></div>`;
   }
