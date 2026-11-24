@@ -155,6 +155,11 @@
   <div class="modal-head"><div><span class="eyebrow">QUOTATION RECORD</span><h2 id="quoteDetailTitle">Quotation details</h2></div><button class="close" data-close>×</button></div>
   <div id="quoteDetailContent" class="quote-detail-content"><p>Loading quotation…</p></div>
 </div></div>
+<div class="modal-backdrop" id="poPreviewModal"><div class="modal po-preview-modal">
+<div class="modal-head"><div><span class="eyebrow">PURCHASE ORDER PROPOSAL</span><h2>Review before generating</h2><p class="subheading">Confirm the selected quotation and commercial figures.</p></div><button class="close" data-close>×</button></div>
+<div id="poPreviewContent" class="po-preview-content"></div>
+<div class="form-actions po-preview-actions"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="button" class="btn btn-primary" id="confirmGeneratePo">Generate PO proposal</button></div>
+</div></div>
 <div class="toast" id="toast"></div>
 <script src="/static/app.js"></script>
 </body></html>
