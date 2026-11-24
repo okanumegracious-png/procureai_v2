@@ -286,4 +286,25 @@
 
 .app-creator-footer{width:100%;padding:18px 16px 22px;text-align:center;color:#7c8796;font-size:12px;font-weight:600;letter-spacing:.02em;border-top:1px solid var(--line);background:var(--surface,#fff)}
 
-.request-open-filter.active{background:#e8f3ff;border-color:#a9cafa;color:#175ea8;font-weight:700}.request-open-filter:focus-visible{outline:3px solid #78aef4;outline-offset:2px}
+
+
+/* Purchase request detail view */
+.request-row-actions{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.request-open-btn{background:#edf5ff!important;border:1px solid #d7e7fb!important;color:#225d9c!important;font-weight:700!important}
+.request-open-btn:hover{background:#deedff!important;border-color:#b8d4f4!important}
+.request-detail-modal{width:min(720px,calc(100vw - 28px));padding:0;overflow:hidden}
+.request-detail-content{padding:0 24px 22px}
+.request-detail-hero{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:22px 20px;margin:0 -24px 20px;background:linear-gradient(125deg,#f3f7fc,#f7faf8);border-bottom:1px solid #e8edf2}
+.request-detail-hero h3{font:800 19px Manrope,sans-serif;letter-spacing:-.45px;color:#24364b;margin:7px 0 5px}
+.request-detail-hero p{font-size:11px;color:#748297;margin:0}
+.request-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.request-detail-field{display:grid;gap:6px;padding:13px 14px;border:1px solid #e9edf2;border-radius:10px;min-width:0;background:#fff}
+.request-detail-field span{font-size:9px;text-transform:uppercase;letter-spacing:.055em;color:#8491a1;font-weight:800}
+.request-detail-field b{font-size:12px;line-height:1.5;color:#2c3d52;overflow-wrap:anywhere}
+.request-detail-note{margin-top:16px;padding:14px 15px;background:#f6f8fa;border-radius:10px}
+.request-detail-note b{font-size:11px;color:#40536a}
+.request-detail-note p{font-size:10px;line-height:1.6;color:#718095;margin:5px 0 0}
+.request-detail-actions{display:flex;justify-content:flex-end;margin-top:18px}
+.request-detail-loading,.request-detail-error{padding:36px 15px;text-align:center;color:#6f7e91;font-size:12px}
+.request-detail-error p{font-size:11px}
+@media(max-width:560px){.request-detail-content{padding:0 15px 17px}.request-detail-hero{margin:0 -15px 15px;padding:18px 15px}.request-detail-grid{grid-template-columns:1fr}.request-row-actions{gap:5px}.request-row-actions .action-btn{padding:7px 8px;font-size:10px}}

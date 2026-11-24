@@ -62,16 +62,6 @@ document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
 document.getElementById("projectStatusFilter").addEventListener("change", renderProjectCards);
-document.getElementById("filterOpenRequests")?.addEventListener("click", () => {
-  const filter = document.getElementById("requestStatusFilter");
-  const button = document.getElementById("filterOpenRequests");
-  const isActive = filter.value === "Open";
-  filter.value = isActive ? "" : "Open";
-  button.setAttribute("aria-pressed", String(!isActive));
-  button.classList.toggle("active", !isActive);
-  renderDashboard();
-});
-
 document.getElementById("projectCards").addEventListener("click", event => {
   const create = event.target.closest('[data-modal="projectModal"]');
   if (create) { document.querySelector('.project-page-heading [data-modal="projectModal"]')?.click(); return; }
@@ -310,7 +300,7 @@ function renderProjectWorkspace(project) {
   const progress = Math.max(0,Math.min(100,Number(project.progress_percent || 0)));
   const latestReported = updates.length ? Number(updates[0].progress_percent || 0) : 0;
   const purchaseRequests = project.purchase_requests || [];
-  const purchaseRequestsMarkup = purchaseRequests.length ? `<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody>${purchaseRequests.map(r => `<tr><td><b>${escapeHtml(r.code)}</b></td><td><b>${escapeHtml(r.material)}</b><small>${escapeHtml(r.category)}</small></td><td>${escapeHtml(r.quantity)} ${escapeHtml(r.unit)}</td><td>${projectDate(r.required_by)}</td><td><span class="project-request-priority ${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">${escapeHtml(r.status)}</span></td></tr>`).join("")}</tbody></table></div>` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>';
+  const purchaseRequestsMarkup = purchaseRequests.length ? `<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th>DETAILS</th></tr></thead><tbody>${purchaseRequests.map(r => `<tr><td><b>${escapeHtml(r.code)}</b></td><td><b>${escapeHtml(r.material)}</b><small>${escapeHtml(r.category)}</small></td><td>${escapeHtml(r.quantity)} ${escapeHtml(r.unit)}</td><td>${projectDate(r.required_by)}</td><td><span class="project-request-priority ${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">${escapeHtml(r.status)}</span></td><td><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>';
   const milestoneMarkup = milestones.map(item => `
     <div class="project-milestone ${item.completed ? "is-complete" : ""}">
       <span class="project-milestone-check">${item.completed ? "✓" : "○"}</span><div><b>${escapeHtml(item.label)}</b><small>${item.completed ? "Completed" + (item.completed_at ? " · " + projectDate(item.completed_at.slice(0,10)) : "") : "Awaiting completion"}</small></div><strong>${Number(item.weight || 0)}%</strong>
@@ -494,6 +484,48 @@ async function exportPurchaseOrder(orderId) {
     popup.document.open(); popup.document.write(html); popup.document.close();
   } catch (error) { popup.close(); showToast(error.message || "Could not export purchase order.", true); }
 }
+async function openPurchaseRequestDetails(requestId) {
+  const modal = document.getElementById("requestDetailModal");
+  const content = document.getElementById("requestDetailContent");
+  const title = document.getElementById("requestDetailTitle");
+  if (!modal || !content) return;
+  content.innerHTML = '<div class="request-detail-loading">Loading purchase request…</div>';
+  title.textContent = "Purchase request details";
+  modal.classList.add("open");
+  try {
+    const response = await apiFetch(`${API}/requests/${encodeURIComponent(requestId)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load purchase request");
+    const r = data.request;
+    title.textContent = r.code || "Purchase request details";
+    const fields = [
+      ["Request reference", r.code], ["Status", r.status], ["Material / item", r.material],
+      ["Category", r.category], ["Quantity", `${Number(r.quantity).toLocaleString()} ${r.unit || ""}`],
+      ["Project workspace", r.project_title || "Project details unavailable"],
+      ["Project / site", r.site], ["Required by", r.required_by],
+      ["Priority", r.priority], ["Date created", r.created_at ? new Date(r.created_at).toLocaleString() : "Not recorded"]
+    ];
+    content.innerHTML = `
+      <div class="request-detail-hero">
+        <div><span class="eyebrow">PURCHASE REQUEST</span><h3>${escapeHtml(r.material || "Untitled request")}</h3><p>${escapeHtml(r.code || "")} · ${escapeHtml(r.project_title || "Unassigned project")}</p></div>
+        <span class="pill ${r.status === "Open" ? "blue" : "green"}">${escapeHtml(r.status || "Unknown")}</span>
+      </div>
+      <div class="request-detail-grid">${fields.map(([label,value]) => `<div class="request-detail-field"><span>${escapeHtml(label)}</span><b>${escapeHtml(value ?? "Not provided")}</b></div>`).join("")}</div>
+      <div class="request-detail-note"><b>Procurement note</b><p>This record is linked to its project workspace. Use the quotation section to collect supplier offers against this request.</p></div>
+      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button></div>`;
+    content.querySelector("[data-close]")?.addEventListener("click", () => modal.classList.remove("open"));
+  } catch (error) {
+    content.innerHTML = `<div class="request-detail-error"><b>Request details unavailable</b><p>${escapeHtml(error.message)}</p></div>`;
+  }
+}
+document.getElementById("allRequests")?.addEventListener("click", event => {
+  const open = event.target.closest("[data-open-request]");
+  if (open) openPurchaseRequestDetails(open.dataset.openRequest);
+});
+document.getElementById("projectWorkspaceContent")?.addEventListener("click", event => {
+  const open = event.target.closest("[data-open-request]");
+  if (open) openPurchaseRequestDetails(open.dataset.openRequest);
+});
 function renderDashboard() {
   const { metrics, requests, suppliers, orders, recent_quotes } = dashboardData;
   // Metrics
@@ -526,8 +558,8 @@ function renderDashboard() {
       <td>${r.site}</td>
       <td>${r.required_by}</td>
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
-      <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${r.status}</span></td>
-      <td><button class="action-btn reject" data-delete-request="${r.id}" data-request-code="${r.code}">Delete</button></td>
+      <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${escapeHtml(r.status)}</span></td>
+      <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button><button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
     </tr>
   `).join("");
   // Suppliers

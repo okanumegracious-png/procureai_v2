@@ -1096,6 +1096,20 @@ def dashboard_order_detail(order_id: int):
     return {"order": dict(row)}
 
 
+@app.get("/api/requests/{request_id}")
+def dashboard_request_detail(request_id: int):
+    with dashboard_module.connect() as db:
+        row = db.execute("""SELECT r.*, p.project_id, p.title AS project_title
+            FROM requests r
+            LEFT JOIN project_purchase_requests pr ON pr.request_id=r.id
+            LEFT JOIN projects p ON p.project_id=pr.project_id
+            WHERE r.id=?
+            ORDER BY pr.linked_at DESC LIMIT 1""", (request_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Purchase request not found")
+    return {"request": dict(row)}
+
+
 @app.delete("/api/requests/{request_id}")
 def dashboard_delete_request(request_id: int, request: Request):
     username = getattr(request.state, "auth_user", "")
