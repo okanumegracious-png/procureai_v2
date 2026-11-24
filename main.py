@@ -125,12 +125,13 @@ def _send_supplier_request_email(quote):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             method="POST",
         )
+        stage = "OAuth refresh-token exchange"
         try:
             with urllib.request.urlopen(token_request, timeout=25) as response:
                 token_data = json.loads(response.read().decode("utf-8"))
             access_token = token_data.get("access_token", "")
             if not access_token:
-                raise HTTPException(status_code=502, detail="Google did not return an access token. Reconnect the Gmail account.")
+                raise HTTPException(status_code=502, detail="Google OAuth token refresh succeeded without an access token. Reconnect the Gmail account.")
             raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
             gmail_payload = json.dumps({"raw": raw_message}).encode("utf-8")
             gmail_request = urllib.request.Request(
@@ -139,20 +140,33 @@ def _send_supplier_request_email(quote):
                 headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
                 method="POST",
             )
+            stage = "Gmail API send"
             with urllib.request.urlopen(gmail_request, timeout=25) as response:
                 if response.status < 200 or response.status >= 300:
                     raise HTTPException(status_code=502, detail=f"Gmail API returned HTTP {response.status}.")
             return
         except urllib.error.HTTPError as exc:
             try:
-                error_body = exc.read().decode("utf-8", "replace")[:500]
+                error_body = json.loads(exc.read().decode("utf-8", "replace"))
             except Exception:
-                error_body = ""
-            if exc.code in (400, 401, 403):
-                detail = "Google rejected the Gmail authorization. Check the OAuth client, refresh token and Gmail send permission."
+                error_body = {}
+            error_info = error_body.get("error", {}) if isinstance(error_body, dict) else {}
+            if isinstance(error_info, str):
+                error_code = error_info
+                error_description = error_body.get("error_description", "")
+            elif isinstance(error_info, dict):
+                error_code = error_info.get("status") or error_info.get("code") or error_info.get("error", "")
+                error_description = error_info.get("message", "")
             else:
-                detail = f"Gmail API request failed with HTTP {exc.code}. {error_body}".strip()
-            raise HTTPException(status_code=502, detail=detail)
+                error_code = ""
+                error_description = ""
+            safe_description = " ".join(str(error_description).split())[:240]
+            diagnostic = f"{stage} failed with HTTP {exc.code}"
+            if error_code:
+                diagnostic += f" ({str(error_code)[:80]})"
+            if safe_description:
+                diagnostic += f": {safe_description}"
+            raise HTTPException(status_code=502, detail=diagnostic)
         except (urllib.error.URLError, TimeoutError, OSError):
             raise HTTPException(status_code=502, detail="Could not reach Google Gmail over HTTPS. Check Railway outbound connectivity and try again.")
 
