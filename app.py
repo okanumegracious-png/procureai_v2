@@ -111,6 +111,83 @@ def init_db():
             db.execute("INSERT INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)",
                        (supplier_demo_key, datetime.utcnow().isoformat()))
 
+        # Sourced suppliers for the Workshop Electrical Upgrade test project.
+        # Public listings are leads only: every record starts Pending verification.
+        supplier_sourcing_key = "2026-11-24-workshop-electrical-suppliers"
+        if not db.execute("SELECT 1 FROM procureai_migrations WHERE migration_key=?", (supplier_sourcing_key,)).fetchone():
+            sourced_suppliers = [
+                {
+                    "name": "AENS Projects and Engineering Services Limited",
+                    "city": "Port Harcourt, Rivers State",
+                    "contact": "Listed in Schneider Electric Nigeria's official panel-builder directory. Public sourcing references: https://www.se.com/ng/en/work/support/where-to-buy/list-of-distributors/ ; https://www.aens-engineering.com . NOT VERIFIED — confirm CAC, current panel-building capacity, OEM authorisation, references and bank ownership before award.",
+                    "email": "aensengineering@gmail.com; projects@aens-engineering.com",
+                    "phone": "+234 703 253 8441; +234 809 798 3801",
+                    "website": "https://www.aens-engineering.com",
+                    "address": "45 Aba Road, behind CFC Bus Stop, Mile 1, Port Harcourt, Rivers State, Nigeria",
+                    "services": "Electrical distribution panel building; switchboards and power distribution; electrical installation, commissioning and maintenance; automation and control systems. Relevant to the distribution panel and installation/testing scope."
+                },
+                {
+                    "name": "Benotek Engineering Limited",
+                    "city": "Woji, Port Harcourt, Rivers State",
+                    "contact": "Listed in Schneider Electric Nigeria's official retail-distributor directory. Public sourcing reference: https://www.se.com/ng/en/work/support/where-to-buy/list-of-distributors/ ; https://www.benotek.com . NOT VERIFIED — confirm current distributor status, product availability, CAC, bank ownership and project references before award.",
+                    "email": "operations@benotek.com; sales@benotek.com",
+                    "phone": "+234 905 046 2888; +234 705 875 1123",
+                    "website": "https://www.benotek.com",
+                    "address": "Triple Oak Plaza, Peter Odili Extension, Woji-Akpajo Link Road, Gbalajam, Woji, Port Harcourt, Rivers State, Nigeria",
+                    "services": "Electrical and automation products distribution; electrical components and project supply. Listed retail distributor for Schneider Electric products; confirm exact panel, breaker and cable brands/ratings against the approved specification."
+                },
+                {
+                    "name": "Detopsy Electrical Shop (Detopsy Engineering Limited)",
+                    "city": "Trans Amadi, Port Harcourt, Rivers State",
+                    "contact": "Supplier details and product range published on https://detopsyelectricalshop.com/about-us/ . NOT VERIFIED — confirm legal entity/CAC, stock, manufacturer sourcing, product certificates and bank ownership before award.",
+                    "email": "",
+                    "phone": "+234 701 347 1247",
+                    "website": "https://detopsyelectricalshop.com",
+                    "address": "Plot 40–42 Azuabie Street, off Peter Odili Road, Trans Amadi, Port Harcourt, Rivers State, Nigeria",
+                    "services": "Electrical distribution and protection products including Schneider distribution boards, ABB breakers and Philips LED lighting; electrical accessories and installation support. Relevant to the distribution panel, protection devices and lighting."
+                },
+                {
+                    "name": "Trucast Nigeria Limited",
+                    "city": "Rumuomasi, Port Harcourt, Rivers State",
+                    "contact": "Company website publishes RC 8183115 and wholesale/project enquiries. Public sourcing reference: https://www.trucast-ng.com/ . No public phone number captured. NOT VERIFIED — confirm CAC record, contact person, product certifications, stock and warranty before award.",
+                    "email": "sales@trucast-ng.com",
+                    "phone": "",
+                    "website": "https://www.trucast-ng.com",
+                    "address": "Cluster 2, Air Force Plaza, Rumuomasi Market Junction, Port Harcourt, Rivers State, Nigeria",
+                    "services": "Electrical accessories and LED lighting distribution; wholesale and project supply with nationwide delivery. Ask for industrial high-bay LED datasheets, lumen output, IP/IK rating, warranty and SON compliance before considering."
+                },
+                {
+                    "name": "Toscon Global Views Limited",
+                    "city": "Mgbuesilaru, Port Harcourt, Rivers State",
+                    "contact": "Public company website page: https://www.tosconglobalviews.com/electrical-spare-parts/ (page carries an August 2016 publication date; reconfirm current operations and contacts). NOT VERIFIED — confirm cable manufacturer/brand, current stock, standards documentation and bank ownership.",
+                    "email": "info@tosconglobalviews.com",
+                    "phone": "+234 803 547 1989; +234 803 591 5642",
+                    "website": "https://www.tosconglobalviews.com",
+                    "address": "48 RD Road, Mgbuesilaru, behind Shell R.A., Port Harcourt, Rivers State, Nigeria",
+                    "services": "Electrical cables and electrical installation materials; specialist project supply. Request conductor size, copper/aluminium composition, insulation type, voltage grade, IEC/NIS compliance and test certificates."
+                },
+                {
+                    "name": "Jesodeg Integrated Services Limited",
+                    "city": "Woji, Port Harcourt, Rivers State",
+                    "contact": "Company-published electrical services and contact details: https://jesodeg.com/electrical.php . NOT VERIFIED — confirm CAC, qualified personnel, professional credentials, HSE documentation, insurance and project references before engagement.",
+                    "email": "support@jesodeg.com",
+                    "phone": "+234 913 393 6575",
+                    "website": "https://jesodeg.com",
+                    "address": "No. 10 Ezegbakagbaka, Woji, Port Harcourt, Rivers State, Nigeria",
+                    "services": "Electrical installation and commissioning; distribution boards and power panels; industrial lighting; cable tray construction; cable pulling and termination; grounding and electrical system upgrades. Relevant to installation and testing services."
+                }
+            ]
+            for supplier in sourced_suppliers:
+                db.execute("""INSERT INTO suppliers
+                    (name,city,rating,on_time,contact,status,email,phone,website,address,services)
+                    SELECT ?,?,0,0,?,'Pending verification',?,?,?,?,?
+                    WHERE NOT EXISTS (SELECT 1 FROM suppliers WHERE lower(name)=lower(?))""",
+                    (supplier["name"], supplier["city"], supplier["contact"], supplier["email"],
+                     supplier["phone"], supplier["website"], supplier["address"], supplier["services"],
+                     supplier["name"]))
+            db.execute("INSERT INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)",
+                       (supplier_sourcing_key, datetime.utcnow().isoformat()))
+
         # Never seed fictional suppliers, requests or quotations into an operational workspace.
         # Remove only the exact legacy demo rows created by earlier ProcureAI versions.
         demo_supplier_names = (
