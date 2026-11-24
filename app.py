@@ -8,6 +8,7 @@ Data is stored in procureai.db beside this file.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -16,7 +17,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 BASE = Path(__file__).resolve().parent
-DB = BASE / "procureai.db"
+DB = Path(os.getenv("PROCUREAI_DB_PATH", str(BASE / "procureai.db")))
 STATIC = BASE / "static"
 D = Decimal
 
@@ -26,9 +27,11 @@ def money(value):
 
 
 def connect():
-    con = sqlite3.connect(DB)
+    DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB, timeout=30)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
+    con.execute("PRAGMA busy_timeout=30000")
     return con
 
 
@@ -116,6 +119,13 @@ def one(sql, args=()):
 def dashboard():
     req = rows("SELECT * FROM requests ORDER BY id DESC")
     suppliers = rows("SELECT * FROM suppliers ORDER BY rating DESC")
+    for supplier in suppliers:
+        supplier["is_demo"] = str(supplier.get("contact", "")).lower().endswith(".example")
+    recent_quotes = rows("""SELECT q.*,s.name supplier,s.contact,r.code request_code,r.material
+            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
+            JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC LIMIT 8""")
+    for quote in recent_quotes:
+        quote["is_demo"] = str(quote.get("contact", "")).lower().endswith(".example")
     orders = rows("""SELECT o.*,s.name supplier,r.material FROM orders o
                      JOIN suppliers s ON s.id=o.supplier_id JOIN requests r ON r.id=o.request_id
                      ORDER BY o.id DESC""")
@@ -126,9 +136,7 @@ def dashboard():
         "metrics": {"open_requests": open_requests, "suppliers": len(suppliers),
                     "pending_approvals": pending, "approved_spend": round(total_spend,2)},
         "requests": req, "suppliers": suppliers, "orders": orders,
-        "recent_quotes": rows("""SELECT q.*,s.name supplier,r.code request_code,r.material
-            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
-            JOIN requests r ON r.id=q.request_id ORDER BY q.id DESC LIMIT 8""")
+        "recent_quotes": recent_quotes
     }
 
 
@@ -265,6 +273,8 @@ class Handler(BaseHTTPRequestHandler):
                     cur=db.execute("UPDATE orders SET status=?,decision_note=? WHERE id=? AND status='Pending approval'",
                                    (status,data.get("note",""),oid))
                     if cur.rowcount == 0: raise ValueError("Order is not awaiting approval")
+                    if action == "approve":
+                        db.execute("UPDATE requests SET status='Awarded' WHERE id=(SELECT request_id FROM orders WHERE id=?)",(oid,))
                 return self.send_json({"success":True,"status":status})
             if path == "/api/orders":
                 rid=int(data["request_id"]); sid=int(data["supplier_id"])
@@ -280,7 +290,9 @@ class Handler(BaseHTTPRequestHandler):
                 if supplier["rating"]<3.5: reasons.append("Supplier rating is below the preferred threshold")
                 if quote["lead_days"] > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
                     reasons.append("Quoted lead time misses the requested delivery date")
-                status="Pending approval" if reasons else "Approved"
+                # Every purchase order is a proposal until a human approves it.
+                reasons.append("Human approval required before any purchase commitment")
+                status="Pending approval"
                 with connect() as db:
                     code=f"PO-{datetime.utcnow():%y%m%d}-{db.execute('SELECT COUNT(*) FROM orders').fetchone()[0]+1:03d}"
                     cur=db.execute("""INSERT INTO orders(code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,required_by,created_at,decision_note)
@@ -288,7 +300,6 @@ class Handler(BaseHTTPRequestHandler):
                         (code,sid,rid,float(qty),float(price),float(freight),float(tax),float(total),status,
                          req["required_by"],datetime.utcnow().isoformat(),"; ".join(reasons)))
                     oid=cur.lastrowid
-                    db.execute("UPDATE requests SET status='Awarded' WHERE id=?",(rid,))
                 return self.send_json({"success":True,"id":oid,"code":code,"status":status,"total":float(total),"reasons":reasons},201)
             return self.send_json({"error":"Not found"},404)
         except (ValueError, InvalidOperation, KeyError, TypeError) as e:

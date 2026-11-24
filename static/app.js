@@ -73,7 +73,7 @@ function renderDashboard() {
     <div class="supplier-row">
       <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
       <div class="supplier-info">
-        <b>${s.name}</b>
+        <b>${s.name} ${s.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
         <small>${s.city} · ${s.on_time}% on-time</small>
       </div>
       <div class="rating">★ ${s.rating}</div>
@@ -85,7 +85,7 @@ function renderDashboard() {
         <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
         <span class="rating">★ ${s.rating}</span>
       </div>
-      <h3>${s.name}</h3>
+      <h3>${s.name} ${s.is_demo ? '<span class="pill amber">DEMO DATA</span>' : ''}</h3>
       <p>${s.city} · ${s.contact}</p>
       <div class="supplier-stats">
         <div><b>${s.on_time}%</b><small>On-time</small></div>
@@ -97,7 +97,7 @@ function renderDashboard() {
   document.getElementById("recentQuotes").innerHTML = recent_quotes.slice(0, 5).map(q => `
     <div class="quote-item">
       <div>
-        <b>${q.supplier}</b>
+        <b>${q.supplier} ${q.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
         <small>${q.material} (${q.request_code})</small>
       </div>
       <div class="quote-price">${formatMoney(q.unit_price)}</div>
