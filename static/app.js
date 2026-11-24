@@ -66,11 +66,38 @@ document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
 document.getElementById("projectStatusFilter").addEventListener("change", renderProjectCards);
-document.getElementById("projectCards").addEventListener("click", event => {
+document.getElementById("projectCards").addEventListener("click", async event => {
   const create = event.target.closest('[data-modal="projectModal"]');
   if (create) { document.querySelector('.project-page-heading [data-modal="projectModal"]')?.click(); return; }
   const retry = event.target.closest("#retryProjects");
   if (retry) return loadProjects();
+  const remove = event.target.closest("[data-delete-project]");
+  if (remove) {
+    const projectId = remove.dataset.deleteProject;
+    const project = projectRecords.find(item => item.project_id === projectId);
+    if (!project || String(project.status).toLowerCase() !== "completed") {
+      showToast("Only completed projects can be deleted.", true);
+      return;
+    }
+    const confirmed = window.confirm(
+      `Remove "${project.title}" from the project workspace? Its procurement, invoice, job report and audit records will be retained for historical reference.`
+    );
+    if (!confirmed) return;
+    remove.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(projectId)}`, {method:"DELETE"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not delete completed project");
+      projectRecords = projectRecords.filter(item => item.project_id !== projectId);
+      renderProjectCards();
+      await loadProjectTrends();
+      showToast("Completed project removed. Historical records were retained.");
+    } catch(error) {
+      showToast(error.message, true);
+      remove.disabled = false;
+    }
+    return;
+  }
   const open = event.target.closest("[data-open-project]");
   if (open) openProjectWorkspace(open.dataset.openProject);
 });
@@ -302,7 +329,7 @@ function renderProjectCards() {
       <h3>${escapeHtml(project.title)}</h3><p class="project-client">${escapeHtml(project.client_name || "Client not specified")}</p>
       <div class="project-card-meta"><span>Lead</span><b>${escapeHtml(project.procurement_lead || "Unassigned")}</b><span>Purchase requests</span><b>${Number(project.purchase_requests_count || 0)}</b></div>
       <div class="project-card-progress"><div><span>Overall progress</span><b>${Number(project.progress_percent || 0).toFixed(0)}%</b></div><div class="project-progress-track"><i style="width:${Math.max(0,Math.min(100,Number(project.progress_percent||0)))}%"></i></div></div>
-      <div class="project-card-footer"><span>Due ${projectDate(project.due_date)}</span><button type="button" class="text-btn" data-open-project="${escapeHtml(project.project_id)}">Open workspace →</button></div>
+      <div class="project-card-footer"><span>Due ${projectDate(project.due_date)}</span><div class="project-card-actions"><button type="button" class="text-btn" data-open-project="${escapeHtml(project.project_id)}">Open workspace →</button>${String(project.status || "").toLowerCase() === "completed" ? `<button type="button" class="btn btn-danger project-delete-btn" data-delete-project="${escapeHtml(project.project_id)}" aria-label="Delete completed project">Delete</button>` : ""}</div></div>
     </article>`).join("");
 }
 async function openProjectWorkspace(projectId) {
