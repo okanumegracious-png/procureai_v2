@@ -69,6 +69,16 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
+        # One-time reset of pre-MVP manually entered test procurement records.
+        # The migration marker prevents future startup from deleting live requests.
+        db.execute("CREATE TABLE IF NOT EXISTS procureai_migrations (migration_key TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
+        reset_key = "2026-11-24-clear-pre-mvp-request-fixtures"
+        if not db.execute("SELECT 1 FROM procureai_migrations WHERE migration_key=?", (reset_key,)).fetchone():
+            db.execute("DELETE FROM orders")
+            db.execute("DELETE FROM quotes")
+            db.execute("DELETE FROM requests")
+            db.execute("INSERT INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)", (reset_key, datetime.utcnow().isoformat()))
+
         # Never seed fictional suppliers, requests or quotations into an operational workspace.
         # Remove only the exact legacy demo rows created by earlier ProcureAI versions.
         demo_supplier_names = (

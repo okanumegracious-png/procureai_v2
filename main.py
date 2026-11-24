@@ -50,7 +50,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_origin_regex=VERCEL_ORIGIN_RE,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", API_KEY_NAME, "X-CSRF-Token"],
 )
 
@@ -541,6 +541,24 @@ def dashboard_orders():
     return {"orders": dashboard_module.dashboard()["orders"]}
 
 
+@app.delete("/api/requests/{request_id}")
+def dashboard_delete_request(request_id: int, request: Request):
+    username = getattr(request.state, "auth_user", "")
+    with dashboard_module.connect() as db:
+        row = db.execute("SELECT code,material FROM requests WHERE id=?", (request_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Purchase request not found")
+        quote_count = db.execute("SELECT COUNT(*) FROM quotes WHERE request_id=?", (request_id,)).fetchone()[0]
+        order_count = db.execute("SELECT COUNT(*) FROM orders WHERE request_id=?", (request_id,)).fetchone()[0]
+        db.execute("DELETE FROM orders WHERE request_id=?", (request_id,))
+        db.execute("DELETE FROM quotes WHERE request_id=?", (request_id,))
+        db.execute("DELETE FROM requests WHERE id=?", (request_id,))
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (username, "delete", "purchase_request", str(request_id),
+             json.dumps({"request_code": row["code"], "material": row["material"], "deleted_quotations": quote_count, "deleted_purchase_orders": order_count}), _now()))
+    return {"success": True, "deleted_request": row["code"], "deleted_quotations": quote_count, "deleted_purchase_orders": order_count}
+
 @app.post("/api/requests", status_code=201)
 def dashboard_create_request(payload: DashboardRequestPayload):
     try:
@@ -556,6 +574,21 @@ def dashboard_create_request(payload: DashboardRequestPayload):
              payload.required_by,payload.priority,"Open",datetime.utcnow().isoformat()))
     return {"success":True,"id":cur.lastrowid,"code":code}
 
+
+@app.get("/api/quotes/{quote_id}")
+def dashboard_quote_detail(quote_id: int):
+    with dashboard_module.connect() as db:
+        row = db.execute("SELECT q.*, s.name AS supplier, s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.priority, r.status AS request_status FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?", (quote_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    quote = dict(row)
+    quantity = Decimal(str(quote["quantity"]))
+    subtotal = quantity * Decimal(str(quote["unit_price"]))
+    tax = subtotal * Decimal(str(quote["tax_rate"])) / Decimal("100")
+    quote["subtotal"] = float(subtotal)
+    quote["tax_amount"] = float(tax)
+    quote["total_landed"] = float(subtotal + tax + Decimal(str(quote["freight"])))
+    return quote
 
 @app.post("/api/quotes", status_code=201)
 def dashboard_create_quote(payload: DashboardQuotePayload):

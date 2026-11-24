@@ -17,3 +17,14 @@
 .login-card small { text-align:center; color:#8b96a8; }
 .signout-btn { border:1px solid #dce2eb; background:#fff; color:#344256; border-radius:8px; padding:8px 12px; cursor:pointer; font:inherit; font-size:12px; font-weight:700; }
 @media (max-width: 520px) { .login-card { padding:28px 22px; } }
+
+
+/* Quotation detail view */
+.quote-detail-modal { width: min(760px, calc(100vw - 32px)); max-height: 88vh; overflow: auto; }
+.quote-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 18px 0 6px; }
+.quote-detail-field { min-width: 0; padding: 12px; border: 1px solid var(--border, #e5e7eb); border-radius: 10px; background: var(--surface, #fff); }
+.quote-detail-field small { display: block; margin-bottom: 6px; color: var(--muted, #738095); font-size: 11px; }
+.quote-detail-field b { display: block; overflow-wrap: anywhere; font-size: 13px; }
+.quote-item[data-open-quote] { cursor: pointer; }
+.quote-item[data-open-quote]:focus-visible { outline: 2px solid #6477d9; outline-offset: 3px; border-radius: 8px; }
+@media (max-width: 600px) { .quote-detail-grid { grid-template-columns: 1fr; } }
