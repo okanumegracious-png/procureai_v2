@@ -103,7 +103,7 @@
     if(!content)return;
     const hero=content.querySelector(".project-workspace-hero");
     const projectId=hero?.querySelector(".eyebrow")?.textContent.match(/PROJECT WORKSPACE\s*·\s*(\S+)/)?.[1];
-    if(projectId&&projectId!==lastProject){lastProject=projectId;loading=false;mount(content,projectId,hero.textContent);}
+    if(projectId&&(projectId!==lastProject||!content.querySelector(".job-report"))){lastProject=projectId;loading=false;mount(content,projectId,hero.textContent);}
   });
   observer.observe(document.documentElement,{childList:true,subtree:true});
 })();
