@@ -230,7 +230,7 @@ def test_job_completion_project_closure_and_termination(authenticated_client):
         "completion_note":"Work completed and documented."
     })
     assert completed.status_code == 200, completed.text
-    project_detail = client.get(f"/api/projects/{project_id}")
+    project_detail = client.get(f"/api/projects/{project_id}/overview")
     assert project_detail.status_code == 200
     assert project_detail.json()["project"]["status"] == "completed"
 
@@ -251,7 +251,7 @@ def test_job_completion_project_closure_and_termination(authenticated_client):
         "termination_note":"Client cancelled the project before mobilisation."
     })
     assert terminated.status_code == 200, terminated.text
-    terminated_detail = client.get(f"/api/projects/{terminated_id}")
+    terminated_detail = client.get(f"/api/projects/{terminated_id}/overview")
     assert terminated_detail.status_code == 200
     assert terminated_detail.json()["project"]["status"] == "terminated"
     report_after_termination = client.post(f"/api/projects/{terminated_id}/job-completion-report", json={
