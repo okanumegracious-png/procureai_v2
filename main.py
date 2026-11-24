@@ -502,6 +502,20 @@ def _require_buyer_confirmation(db, project_id: str):
         raise HTTPException(status_code=409, detail="Buyer confirmation is required. Record the buyer's confirmation in the Project Workspace before proceeding.")
 
 
+
+
+def _require_request_buyer_confirmation(db, request_id: int) -> str:
+    """Resolve a dashboard request to its project and enforce the buyer gate."""
+    linked = db.execute("""SELECT p.project_id,p.status FROM project_purchase_requests pr
+        JOIN projects p ON p.project_id=pr.project_id WHERE pr.request_id=?""", (request_id,)).fetchone()
+    if not linked:
+        raise HTTPException(status_code=409, detail="This purchase request is not linked to a managed project. Link it to a project before analysis or purchase-order creation.")
+    if linked["status"] in ("completed", "terminated", "cancelled"):
+        raise HTTPException(status_code=409, detail="This project is closed or archived. Procurement actions are read-only.")
+    _require_buyer_confirmation(db, linked["project_id"])
+    return linked["project_id"]
+
+
 def _now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
@@ -1369,6 +1383,7 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
             (payload.quote_id,)).fetchone()
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
+        _require_request_buyer_confirmation(db, int(quote["request_id"]))
         supplier_status = (quote["supplier_status"] or "").strip().casefold()
         if supplier_status not in {"verified", "active"} or "[fictional demo]" in quote["supplier_name"].casefold():
             raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation. Verify the seller first.")
@@ -1420,42 +1435,65 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
 
 
 @app.post("/api/orders", status_code=201)
-def dashboard_create_order(payload: DashboardOrderPayload):
-    req = dashboard_module.one("SELECT * FROM requests WHERE id=?", (payload.request_id,))
-    quote = dashboard_module.one("SELECT * FROM quotes WHERE request_id=? AND supplier_id=? ORDER BY id DESC LIMIT 1",
-                                 (payload.request_id,payload.supplier_id))
-    supplier = dashboard_module.one("SELECT * FROM suppliers WHERE id=?", (payload.supplier_id,))
-    if not req or not quote or not supplier:
-        raise HTTPException(status_code=404, detail="A matching request, supplier and quotation are required")
-    qty, price = Decimal(str(req["quantity"])), Decimal(str(quote["unit_price"]))
-    tax = qty * price * Decimal(str(quote["tax_rate"])) / Decimal("100")
-    freight = Decimal(str(quote["freight"]))
-    total = qty * price + tax + freight
-    reasons = ["Human approval required before any purchase commitment"]
-    if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold")
-    if supplier["rating"] < 3.5: reasons.append("Supplier rating is below the preferred threshold")
-    if quote["lead_days"] > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
-        reasons.append("Quoted lead time misses the requested delivery date")
+def dashboard_create_order(payload: DashboardOrderPayload, request: Request):
     with dashboard_module.connect() as db:
+        req = db.execute("SELECT * FROM requests WHERE id=?", (payload.request_id,)).fetchone()
+        quote = db.execute("SELECT * FROM quotes WHERE request_id=? AND supplier_id=? ORDER BY id DESC LIMIT 1",
+                           (payload.request_id,payload.supplier_id)).fetchone()
+        supplier = db.execute("SELECT * FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone()
+        if not req or not quote or not supplier:
+            raise HTTPException(status_code=404, detail="A matching request, supplier and quotation are required")
+        _require_request_buyer_confirmation(db, int(payload.request_id))
+        supplier_status = str(supplier["status"] or "").strip().casefold()
+        if supplier_status not in {"verified", "active"} or "[fictional demo]" in str(supplier["name"]).casefold():
+            raise HTTPException(status_code=409, detail="This seller is not verified for purchase-order generation.")
+        if req["status"] != "Open":
+            raise HTTPException(status_code=409, detail="This purchase request is no longer open.")
+        _ensure_supplier_request_email_table(db)
+        if not db.execute("SELECT 1 FROM supplier_request_emails WHERE quote_id=?", (quote["id"],)).fetchone():
+            raise HTTPException(status_code=409, detail="Email the purchase request to this seller and receive a successful send confirmation before generating the PO proposal.")
+        if db.execute("SELECT 1 FROM orders WHERE quote_id=?", (quote["id"],)).fetchone():
+            raise HTTPException(status_code=409, detail="A purchase order proposal already exists for this quotation.")
+        qty, price = Decimal(str(req["quantity"])), Decimal(str(quote["unit_price"]))
+        tax = qty * price * Decimal(str(quote["tax_rate"])) / Decimal("100")
+        freight = Decimal(str(quote["freight"]))
+        total = qty * price + tax + freight
+        reasons = ["Human approval required before any purchase commitment"]
+        if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold")
+        if float(supplier["rating"] or 0) < 3.5: reasons.append("Supplier rating is below the preferred threshold")
+        if int(quote["lead_days"]) > max(0,(date.fromisoformat(req["required_by"])-date.today()).days):
+            reasons.append("Quoted lead time misses the requested delivery date")
         count = db.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
         code = f"PO-{datetime.utcnow():%y%m%d}-{count+1:03d}"
-        cur = db.execute("""INSERT INTO orders(code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,required_by,created_at,decision_note)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+        cur = db.execute("""INSERT INTO orders(code,supplier_id,request_id,quantity,unit_price,freight,tax,total,status,required_by,created_at,decision_note,quote_id,analysis_estimate,lead_days,payment_days)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (code,payload.supplier_id,payload.request_id,float(qty),float(price),float(freight),float(tax),
-             float(total),"Pending approval",req["required_by"],datetime.utcnow().isoformat(),"; ".join(reasons)))
+             float(total),"Pending approval",req["required_by"],datetime.utcnow().isoformat(),"; ".join(reasons),
+             int(quote["id"]),float(total),int(quote["lead_days"]),int(quote["payment_days"])))
     return {"success":True,"id":cur.lastrowid,"code":code,"status":"Pending approval","total":float(total),"reasons":reasons}
 
 
 @app.post("/api/orders/{order_id}/decision")
-def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload):
+def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload, request: Request):
     status = "Approved" if payload.action == "approve" else "Rejected"
     with dashboard_module.connect() as db:
+        order = db.execute("""SELECT o.request_id,o.supplier_id,s.status AS supplier_status,s.name AS supplier_name
+            FROM orders o JOIN suppliers s ON s.id=o.supplier_id WHERE o.id=? AND o.status='Pending approval'""", (order_id,)).fetchone()
+        if not order:
+            raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
+        if payload.action == "approve":
+            _require_request_buyer_confirmation(db, int(order["request_id"]))
+            if str(order["supplier_status"] or "").strip().casefold() not in {"verified", "active"} or "[fictional demo]" in str(order["supplier_name"]).casefold():
+                raise HTTPException(status_code=409, detail="Supplier verification must remain valid at the point of approval.")
         cur = db.execute("UPDATE orders SET status=?,decision_note=? WHERE id=? AND status='Pending approval'",
                          (status,payload.note,order_id))
         if cur.rowcount != 1:
-            raise HTTPException(status_code=409, detail="Order is not awaiting approval")
+            raise HTTPException(status_code=409, detail="Purchase order is no longer awaiting approval")
         if payload.action == "approve":
-            db.execute("UPDATE requests SET status='Awarded' WHERE id=(SELECT request_id FROM orders WHERE id=?)",(order_id,))
+            db.execute("UPDATE requests SET status='Awarded' WHERE id=?",(order["request_id"],))
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state,"auth_user",""), "approve" if payload.action=="approve" else "reject", "purchase_order", str(order_id), json.dumps({"status":status,"note":payload.note}), _now()))
     return {"success":True,"status":status}
 
 
@@ -1951,6 +1989,8 @@ def get_dashboard():
 
 @app.get("/api/analysis")
 def get_dashboard_analysis(request_id: int):
+    with dashboard_module.connect() as db:
+        _require_request_buyer_confirmation(db, int(request_id))
     try:
         return dashboard_module.analyse_request(request_id)
     except ValueError as exc:
