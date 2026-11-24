@@ -79,6 +79,18 @@ def init_db():
             db.execute("DELETE FROM requests")
             db.execute("INSERT INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)", (reset_key, datetime.utcnow().isoformat()))
 
+        # Explicitly requested fictional supplier for the generator-servicing demo section.
+        # Clearly labelled as fictional and unverified; never present as a real vendor.
+        supplier_demo_key = "2026-11-24-fictional-generator-service-supplier"
+        if not db.execute("SELECT 1 FROM procureai_migrations WHERE migration_key=?", (supplier_demo_key,)).fetchone():
+            db.execute("""INSERT INTO suppliers(name,city,rating,on_time,contact,status)
+                SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM suppliers WHERE name=?)""",
+                ("Northstar Generator & Power Services [FICTIONAL DEMO]", "Lagos, Nigeria", 0, 0,
+                 "DEMO ONLY — Generator servicing, fault diagnosis, preventive maintenance, repairs and load testing. No real contact details. NOT VERIFIED.",
+                 "Demo / Unverified", "Northstar Generator & Power Services [FICTIONAL DEMO]"))
+            db.execute("INSERT INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)",
+                       (supplier_demo_key, datetime.utcnow().isoformat()))
+
         # Never seed fictional suppliers, requests or quotations into an operational workspace.
         # Remove only the exact legacy demo rows created by earlier ProcureAI versions.
         demo_supplier_names = (
