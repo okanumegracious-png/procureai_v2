@@ -134,7 +134,7 @@ function renderDashboard() {
     <div class="supplier-row">
       <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
       <div class="supplier-info">
-        <b>${s.name} ${s.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
+        <b>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
         <small>${s.city} · ${s.on_time}% on-time</small>
       </div>
       <div class="rating">★ ${s.rating}</div>
@@ -147,7 +147,7 @@ function renderDashboard() {
         <div class="supplier-logo">${s.name.substring(0,2).toUpperCase()}</div>
         <span class="rating">★ ${s.rating}</span>
       </div>
-      <h3>${s.name} ${s.is_demo ? '<span class="pill amber">DEMO DATA</span>' : ''}</h3>
+      <h3>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO DATA</span>' : ''}</h3>
       <p>${escapeHtml(s.city)} · ${escapeHtml(s.phone || s.email || s.contact || "No contact supplied")}</p>
       <p class="supplier-capabilities">${escapeHtml(s.services || "Services not yet listed")}</p>
       <p class="supplier-capabilities">${escapeHtml([s.email,s.website,s.address].filter(Boolean).join(" · "))}</p>
