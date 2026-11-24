@@ -252,28 +252,51 @@ window.decideOrder = async function(id, action) {
 };
 let latestAnalysis = null;
 let selectedPoQuoteId = null;
-function openPoPreview(quoteId) {
+let supplierRequestEmailSent = false;
+function setPoEmailState(sent, recipient) {
+  supplierRequestEmailSent = Boolean(sent);
+  const sendButton = document.getElementById("sendSupplierRequest");
+  const generateButton = document.getElementById("confirmGeneratePo");
+  const status = document.getElementById("supplierEmailStatus");
+  if (sendButton) { sendButton.disabled = supplierRequestEmailSent; sendButton.textContent = supplierRequestEmailSent ? "Request emailed" : "Email request to seller"; }
+  if (generateButton) generateButton.disabled = !supplierRequestEmailSent;
+  if (status) status.textContent = supplierRequestEmailSent ? "Request email sent to " + recipient + ". You can now generate the PO proposal." : "The seller must receive this request email before a PO proposal can be generated.";
+}
+async function openPoPreview(quoteId) {
   const offer = latestAnalysis?.offers?.find(item => Number(item.id) === Number(quoteId));
   if (!offer) return showToast("Run the analysis again before generating a PO.", true);
-  if (!["verified", "active"].includes(String(offer.supplier_status || "").toLowerCase()) || String(offer.supplier || "").toLowerCase().includes("[fictional demo]")) return showToast("Verify this seller before generating a purchase order.", true);
-  selectedPoQuoteId = Number(quoteId);
+  if (!["verified", "active"].includes(String(offer.supplier_status || "").toLowerCase()) || String(offer.supplier || "").toLowerCase().includes("[fictional demo]")) return showToast("Verify this seller before sending a request or generating a purchase order.", true);
+  selectedPoQuoteId = Number(quoteId); setPoEmailState(false, "");
   const req = latestAnalysis.request, qty = Number(req.quantity);
   const subtotal = qty * Number(offer.unit_price), tax = subtotal * Number(offer.tax_rate) / 100, freight = Number(offer.freight);
   const items = [["Purchase request",req.code],["Equipment / material",req.material],["Category",req.category],["Quantity",qty.toLocaleString()+" "+req.unit],["Project / site",req.site],["Required by",req.required_by],["Selected supplier",offer.supplier],["Unit price",formatMoney(offer.unit_price)],["Subtotal",formatMoney(subtotal)],["Tax ("+offer.tax_rate+"%)",formatMoney(tax)],["Freight",formatMoney(freight)],["Commercial PO total",formatMoney(subtotal+tax+freight)],["Analysis estimated total",formatMoney(offer.estimated_total)],["Delivery lead time",offer.lead_days+" days"],["Payment terms","Net "+offer.payment_days+" days"]];
-  document.getElementById("poPreviewContent").innerHTML = '<div class="po-preview-grid">'+items.map(([k,v])=>'<div class="po-preview-field"><small>'+escapeHtml(k)+'</small><b>'+escapeHtml(v)+'</b></div>').join("")+'</div><p class="po-preview-note">The commercial PO total uses the supplier’s quoted price, tax and freight. The analysis estimate is shown separately for decision support.</p><div class="po-approval-note"><span>Approval control</span><b>This proposal will be created as Pending approval. It will not be sent to the supplier or treated as an approved order.</b></div>';
+  document.getElementById("poPreviewContent").innerHTML = '<div class="po-preview-grid">'+items.map(([k,v])=>'<div class="po-preview-field"><small>'+escapeHtml(k)+'</small><b>'+escapeHtml(v)+'</b></div>').join("")+'</div><p class="po-preview-note">The commercial PO total uses the supplier’s quoted price, tax and freight. The analysis estimate is shown separately for decision support.</p><div class="po-email-step"><b>Step 1 · Send request to seller</b><p id="supplierEmailStatus">Checking seller email status…</p><button type="button" class="btn btn-ghost" id="sendSupplierRequest">Email request to seller</button></div><div class="po-approval-note"><span>Step 2 · Internal approval</span><b>The proposal will remain Pending approval. Emailing the request does not create a purchase commitment or authorize supply.</b></div>';
   document.getElementById("poPreviewModal").classList.add("open");
+  try {
+    const response = await apiFetch(API + "/quotes/" + selectedPoQuoteId); const detail = await response.json();
+    if (!response.ok) throw new Error(detail.detail || "Could not check seller email status");
+    setPoEmailState(detail.request_email_sent, detail.supplier_email || "seller");
+    if (!detail.supplier_email) document.getElementById("supplierEmailStatus").textContent = "No seller email is saved. Update the seller record before sending.";
+  } catch (error) { document.getElementById("supplierEmailStatus").textContent = error.message; }
+  document.getElementById("sendSupplierRequest")?.addEventListener("click", async () => {
+    const sendButton = document.getElementById("sendSupplierRequest"); sendButton.disabled = true; sendButton.textContent = "Sending request…";
+    try {
+      const sent = await apiFetch(API + "/quotes/" + selectedPoQuoteId + "/send-request", {method:"POST"}); const result = await sent.json();
+      if (!sent.ok) throw new Error(result.detail || "Could not email the seller");
+      setPoEmailState(true, result.recipient || "seller"); showToast(result.already_sent ? "Request email was already sent." : "Purchase request emailed to seller.");
+    } catch (error) { sendButton.disabled = false; sendButton.textContent = "Email request to seller"; showToast(error.message, true); }
+  }, { once:true });
 }
 document.getElementById("confirmGeneratePo").addEventListener("click", async () => {
-  if (!selectedPoQuoteId) return;
+  if (!selectedPoQuoteId || !supplierRequestEmailSent) return;
   const button=document.getElementById("confirmGeneratePo"); button.disabled=true; button.textContent="Creating proposal…";
   try {
     const response=await apiFetch(API+"/orders/from-analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({quote_id:selectedPoQuoteId})});
     const data=await response.json(); if(!response.ok) throw new Error(data.detail||"Could not generate purchase order");
     document.getElementById("poPreviewModal").classList.remove("open"); selectedPoQuoteId=null;
-    showToast("PO proposal "+data.code+" created — pending approval");
-    await fetchDashboard(); document.querySelector('[data-page="orders"]')?.click();
+    showToast("PO proposal "+data.code+" created — pending approval"); await fetchDashboard(); document.querySelector('[data-page="orders"]')?.click();
   } catch(error){showToast(error.message,true)}
-  finally{button.disabled=false;button.textContent="Generate PO proposal"}
+  finally{button.textContent="Generate PO proposal";button.disabled=!supplierRequestEmailSent}
 });
 document.getElementById("runAnalysis").addEventListener("click", async () => {
   const rid = document.getElementById("analysisRequest").value;
