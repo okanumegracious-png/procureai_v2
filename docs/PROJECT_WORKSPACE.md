@@ -106,3 +106,30 @@ Due status is computed from the ISO due date: overdue, due today, due soon (with
 The live ProcureAI dashboard is currently a static HTML/CSS/JavaScript application. The Projects navigation, project register, responsive workspace, countdown, milestone view, daily activity feed and update form are integrated into that existing frontend.
 
 A reusable Next.js client component is also provided at `components/ProjectWorkspace.tsx`, with styles at `components/project-workspace.css`. It consumes the same session-authenticated API and can be used if/when the frontend is migrated to Next.js. It is source code only; it is not part of the current static production build.
+
+
+## Existing quotation links
+
+A project can reference quotations that were already registered in the procurement quotation register. The relationship is many-to-many and is stored separately from the quotation's source purchase request, so linking a quotation does not rewrite its request, supplier, commercial terms, or purchase-order history.
+
+Startup creates the additive `project_quotations` table:
+
+```sql
+CREATE TABLE project_quotations (
+  project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+  quote_id INTEGER NOT NULL,
+  linked_by TEXT NOT NULL DEFAULT '',
+  linked_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, quote_id)
+);
+```
+
+Authenticated endpoints:
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/projects/{project_id}/quotations` | List existing quotations and indicate which are already linked |
+| POST | `/api/projects/{project_id}/quotations/{quote_id}` | Link an existing quotation to a project |
+| DELETE | `/api/projects/{project_id}/quotations/{quote_id}` | Remove the project association without deleting the quotation |
+
+The project overview includes `linked_quotations` with supplier, source request, material, landed total and lead time. Link/unlink actions are attributed to the authenticated user in the audit log. Deleting a source quotation or purchase request cleans up its project associations; deleting a project cascades its links. No existing quotation or project record is reset.

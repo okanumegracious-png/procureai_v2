@@ -88,6 +88,23 @@ document.getElementById("recalculateProject").addEventListener("click", async ()
   finally { button.disabled = false; }
 });
 document.getElementById("projectWorkspaceContent").addEventListener("submit", async event => {
+  if (event.target.id === "projectLinkQuotationForm") {
+    event.preventDefault();
+    const form = event.target;
+    const quoteId = form.elements.quote_id.value;
+    if (!quoteId || !activeProjectId) return;
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/quotations/${quoteId}`, {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not link quotation");
+      renderProjectWorkspace(data.project);
+      showToast("Quotation linked to project");
+    } catch (error) { showToast(error.message, true); }
+    finally { if (button.isConnected) button.disabled = false; }
+    return;
+  }
   if (event.target.id !== "projectUpdateForm") return;
   event.preventDefault();
   const form = event.target;
@@ -221,6 +238,19 @@ function renderProjectWorkspace(project) {
     </section>
     <section class="project-overview-card project-timeline-card"><div class="project-section-heading"><div><span class="eyebrow">TIMELINE & DUE DATE TRACKER</span><h2>Procurement milestones</h2></div><div class="project-date-pair"><span>Start <b>${projectDate(project.start_date)}</b></span><span>Due <b>${projectDate(project.due_date)}</b></span></div></div><div class="project-milestones">${milestoneMarkup}</div></section>
     <section class="project-overview-card project-deliverables-card"><div class="project-section-heading"><div><span class="eyebrow">EXPECTED OUTPUTS</span><h2>Key deliverables</h2></div><span class="project-deliverable-count">${deliverables.length} items</span></div>${deliverables.length ? '<ul class="project-deliverables">'+deliverables.map(item=>'<li>'+escapeHtml(item)+'</li>').join("")+'</ul>' : '<p class="project-muted">No deliverables have been listed.</p>'}</section>
+    <section class="project-overview-card project-linked-quotes">
+      <div class="project-section-heading"><div><span class="eyebrow">COMMERCIAL RECORDS</span><h2>Linked quotations</h2><p>Attach quotations already recorded in ProcureAI without changing their original purchase request.</p></div><span class="project-deliverable-count">${(project.linked_quotations || []).length} linked</span></div>
+      <form id="projectLinkQuotationForm" class="project-link-quote-form">
+        <label>Choose an existing quotation<select name="quote_id" id="projectQuotationSelect" required><option value="">Loading available quotations…</option></select></label>
+        <button class="btn btn-primary" type="submit">Link quotation to project</button>
+      </form>
+      <div class="project-linked-quote-list">${(project.linked_quotations || []).length ? project.linked_quotations.map(q=>`
+        <article class="project-linked-quote-row">
+          <div><b>#${q.id} · ${escapeHtml(q.supplier)}</b><span>${escapeHtml(q.request_code)} · ${escapeHtml(q.material)}</span></div>
+          <div><b>${formatMoney(q.total_landed)}</b><span>${Number(q.lead_days)} day lead time</span></div>
+          <button type="button" class="text-btn danger" data-unlink-project-quote="${q.id}">Unlink</button>
+        </article>`).join("") : '<div class="project-feed-empty">No quotations linked to this project yet.</div>'}</div>
+    </section>
     <section class="project-activity-layout">
       <article class="project-overview-card project-feed-card"><div class="project-section-heading"><div><span class="eyebrow">TEAM JOURNAL</span><h2>Daily activity log</h2><p>Field notes, procurement updates, blockers and next actions.</p></div><span class="project-deliverable-count">${updates.length} entries</span></div><div class="project-update-feed">${updateMarkup}</div></article>
       <article class="project-overview-card project-update-form-card"><span class="eyebrow">ADD AN ENTRY</span><h2>Submit daily update</h2><p class="project-muted">Your signed-in account is recorded automatically as the author.</p>
@@ -238,7 +268,26 @@ function renderProjectWorkspace(project) {
     </section>`;
   const progressInput = document.getElementById("projectReportedProgress");
   progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
+  loadProjectQuotationOptions(project.project_id);
 }
+async function loadProjectQuotationOptions(projectId) {
+  const select = document.getElementById("projectQuotationSelect");
+  if (!select) return;
+  try {
+    const response = await apiFetch(`${API}/projects/${encodeURIComponent(projectId)}/quotations`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load quotations");
+    const available = (data.quotations || []).filter(q => !q.already_linked);
+    select.innerHTML = '<option value="">Select a quotation…</option>' + available.map(q =>
+      `<option value="${q.id}">#${q.id} · ${escapeHtml(q.supplier)} · ${escapeHtml(q.request_code)} · ${escapeHtml(q.material)} · ${formatMoney(q.total_landed)}</option>`
+    ).join("");
+    if (!available.length) select.innerHTML = '<option value="">No unlinked quotations available</option>';
+  } catch (error) {
+    select.innerHTML = '<option value="">Could not load quotations</option>';
+    showToast(error.message, true);
+  }
+}
+
 function formatMoney(val) {
   return "₦" + Number(val).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -387,7 +436,19 @@ function renderDashboard() {
     ).join("");
   }
 }
-document.addEventListener("click", event => {
+document.addEventListener("click", async event => {
+  const unlinkButton = event.target.closest("[data-unlink-project-quote]");
+  if (unlinkButton && activeProjectId) {
+    if (!confirm("Unlink this quotation from the project? The quotation itself will remain unchanged.")) return;
+    try {
+      const response = await apiFetch(`${API}/projects/${encodeURIComponent(activeProjectId)}/quotations/${unlinkButton.dataset.unlinkProjectQuote}`, {method:"DELETE"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not unlink quotation");
+      renderProjectWorkspace(data.project);
+      showToast("Quotation unlinked from project");
+    } catch (error) { showToast(error.message, true); }
+    return;
+  }
   const editButton = event.target.closest("[data-edit-seller]");
   if (!editButton) return;
   const seller = (dashboardData.suppliers || []).find(item => Number(item.id) === Number(editButton.dataset.editSeller));

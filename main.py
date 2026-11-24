@@ -221,6 +221,15 @@ def startup():
     dashboard_module.init_db()
     init_store()
     _init_auth_store()
+    with connect() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS project_quotations (
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            quote_id INTEGER NOT NULL,
+            linked_by TEXT NOT NULL DEFAULT '',
+            linked_at TEXT NOT NULL,
+            PRIMARY KEY(project_id, quote_id)
+        )""")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_project_quotations_quote ON project_quotations(quote_id)")
 
 
 class BOQItem(BaseModel):
@@ -404,6 +413,18 @@ def _project_overview(db, project_id: str) -> dict:
     project["boq_items_count"] = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
     project["quotations_count"] = db.execute("SELECT COUNT(*) FROM workflow_quotations WHERE project_id=?", (project_id,)).fetchone()[0]
     project["purchase_orders_count"] = db.execute("SELECT COUNT(*) FROM workflow_purchase_orders WHERE project_id=?", (project_id,)).fetchone()[0]
+    linked_quotes = db.execute("""SELECT q.id,q.unit_price,q.freight,q.tax_rate,q.lead_days,q.payment_days,q.note,q.created_at,
+        s.name AS supplier,s.email AS supplier_email,r.code AS request_code,r.material,r.category,r.quantity,r.unit
+        FROM project_quotations pq JOIN quotes q ON q.id=pq.quote_id
+        JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id
+        WHERE pq.project_id=? ORDER BY pq.linked_at DESC""", (project_id,)).fetchall()
+    project["linked_quotations"] = []
+    for quote in linked_quotes:
+        item = dict(quote)
+        subtotal = Decimal(str(item["quantity"])) * Decimal(str(item["unit_price"]))
+        tax = subtotal * Decimal(str(item["tax_rate"])) / Decimal("100")
+        item["total_landed"] = float(subtotal + tax + Decimal(str(item["freight"])))
+        project["linked_quotations"].append(item)
     updates = db.execute("""SELECT id,author,update_type,status,progress_percent,field_notes,blockers,next_steps,
         completed_milestones_json,created_at FROM project_updates
         WHERE project_id=? ORDER BY id DESC LIMIT 40""", (project_id,)).fetchall()
@@ -853,6 +874,7 @@ def dashboard_delete_request(request_id: int, request: Request):
         quote_count = db.execute("SELECT COUNT(*) FROM quotes WHERE request_id=?", (request_id,)).fetchone()[0]
         order_count = db.execute("SELECT COUNT(*) FROM orders WHERE request_id=?", (request_id,)).fetchone()[0]
         db.execute("DELETE FROM orders WHERE request_id=?", (request_id,))
+        db.execute("DELETE FROM project_quotations WHERE quote_id IN (SELECT id FROM quotes WHERE request_id=?)", (request_id,))
         db.execute("DELETE FROM quotes WHERE request_id=?", (request_id,))
         db.execute("DELETE FROM requests WHERE id=?", (request_id,))
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
@@ -967,10 +989,11 @@ def dashboard_delete_quote(quote_id: int, request: Request):
             raise HTTPException(status_code=409, detail="This quotation has a linked purchase-order proposal and cannot be deleted. Keep it for approval and audit history.")
         _ensure_supplier_request_email_table(db)
         email_removed = db.execute("DELETE FROM supplier_request_emails WHERE quote_id=?", (quote_id,)).rowcount
+        project_links_removed = db.execute("DELETE FROM project_quotations WHERE quote_id=?", (quote_id,)).rowcount
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
             (getattr(request.state, "auth_user", ""), "delete", "quotation", str(quote_id),
-             json.dumps({"request_code": current["request_code"], "supplier": current["supplier_name"], "unit_price": current["unit_price"], "supplier_email_records_removed": email_removed}), _now()))
+             json.dumps({"request_code": current["request_code"], "supplier": current["supplier_name"], "unit_price": current["unit_price"], "supplier_email_records_removed": email_removed, "project_links_removed": project_links_removed}), _now()))
         db.execute("DELETE FROM quotes WHERE id=?", (quote_id,))
     return {"success": True, "deleted_quote_id": quote_id}
 
@@ -1157,6 +1180,75 @@ def create_project_workspace(payload: ProjectCreatePayload, request: Request):
             (project_id,payload.executive_summary.strip(), "created", now, now))
         result = _project_overview(db, project_id)
     return {"success": True, "project": result}
+
+
+@app.get("/api/projects/{project_id}/quotations")
+def list_project_quotation_candidates(project_id: str):
+    with connect() as db:
+        if not db.execute("SELECT 1 FROM projects WHERE project_id=?", (project_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Project not found")
+        rows = db.execute("""SELECT q.id,q.unit_price,q.freight,q.tax_rate,q.lead_days,q.payment_days,q.note,q.created_at,
+            s.name AS supplier,r.code AS request_code,r.material,r.category,r.quantity,r.unit,
+            EXISTS(SELECT 1 FROM project_quotations pq WHERE pq.project_id=? AND pq.quote_id=q.id) AS already_linked
+            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id
+            ORDER BY q.id DESC""", (project_id,)).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        subtotal = Decimal(str(item["quantity"])) * Decimal(str(item["unit_price"]))
+        tax = subtotal * Decimal(str(item["tax_rate"])) / Decimal("100")
+        item["total_landed"] = float(subtotal + tax + Decimal(str(item["freight"])))
+        result.append(item)
+    return {"quotations": result}
+
+
+@app.post("/api/projects/{project_id}/quotations/{quote_id}", status_code=201)
+def link_quotation_to_project(project_id: str, quote_id: int, request: Request):
+    now = _now()
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    with connect() as db:
+        project = db.execute("SELECT title FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        quote = db.execute("""SELECT q.id,s.name AS supplier,r.code AS request_code,r.material
+            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id
+            WHERE q.id=?""", (quote_id,)).fetchone()
+        if not quote:
+            raise HTTPException(status_code=404, detail="Quotation not found")
+        try:
+            db.execute("INSERT INTO project_quotations(project_id,quote_id,linked_by,linked_at) VALUES(?,?,?,?)",
+                       (project_id,quote_id,actor,now))
+        except Exception as exc:
+            if "UNIQUE" in str(exc).upper():
+                raise HTTPException(status_code=409, detail="This quotation is already linked to this project.")
+            raise
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor,"link","project_quotation",f"{project_id}:{quote_id}",
+             json.dumps({"project_title":project["title"],"quote_id":quote_id,"supplier":quote["supplier"],
+                         "request_code":quote["request_code"],"material":quote["material"]}),now))
+        overview = _project_overview(db, project_id)
+    return {"success":True,"project":overview}
+
+
+@app.delete("/api/projects/{project_id}/quotations/{quote_id}")
+def unlink_quotation_from_project(project_id: str, quote_id: int, request: Request):
+    actor = getattr(request.state, "auth_user", "") or "Workspace user"
+    with connect() as db:
+        cur = db.execute("DELETE FROM project_quotations WHERE project_id=? AND quote_id=?", (project_id,quote_id))
+        if not cur.rowcount:
+            raise HTTPException(status_code=404, detail="This quotation is not linked to the project.")
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (actor,"unlink","project_quotation",f"{project_id}:{quote_id}",json.dumps({"quote_id":quote_id}),_now()))
+        overview = _project_overview(db, project_id)
+    return {"success":True,"project":overview}
 
 
 @app.get("/api/projects/{project_id}/overview")
