@@ -69,6 +69,16 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
+        # Add structured seller fields while preserving every existing supplier row.
+        supplier_columns = {row["name"] for row in db.execute("PRAGMA table_info(suppliers)").fetchall()}
+        for column, definition in {
+            "email": "TEXT DEFAULT ''", "phone": "TEXT DEFAULT ''",
+            "website": "TEXT DEFAULT ''", "address": "TEXT DEFAULT ''",
+            "services": "TEXT DEFAULT ''"
+        }.items():
+            if column not in supplier_columns:
+                db.execute(f"ALTER TABLE suppliers ADD COLUMN {column} {definition}")
+
         # One-time reset of pre-MVP manually entered test procurement records.
         # The migration marker prevents future startup from deleting live requests.
         db.execute("CREATE TABLE IF NOT EXISTS procureai_migrations (migration_key TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
