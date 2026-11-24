@@ -1,6 +1,30 @@
 // static/app.js con
 // static/app.js
 const API = "/api";
+
+function readCookie(name) {
+  const prefix = name + "=";
+  const part = document.cookie.split("; ").find(item => item.startsWith(prefix));
+  return part ? decodeURIComponent(part.slice(prefix.length)) : "";
+}
+async function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const method = (options.method || "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const csrf = readCookie("procureai_csrf");
+    if (csrf) headers.set("X-CSRF-Token", csrf);
+  }
+  return window.fetch(url, { ...options, headers, credentials: "same-origin", cache: "no-store" });
+}
+function showLogin(message = "") {
+  document.getElementById("loginScreen").hidden = false;
+  document.getElementById("appShell").hidden = true;
+  document.getElementById("loginError").textContent = message;
+}
+function showApp() {
+  document.getElementById("loginScreen").hidden = true;
+  document.getElementById("appShell").hidden = false;
+}
 let currentPage = "overview";
 let dashboardData = {};
 // --- Navigation ---
@@ -25,7 +49,7 @@ document.getElementById("mobileMenu").addEventListener("click", () => {
 });
 // --- Data Fetching ---
 async function fetchDashboard() {
-  const res = await fetch(`${API}/dashboard`);
+  const res = await apiFetch(`${API}/dashboard`);
   const data = await res.json();
   dashboardData = data;
   renderDashboard();
@@ -143,7 +167,7 @@ function renderDashboard() {
 // --- Actions ---
 window.decideOrder = async function(id, action) {
   if (!confirm(`Are you sure you want to ${action} this order?`)) return;
-  const res = await fetch(`${API}/orders/${id}/decision`, {
+  const res = await apiFetch(`${API}/orders/${id}/decision`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, note: "Approved via dashboard" })
@@ -159,7 +183,7 @@ window.decideOrder = async function(id, action) {
 document.getElementById("runAnalysis").addEventListener("click", async () => {
   const rid = document.getElementById("analysisRequest").value;
   if (!rid) return;
-  const res = await fetch(`${API}/analysis?request_id=${rid}`);
+  const res = await apiFetch(`${API}/analysis?request_id=${rid}`);
   const data = await res.json();
  
   const resultContainer = document.getElementById("analysisResult");
@@ -213,7 +237,7 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
   const formData = new FormData(e.target);
   const payload = Object.fromEntries(formData.entries());
  
-  const res = await fetch(`${API}/requests`, {
+  const res = await apiFetch(`${API}/requests`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
   });
   if (res.ok) {
@@ -240,7 +264,7 @@ document.getElementById("quoteForm").addEventListener("submit", async (e) => {
   const formData = new FormData(e.target);
   const payload = Object.fromEntries(formData.entries());
  
-  const res = await fetch(`${API}/quotes`, {
+  const res = await apiFetch(`${API}/quotes`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
   });
   if (res.ok) {
@@ -263,5 +287,41 @@ function showToast(msg, isError = false) {
 }
 // Set today's date in header
 document.getElementById("today").textContent = new Date().toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
-// Init
-fetchDashboard();
+// Authentication gate: dashboard data is never requested before a valid session exists.
+document.getElementById("loginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const error = document.getElementById("loginError");
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  button.disabled = true;
+  error.textContent = "";
+  try {
+    const response = await apiFetch(`${API}/auth/login`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: document.getElementById("loginUsername").value.trim(),
+        password: document.getElementById("loginPassword").value
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || data.error || "Unable to sign in");
+    document.getElementById("loginPassword").value = "";
+    showApp();
+    await fetchDashboard();
+  } catch (err) {
+    error.textContent = err.message || "Sign-in failed. Please try again.";
+  } finally { button.disabled = false; }
+});
+document.getElementById("logoutBtn").addEventListener("click", async () => {
+  try { await apiFetch(`${API}/auth/logout`, { method: "POST" }); }
+  finally { dashboardData = {}; showLogin("You have signed out."); }
+});
+document.getElementById("refreshBtn").addEventListener("click", fetchDashboard);
+async function initializeApp() {
+  try {
+    const response = await apiFetch(`${API}/auth/me`);
+    if (!response.ok) return showLogin();
+    showApp();
+    await fetchDashboard();
+  } catch { showLogin("Unable to reach ProcureAI. Check your connection and try again."); }
+}
+initializeApp();
