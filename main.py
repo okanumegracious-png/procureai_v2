@@ -50,7 +50,7 @@ app.add_middleware(
     allow_origins=allowed_origins,
     allow_origin_regex=VERCEL_ORIGIN_RE,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", API_KEY_NAME, "X-CSRF-Token"],
 )
 
