@@ -411,3 +411,7 @@
 .quote-parse-review ul{margin:0;padding-left:18px;display:grid;gap:4px}
 .quote-parse-review small{display:block;color:#788698;margin-top:8px;line-height:1.5}
 @media(max-width:520px){.quote-magic-heading{align-items:flex-start;flex-direction:column}.quote-magic-tag{margin-left:46px}.quote-magic-actions{align-items:stretch;flex-direction:column}.quote-magic-actions .btn{width:100%}}
+
+
+/* Compact evidence summary shown under each bid-feasibility result. */
+.feasibility-evidence{display:block;max-width:300px;margin-top:5px;color:var(--muted,#64748b);font-size:10px;line-height:1.45;white-space:normal}
