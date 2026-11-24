@@ -10,6 +10,8 @@ import os
 import uuid
 import smtplib
 import ssl
+import urllib.request
+import urllib.error
 from email.message import EmailMessage
 from email.utils import parseaddr
 from datetime import date, datetime
@@ -90,31 +92,77 @@ def _send_supplier_request_email(quote):
     username = os.getenv("SMTP_USERNAME", "").strip()
     password = os.getenv("SMTP_PASSWORD", "")
     sender = os.getenv("SMTP_FROM_EMAIL", username).strip()
-    if not all((host, username, password, sender)):
-        raise HTTPException(status_code=503, detail="Supplier email is not configured. Add SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD and SMTP_FROM_EMAIL to Railway Variables.")
+    resend_key = os.getenv("RESEND_API_KEY", "").strip()
     recipient = (quote["supplier_email"] or "").strip()
     parsed = parseaddr(recipient)[1]
     if not parsed or parsed != recipient or "@" not in parsed:
         raise HTTPException(status_code=409, detail="This seller has no valid email address. Update the seller record before sending the request.")
+
     message = EmailMessage()
     message["Subject"] = f"Purchase request {quote['request_code']} – {quote['material']}"
     message["From"] = sender
     message["To"] = recipient
-    message.set_content(f"Dear {quote['supplier_name']},\n\nGestro Global Consult Ltd is requesting your acknowledgement of this purchase requirement before we prepare our internal purchase-order report.\n\nRequest reference: {quote['request_code']}\nEquipment / material: {quote['material']}\nCategory: {quote['category']}\nQuantity: {quote['quantity']} {quote['unit']}\nDelivery location: {quote['site']}\nRequired by: {quote['required_by']}\n\nPlease acknowledge receipt and confirm that your quoted price, delivery lead time and payment terms remain valid. If anything has changed, reply with revised details.\n\nThis is a request for confirmation only. It is not a purchase order, award notice or authority to commence work or supply goods.\n\nRegards,\nProcurement Team\nGestro Global Consult Ltd")
+    message.set_content(f"Dear {quote['supplier_name']},\\n\\nGestro Global Consult Ltd is requesting your acknowledgement of this purchase requirement before we prepare our internal purchase-order report.\\n\\nRequest reference: {quote['request_code']}\\nEquipment / material: {quote['material']}\\nCategory: {quote['category']}\\nQuantity: {quote['quantity']} {quote['unit']}\\nDelivery location: {quote['site']}\\nRequired by: {quote['required_by']}\\n\\nPlease acknowledge receipt and confirm that your quoted price, delivery lead time and payment terms remain valid. If anything has changed, reply with revised details.\\n\\nThis is a request for confirmation only. It is not a purchase order, award notice or authority to commence work or supply goods.\\n\\nRegards,\\nProcurement Team\\nGestro Global Consult Ltd")
+    body_text = message.get_content()
+
+    # Prefer HTTPS email delivery: many application hosts restrict outbound SMTP ports.
+    if resend_key:
+        resend_sender = os.getenv("RESEND_FROM_EMAIL", "").strip()
+        if not resend_sender:
+            raise HTTPException(status_code=503, detail="RESEND_API_KEY is set but RESEND_FROM_EMAIL is missing. Use a sender address verified in Resend.")
+        payload = json.dumps({
+            "from": resend_sender,
+            "to": [recipient],
+            "subject": str(message["Subject"]),
+            "text": body_text,
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=25) as response:
+                if response.status < 200 or response.status >= 300:
+                    raise HTTPException(status_code=502, detail=f"Email provider returned HTTP {response.status}. Check the Resend API key and verified sender.")
+            return
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            if status in (401, 403):
+                detail = "Resend rejected the API key. Check RESEND_API_KEY in Railway Variables."
+            elif status == 422:
+                detail = "Resend rejected the sender or recipient. Verify RESEND_FROM_EMAIL and the sending domain in Resend."
+            else:
+                detail = f"Resend email request failed with HTTP {status}. Check the Resend dashboard."
+            raise HTTPException(status_code=502, detail=detail)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise HTTPException(status_code=502, detail="Could not reach the email provider over HTTPS. Check Railway outbound connectivity and try again.")
+
+    if not all((host, username, password, sender)):
+        raise HTTPException(status_code=503, detail="Supplier email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL (recommended), or configure SMTP variables.")
     port = int(os.getenv("SMTP_PORT", "587"))
     use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
     use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
     try:
         if use_ssl:
             with smtplib.SMTP_SSL(host, port, timeout=25, context=ssl.create_default_context()) as server:
-                server.login(username, password); server.send_message(message)
+                server.login(username, password)
+                server.send_message(message)
         else:
             with smtplib.SMTP(host, port, timeout=25) as server:
                 server.ehlo()
-                if use_tls: server.starttls(context=ssl.create_default_context()); server.ehlo()
-                server.login(username, password); server.send_message(message)
-    except (smtplib.SMTPException, OSError, ValueError) as exc:
-        raise HTTPException(status_code=502, detail=f"Could not send supplier email: {exc.__class__.__name__}. Check SMTP settings and try again.")
+                if use_tls:
+                    server.starttls(context=ssl.create_default_context())
+                    server.ehlo()
+                server.login(username, password)
+                server.send_message(message)
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=502, detail="SMTP authentication failed. Check the mailbox username and app password.")
+    except smtplib.SMTPResponseException as exc:
+        raise HTTPException(status_code=502, detail=f"SMTP server rejected the request with code {exc.smtp_code}. Check the SMTP account and sender settings.")
+    except (smtplib.SMTPException, OSError, ValueError):
+        raise HTTPException(status_code=502, detail="SMTP connection failed before the email could be sent. Your hosting provider may restrict outbound SMTP; use the HTTPS email provider settings above.")
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
