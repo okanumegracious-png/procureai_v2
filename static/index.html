@@ -196,6 +196,13 @@
 <div class="modal-backdrop" id="quoteModal"><div class="modal quote-edit-modal"><div class="modal-head"><div><span class="eyebrow">QUOTATION MANAGEMENT</span><h2 id="quoteModalTitle">Add supplier quotation</h2><p class="subheading" id="quoteModalDescription">Capture the seller commercial offer against an open purchase request.</p></div><button class="close" data-close>×</button></div>
 <div class="quote-edit-hint"><strong>Commercial record</strong><span>Check the linked request, seller and landed-cost inputs before saving. Editing resets the seller email confirmation.</span></div>
 <form id="quoteForm" class="form-grid">
+<section class="quote-magic-panel wide" aria-labelledby="quoteMagicTitle">
+  <div class="quote-magic-heading"><div><span class="quote-magic-icon" aria-hidden="true">✦</span><div><strong id="quoteMagicTitle">Magic quote extraction</strong><p>Paste the supplier's WhatsApp or email response. ProcureAI will identify the commercial details it recognises.</p></div></div><span class="quote-magic-tag">No external AI API</span></div>
+  <label for="quoteSourceMessage">Supplier's original message</label>
+  <textarea id="quoteSourceMessage" name="source_message" rows="4" maxlength="12000" placeholder="Example: I can supply 15,000kg of T10 at ₦780 per kg. Delivery in 4 days. Transport is ₦45,000. Payment is 70% upfront."></textarea>
+  <div class="quote-magic-actions"><span id="quoteParseStatus" role="status" aria-live="polite">Review all extracted values before saving.</span><button type="button" class="btn btn-secondary" id="parseQuoteMessage">✦ Parse message</button></div>
+  <div id="quoteParseReview" class="quote-parse-review" hidden></div>
+</section>
 <label class="wide">Purchase request<select name="request_id" id="quoteRequest" required></select></label>
 <label class="wide">Supplier<select name="supplier_id" id="quoteSupplier" required></select></label>
 <label>Unit price (₦)<input name="unit_price" type="number" min="0.01" step="0.01" required></label>

@@ -1001,6 +1001,62 @@ class DashboardQuotePayload(BaseModel):
     note: str = ""
 
 
+class QuoteParsePayload(BaseModel):
+    message: str = Field(min_length=3, max_length=12000)
+
+
+def _parse_supplier_quote_message(message: str) -> dict:
+    """Conservative, rule-based extraction. Never invent values."""
+    text = " ".join(message.replace("\u00a0", " ").split())
+    result = {"quantity": None, "unit": None, "unit_price": None, "freight": None,
+              "tax_rate": None, "lead_days": None, "payment_days": None,
+              "payment_terms": None, "matched": []}
+    unit_pattern = r"(kgs?|kilograms?|grams?|g|tonnes?|tons?|mt|litres?|liters?|l|metres?|meters?|m|pieces?|pcs|units?|bags?|boxes?|cartons?|packs?|sets?)"
+    quantity_match = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s*" + unit_pattern + r"\b", text, re.I)
+    if quantity_match:
+        result["quantity"] = float(quantity_match.group(1).replace(",", ""))
+        result["unit"] = quantity_match.group(2).lower()
+        result["matched"].append("quantity")
+
+    money = r"(?:₦\s*|NGN\s*|N\s*)?([\d,]+(?:\.\d{1,2})?)"
+    unit_price_patterns = [
+        r"(?:at|@|for)\s*" + money + r"\s*(?:naira\s*)?(?:per|/)\s*" + unit_pattern,
+        r"(?:unit\s+price|price\s+per\s+unit)\s*(?:is|of|:)?\s*" + money,
+        r"(?:rate)\s*(?:is|of|:)?\s*" + money + r"\s*(?:per|/)\s*" + unit_pattern
+    ]
+    for pattern in unit_price_patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            result["unit_price"] = float(match.group(1).replace(",", ""))
+            result["matched"].append("unit_price")
+            break
+
+    freight_match = re.search(r"(?:transport|freight|delivery\s+(?:fee|cost|charge))\s*(?:is|of|:)?\s*" + money, text, re.I)
+    if freight_match:
+        result["freight"] = float(freight_match.group(1).replace(",", ""))
+        result["matched"].append("freight")
+    tax_match = re.search(r"(?:VAT|tax)\s*(?:is|at|of|:)?\s*(\d+(?:\.\d+)?)\s*%", text, re.I)
+    if tax_match:
+        result["tax_rate"] = float(tax_match.group(1))
+        result["matched"].append("tax_rate")
+    lead_match = re.search(r"(?:delivery\s+in|delivery|lead\s*time|within|in)\s*(\d+)\s*(working\s+days?|days?|weeks?)\b", text, re.I)
+    if lead_match:
+        amount = int(lead_match.group(1))
+        result["lead_days"] = amount * 7 if lead_match.group(2).lower().startswith("week") else amount
+        result["matched"].append("lead_days")
+    payment_match = re.search(r"(?:payment\s+terms?\s*[:=]?\s*)?(\d{1,3})\s*%\s*(?:upfront|advance|deposit)", text, re.I)
+    if payment_match:
+        result["payment_terms"] = payment_match.group(0)
+        result["matched"].append("payment_terms")
+    else:
+        credit_match = re.search(r"(?:payment\s+terms?\s*[:=]?\s*)?(\d+)\s*(days?|weeks?)\s*(?:credit|to\s+pay|payment)", text, re.I)
+        if credit_match:
+            amount = int(credit_match.group(1))
+            result["payment_days"] = amount * 7 if credit_match.group(2).lower().startswith("week") else amount
+            result["matched"].append("payment_days")
+    return result
+
+
 class DashboardOrderPayload(BaseModel):
     request_id: int
     supplier_id: int
@@ -1238,6 +1294,12 @@ def dashboard_send_supplier_request(quote_id: int, request: Request):
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)", (getattr(request.state, "auth_user", ""), "send_supplier_request_email", "quotation", str(quote_id), json.dumps({"recipient": recipient, "request_code": quote["request_code"]}), sent_at))
     return {"success": True, "already_sent": False, "recipient": recipient, "sent_at": sent_at}
+
+@app.post("/api/quotes/parse")
+def dashboard_parse_quote(payload: QuoteParsePayload):
+    """Extract clearly stated commercial values from an informal supplier message."""
+    return {"success": True, "extracted": _parse_supplier_quote_message(payload.message)}
+
 
 @app.post("/api/quotes", status_code=201)
 def dashboard_create_quote(payload: DashboardQuotePayload):

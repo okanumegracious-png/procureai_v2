@@ -390,3 +390,24 @@
  .request-detail-actions{flex-direction:column-reverse}
  .request-detail-actions .btn{width:100%;justify-content:center}
 }
+
+/* Magic quotation extraction */
+.quote-edit-modal{width:min(700px,100%)}
+.quote-magic-panel{border:1px solid #dcebe5;background:linear-gradient(135deg,#f4faf7,#f8f9fc);border-radius:10px;padding:16px;display:grid;gap:10px}
+.quote-magic-heading,.quote-magic-heading>div,.quote-magic-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.quote-magic-heading>div{justify-content:flex-start;align-items:flex-start}
+.quote-magic-icon{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:#e1f3eb;color:#12835d;font-size:18px}
+.quote-magic-heading strong{display:block;color:#26384b;font-size:13px}
+.quote-magic-heading p{margin:4px 0 0;color:#758294;font-size:11px;line-height:1.5}
+.quote-magic-tag{font-size:9px;font-weight:700;color:#177653;background:#e4f4ec;padding:6px 8px;border-radius:20px;white-space:nowrap}
+.quote-magic-panel>label{font-size:10px;font-weight:700;color:#59697d}
+.quote-magic-panel textarea{width:100%;resize:vertical;min-height:100px;border:1px solid #dce4e9;border-radius:7px;padding:11px 12px;background:#fff;color:#35445a;font:inherit;font-size:12px;line-height:1.6;outline:none}
+.quote-magic-panel textarea:focus{border-color:#15966c;box-shadow:0 0 0 3px #15966c12}
+.quote-magic-actions{justify-content:space-between;flex-wrap:wrap}
+.quote-magic-actions span{font-size:10px;color:#758294}
+.btn-secondary{background:#e8f4ee;color:#147a58;border:1px solid #cce8da}
+.quote-parse-review{padding:12px;border-radius:7px;background:#fff;border:1px solid #dce9e2;color:#42566a;font-size:11px}
+.quote-parse-review strong{display:block;color:#177653;margin-bottom:6px}
+.quote-parse-review ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.quote-parse-review small{display:block;color:#788698;margin-top:8px;line-height:1.5}
+@media(max-width:520px){.quote-magic-heading{align-items:flex-start;flex-direction:column}.quote-magic-tag{margin-left:46px}.quote-magic-actions{align-items:stretch;flex-direction:column}.quote-magic-actions .btn{width:100%}}
