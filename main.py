@@ -490,6 +490,15 @@ class BuyerConfirmationPayload(BaseModel):
     comments: str = Field(default="", max_length=5000)
 
 
+def _require_buyer_confirmation(db, project_id: str):
+    table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='buyer_confirmations'").fetchone()
+    if not table:
+        raise HTTPException(status_code=409, detail="Buyer confirmation is required before AI bid analysis or PO creation.")
+    latest = db.execute("SELECT status FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
+    if not latest or latest["status"] != "confirmed":
+        raise HTTPException(status_code=409, detail="Buyer confirmation is required. Record the buyer's confirmation in the Project Workspace before proceeding.")
+
+
 def _now() -> str:
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
 
@@ -847,6 +856,8 @@ def compare_offers(project_id: str):
 
 @app.post("/api/v1/workflows/recommend-supplier", dependencies=[Depends(verify_api_key)])
 def recommend_supplier(payload: RecommendationRequest):
+    with connect() as db:
+        _require_buyer_confirmation(db, payload.project_id)
     comparison = compare_offers(payload.project_id)
     offers = comparison["comparison_report"]
     min_price = min(q["total_amount"] for q in offers)
@@ -872,6 +883,7 @@ def create_award_proposal(quotation_id: str, requested_by: str = Form(...)):
         quote = db.execute("SELECT * FROM workflow_quotations WHERE quotation_id=?", (quotation_id,)).fetchone()
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
+        _require_buyer_confirmation(db, quote["project_id"])
         db.execute("""INSERT INTO workflow_purchase_orders
             (po_number,project_id,quotation_id,supplier_id,total_amount,currency,status,requested_by,created_at)
             VALUES(?,?,?,?,?,?,'pending_approval',?,?)""",
