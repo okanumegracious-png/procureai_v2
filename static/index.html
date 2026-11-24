@@ -170,8 +170,17 @@
 <label class="wide">Project workspace<select name="project_id" id="requestProjectId" required><option value="">Select a project first</option></select><small>Every purchase request must be attached to an existing project workspace.</small></label>
 <label class="wide">Material description<input name="material" required placeholder="e.g. Reinforcement steel T12"></label>
 <label>Category<select name="category"><option>Reinforcement</option><option>Cementitious</option><option>Aggregate</option><option>Formwork</option><option>Electrical</option><option>Plumbing</option><option>Other</option></select></label>
-<label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" required placeholder="0"></label>
-<label>Unit<select name="unit"><option>kg</option><option>tonne</option><option>ea</option><option>m</option><option>bag</option><option>litre</option></select></label>
+<label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" required placeholder="Enter amount"></label>
+<label>Unit of measurement<select name="unit" id="requestUnit" required>
+<option value="">Select unit</option>
+<optgroup label="Count / items"><option value="ea">Each (ea)</option><option value="pcs">Pieces (pcs)</option><option value="unit">Unit</option><option value="qty">Quantity (qty)</option><option value="pair">Pair</option><option value="set">Set</option><option value="dozen">Dozen</option></optgroup>
+<optgroup label="Weight"><option value="kg">Kilogram (kg)</option><option value="g">Gram (g)</option><option value="tonne">Tonne</option><option value="tonnes">Tonnes</option><option value="bag">Bag</option></optgroup>
+<optgroup label="Length / area / volume"><option value="mm">Millimetre (mm)</option><option value="cm">Centimetre (cm)</option><option value="m">Metre (m)</option><option value="km">Kilometre (km)</option><option value="m²">Square metre (m²)</option><option value="m³">Cubic metre (m³)</option><option value="litre">Litre (L)</option><option value="ml">Millilitre (ml)</option></optgroup>
+<optgroup label="Packaging / supply"><option value="pack">Pack</option><option value="box">Box</option><option value="carton">Carton</option><option value="roll">Roll</option><option value="drum">Drum</option><option value="pallet">Pallet</option><option value="ream">Ream</option></optgroup>
+<optgroup label="Time / services"><option value="hour">Hour</option><option value="day">Day</option><option value="trip">Trip</option><option value="lot">Lot</option><option value="job">Job</option></optgroup>
+<option value="other">Other (specify)</option>
+</select></label>
+<label id="requestCustomUnitWrap" hidden>Specify unit<input name="custom_unit" id="requestCustomUnit" maxlength="40" placeholder="e.g. bundle, length, sheet"></label>
 <label>Project / site<input name="site" required placeholder="e.g. Lagos Tower"></label>
 <label>Required by<input name="required_by" type="date" required></label>
 <label>Priority<select name="priority"><option>Normal</option><option>Urgent</option></select></label>
