@@ -12,6 +12,7 @@ import smtplib
 import ssl
 import urllib.request
 import urllib.error
+import urllib.parse
 from email.message import EmailMessage
 from email.utils import parseaddr
 from datetime import date, datetime
@@ -92,7 +93,6 @@ def _send_supplier_request_email(quote):
     username = os.getenv("SMTP_USERNAME", "").strip()
     password = os.getenv("SMTP_PASSWORD", "")
     sender = os.getenv("SMTP_FROM_EMAIL", username).strip()
-    resend_key = os.getenv("RESEND_API_KEY", "").strip()
     recipient = (quote["supplier_email"] or "").strip()
     parsed = parseaddr(recipient)[1]
     if not parsed or parsed != recipient or "@" not in parsed:
@@ -100,16 +100,68 @@ def _send_supplier_request_email(quote):
 
     message = EmailMessage()
     message["Subject"] = f"Purchase request {quote['request_code']} – {quote['material']}"
-    message["From"] = sender
     message["To"] = recipient
-    message.set_content(f"Dear {quote['supplier_name']},\n\nGestro Global Consult Ltd is requesting your acknowledgement of this purchase requirement before we prepare our internal purchase-order report.\n\nRequest reference: {quote['request_code']}\nEquipment / material: {quote['material']}\nCategory: {quote['category']}\nQuantity: {quote['quantity']} {quote['unit']}\nDelivery location: {quote['site']}\nRequired by: {quote['required_by']}\n\nPlease acknowledge receipt and confirm that your quoted price, delivery lead time and payment terms remain valid. If anything has changed, reply with revised details.\n\nThis is a request for confirmation only. It is not a purchase order, award notice or authority to commence work or supply goods.\n\nRegards,\nProcurement Team\nGestro Global Consult Ltd")
+    message.set_content(f"Dear {quote['supplier_name']},\\n\\nGestro Global Consult Ltd is requesting your acknowledgement of this purchase requirement before we prepare our internal purchase-order report.\\n\\nRequest reference: {quote['request_code']}\\nEquipment / material: {quote['material']}\\nCategory: {quote['category']}\\nQuantity: {quote['quantity']} {quote['unit']}\\nDelivery location: {quote['site']}\\nRequired by: {quote['required_by']}\\n\\nPlease acknowledge receipt and confirm that your quoted price, delivery lead time and payment terms remain valid. If anything has changed, reply with revised details.\\n\\nThis is a request for confirmation only. It is not a purchase order, award notice or authority to commence work or supply goods.\\n\\nRegards,\\nProcurement Team\\nGestro Global Consult Ltd")
     body_text = message.get_content()
 
-    # Prefer HTTPS email delivery: many application hosts restrict outbound SMTP ports.
-    if resend_key:
+    # Gmail API uses HTTPS, avoiding Railway's restricted outbound SMTP ports.
+    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "gmail":
+        client_id = os.getenv("GMAIL_CLIENT_ID", "").strip()
+        client_secret = os.getenv("GMAIL_CLIENT_SECRET", "").strip()
+        refresh_token = os.getenv("GMAIL_REFRESH_TOKEN", "").strip()
+        gmail_sender = os.getenv("GMAIL_SENDER_EMAIL", "").strip()
+        if not all((client_id, client_secret, refresh_token, gmail_sender)):
+            raise HTTPException(status_code=503, detail="Gmail delivery is selected but its OAuth credentials are incomplete. Configure GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN and GMAIL_SENDER_EMAIL in Railway.")
+        message["From"] = gmail_sender
+        token_payload = urllib.parse.urlencode({
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }).encode("utf-8")
+        token_request = urllib.request.Request(
+            "https://oauth2.googleapis.com/token",
+            data=token_payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(token_request, timeout=25) as response:
+                token_data = json.loads(response.read().decode("utf-8"))
+            access_token = token_data.get("access_token", "")
+            if not access_token:
+                raise HTTPException(status_code=502, detail="Google did not return an access token. Reconnect the Gmail account.")
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
+            gmail_payload = json.dumps({"raw": raw_message}).encode("utf-8")
+            gmail_request = urllib.request.Request(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                data=gmail_payload,
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(gmail_request, timeout=25) as response:
+                if response.status < 200 or response.status >= 300:
+                    raise HTTPException(status_code=502, detail=f"Gmail API returned HTTP {response.status}.")
+            return
+        except urllib.error.HTTPError as exc:
+            try:
+                error_body = exc.read().decode("utf-8", "replace")[:500]
+            except Exception:
+                error_body = ""
+            if exc.code in (400, 401, 403):
+                detail = "Google rejected the Gmail authorization. Check the OAuth client, refresh token and Gmail send permission."
+            else:
+                detail = f"Gmail API request failed with HTTP {exc.code}. {error_body}".strip()
+            raise HTTPException(status_code=502, detail=detail)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise HTTPException(status_code=502, detail="Could not reach Google Gmail over HTTPS. Check Railway outbound connectivity and try again.")
+
+    # Optional Resend HTTPS provider remains available when explicitly selected.
+    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "resend" or (not os.getenv("EMAIL_PROVIDER", "").strip() and os.getenv("RESEND_API_KEY", "").strip()):
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
         resend_sender = os.getenv("RESEND_FROM_EMAIL", "").strip()
-        if not resend_sender:
-            raise HTTPException(status_code=503, detail="RESEND_API_KEY is set but RESEND_FROM_EMAIL is missing. Use a sender address verified in Resend.")
+        if not resend_key or not resend_sender:
+            raise HTTPException(status_code=503, detail="Resend delivery is selected but its API key or verified sender is missing.")
         payload = json.dumps({
             "from": resend_sender,
             "to": [recipient],
@@ -140,7 +192,8 @@ def _send_supplier_request_email(quote):
             raise HTTPException(status_code=502, detail="Could not reach the email provider over HTTPS. Check Railway outbound connectivity and try again.")
 
     if not all((host, username, password, sender)):
-        raise HTTPException(status_code=503, detail="Supplier email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL (recommended), or configure SMTP variables.")
+        raise HTTPException(status_code=503, detail="Supplier email is not configured. Select EMAIL_PROVIDER=gmail and add Gmail OAuth credentials, or configure another supported email provider.")
+    message["From"] = sender
     port = int(os.getenv("SMTP_PORT", "587"))
     use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
     use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
@@ -162,7 +215,7 @@ def _send_supplier_request_email(quote):
     except smtplib.SMTPResponseException as exc:
         raise HTTPException(status_code=502, detail=f"SMTP server rejected the request with code {exc.smtp_code}. Check the SMTP account and sender settings.")
     except (smtplib.SMTPException, OSError, ValueError):
-        raise HTTPException(status_code=502, detail="SMTP connection failed before the email could be sent. Your hosting provider may restrict outbound SMTP; use the HTTPS email provider settings above.")
+        raise HTTPException(status_code=502, detail="SMTP connection failed before the email could be sent. Your hosting provider may restrict outbound SMTP; use Gmail API or another HTTPS email provider.")
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
