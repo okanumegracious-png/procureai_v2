@@ -403,8 +403,7 @@ function renderProjectWorkspace(project) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not save buyer confirmation");
-      buyerForm.reset();
-      showToast("Buyer confirmation recorded in the project audit trail");
+      showToast("Buyer confirmation saved");
       await loadBuyerConfirmations(project.project_id);
     } catch(error) { showToast(error.message,true); }
     finally { button.disabled = false; }
@@ -413,6 +412,7 @@ function renderProjectWorkspace(project) {
 async function loadBuyerConfirmations(projectId) {
   const status = document.getElementById("buyerConfirmationStatus");
   const history = document.getElementById("buyerConfirmationHistory");
+  const form = document.getElementById("buyerConfirmationForm");
   if (!status || !history) return;
   try {
     const response = await apiFetch(`${API}/projects/${encodeURIComponent(projectId)}/buyer-confirmations`);
@@ -421,12 +421,23 @@ async function loadBuyerConfirmations(projectId) {
     const latest = data.latest;
     status.textContent = !latest ? "Not confirmed" : latest.status === "confirmed" ? "Buyer confirmed" : latest.status === "changes_requested" ? "Changes requested" : "Rejected";
     status.className = "project-deliverable-count " + (!latest ? "buyer-status-pending" : latest.status === "confirmed" ? "buyer-status-confirmed" : "buyer-status-attention");
-    history.innerHTML = (data.confirmations || []).length ? data.confirmations.map(item => {
-      const channel = {email:"Email",whatsapp:"WhatsApp",phone:"Phone"}[item.channel] || item.channel;
-      const outcome = {confirmed:"Confirmed",changes_requested:"Changes requested",rejected:"Rejected"}[item.status] || item.status;
-      const acceptance = {yes:"Accepted",no:"Not accepted",conditional:"Accepted with conditions",not_discussed:"Not discussed"}[item.budget_delivery_accepted] || item.budget_delivery_accepted;
-      return `<article class="project-linked-quote-row buyer-confirmation-record"><div><b>${escapeHtml(item.buyer_name)} · ${escapeHtml(outcome)}</b><span>${escapeHtml(item.organisation || "Organisation not specified")} · ${escapeHtml(channel)} · Budget / delivery: ${escapeHtml(acceptance)}</span><p>${escapeHtml(item.requirements_confirmed)}</p>${item.comments ? `<small>${escapeHtml(item.comments)}</small>` : ""}</div><div><b>${new Date(item.recorded_at).toLocaleString("en-GB")}</b><span>Recorded by ${escapeHtml(item.recorded_by)}</span></div></article>`;
-    }).join("") : '<div class="project-feed-empty">No buyer response recorded yet. Record the buyer’s email, WhatsApp or phone confirmation above.</div>';
+    history.innerHTML = latest ? (() => {
+      const channel = {email:"Email",whatsapp:"WhatsApp",phone:"Phone"}[latest.channel] || latest.channel;
+      const outcome = {confirmed:"Confirmed",changes_requested:"Changes requested",rejected:"Rejected"}[latest.status] || latest.status;
+      const acceptance = {yes:"Accepted",no:"Not accepted",conditional:"Accepted with conditions",not_discussed:"Not discussed"}[latest.budget_delivery_accepted] || latest.budget_delivery_accepted;
+      return `<article class="project-linked-quote-row buyer-confirmation-record"><div><b>${escapeHtml(latest.buyer_name)} · ${escapeHtml(outcome)}</b><span>${escapeHtml(latest.organisation || "Organisation not specified")} · ${escapeHtml(channel)} · Budget / delivery: ${escapeHtml(acceptance)}</span><p>${escapeHtml(latest.requirements_confirmed)}</p>${latest.comments ? `<small>${escapeHtml(latest.comments)}</small>` : ""}</div><div><b>Last updated ${new Date(latest.recorded_at).toLocaleString("en-GB")}</b><span>By ${escapeHtml(latest.recorded_by)}</span></div></article>`;
+    })() : '<div class="project-feed-empty">No buyer confirmation saved yet. Complete the form below once the buyer has responded.</div>';
+    if (form && latest) {
+      for (const [name, value] of Object.entries(latest)) {
+        const field = form.elements.namedItem(name);
+        if (field && ["buyer_name","organisation","channel","status","requirements_confirmed","budget_delivery_accepted","comments"].includes(name)) field.value = value ?? "";
+      }
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.textContent = "Update buyer confirmation";
+    } else if (form) {
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.textContent = "Save buyer confirmation";
+    }
   } catch(error) {
     status.textContent = "Unavailable";
     history.innerHTML = `<div class="project-feed-empty">${escapeHtml(error.message)}</div>`;
