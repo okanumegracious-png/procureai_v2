@@ -82,7 +82,7 @@
     popup.document.close();
     const images=[...popup.document.images];
     const waitForImages=Promise.all(images.map(img=>img.complete?Promise.resolve():new Promise(resolve=>{img.onload=resolve;img.onerror=resolve;})));
-    Promise.all([waitForImages,new Promise(resolve=>popup.addEventListener("load",resolve,{once:true})),new Promise(resolve=>setTimeout(resolve,500))]).then(()=>{
+    Promise.all([waitForImages,new Promise(resolve=>setTimeout(resolve,500))]).then(()=>{
       popup.focus();
       popup.print();
     });
