@@ -2086,7 +2086,12 @@ def terminate_project(project_id: str, payload: ProjectTerminationPayload, reque
         )""")
         db.execute("""INSERT INTO project_terminations
             (project_id,terminated_at,terminated_by,termination_note,progress_at_termination)
-            VALUES(?,?,?,?,?)""",
+            VALUES(?,?,?,?,?)
+            ON CONFLICT(project_id) DO UPDATE SET
+                terminated_at=excluded.terminated_at,
+                terminated_by=excluded.terminated_by,
+                termination_note=excluded.termination_note,
+                progress_at_termination=excluded.progress_at_termination""",
             (project_id,now,actor,note,float(project["progress_percent"] or 0)))
         db.execute("UPDATE projects SET status='terminated',updated_at=? WHERE project_id=?", (now,project_id))
         db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
