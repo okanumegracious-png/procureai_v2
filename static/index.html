@@ -30,6 +30,7 @@
       <button class="nav-item" data-page="quotes"><span>⇄</span> RFQs & quotations</button>
       <button class="nav-item" data-page="analysis"><span>◈</span> Bid analysis</button>
       <button class="nav-item" data-page="orders"><span>▣</span> Purchase orders <i id="approvalCount">0</i></button>
+      <button class="nav-item" data-page="invoices"><span>▤</span> Invoices</button>
       <button class="nav-item" data-page="settings"><span>⚙</span> Company setup</button>
     </nav>
     <div class="sidebar-bottom">
@@ -125,6 +126,12 @@
     <section class="page" id="page-orders">
       <div class="page-heading"><div><div class="eyebrow">AWARD & CONTROL</div><h1>Purchase orders</h1><p class="subheading">Review generated orders and resolve approval decisions.</p></div></div>
       <section class="panel"><div class="panel-heading"><div><h2>Purchase order register</h2><p>Every order retains its supplier, source request and decision status.</p></div><div class="toolbar-actions"><input class="search" id="orderSearch" placeholder="Search orders…"><select class="filter-select" id="orderStatusFilter" aria-label="Filter orders by status"><option value="">All statuses</option><option>Pending approval</option><option>Approved</option><option>Rejected</option></select><button class="btn btn-ghost" data-export="orders">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>SUPPLIER</th><th>MATERIAL</th><th>TOTAL</th><th>DELIVERY</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allOrders"></tbody></table></div></section>
+    </section>
+
+    <section class="page" id="page-invoices">
+      <div class="page-heading"><div><div class="eyebrow">PAYABLES & DOCUMENTS</div><h1>Invoices</h1><p class="subheading">Generate supplier invoices from approved purchase orders and track payment status.</p></div></div>
+      <section class="panel"><div class="panel-heading"><div><h2>Invoice register</h2><p>Invoices inherit the approved purchase order quantities, tax, freight and total.</p></div><div class="toolbar-actions"><input class="search" id="invoiceSearch" placeholder="Search invoices…"><select class="filter-select" id="invoiceStatusFilter" aria-label="Filter invoices by payment status"><option value="">All statuses</option><option>Unpaid</option><option>Paid</option></select></div></div>
+      <div class="table-wrap"><table><thead><tr><th>INVOICE</th><th>PO</th><th>SUPPLIER</th><th>DESCRIPTION</th><th>TOTAL</th><th>ISSUED</th><th>DUE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allInvoices"><tr><td colspan="9">Loading invoices…</td></tr></tbody></table></div></section>
     </section>
   </main>
 </div>

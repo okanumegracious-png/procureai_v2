@@ -34,6 +34,7 @@ let dashboardData = {};
 let quoteRecords = [];
 let projectRecords = [];
 let activeProjectId = null;
+let invoiceRecords = [];
 // --- Navigation ---
 document.querySelectorAll(".nav-item").forEach(btn => {
   btn.addEventListener("click", (e) => {
@@ -44,6 +45,7 @@ document.querySelectorAll(".nav-item").forEach(btn => {
     document.getElementById(`page-${page}`).classList.add("active");
     document.getElementById("crumbTitle").textContent = btn.textContent.trim().split(" ")[0];
     if (page === "overview") loadProjectTrends();
+    if (page === "invoices") loadInvoices();
     if (page === "projects") {
       activeProjectId = null;
       document.getElementById("projectWorkspaceView").hidden = true;
@@ -209,6 +211,9 @@ async function fetchDashboard() {
   const quoteResponse = await apiFetch(`${API}/quotes`);
   const quoteData = quoteResponse.ok ? await quoteResponse.json() : { quotes: [] };
   quoteRecords = quoteData.quotes || [];
+  const invoiceResponse = await apiFetch(`${API}/invoices`);
+  const invoiceData = invoiceResponse.ok ? await invoiceResponse.json() : { invoices: [] };
+  invoiceRecords = invoiceData.invoices || [];
   renderDashboard();
 }
 function projectDate(value) {
@@ -509,6 +514,105 @@ function exportPdf(type) {
   const html = "<!doctype html><html><head><meta charset='utf-8'><title>"+escapePdfHtml(title)+" - ProcureAI</title><style>@page{size:A4 landscape;margin:14mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#17251f;margin:0}header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #203c32;padding-bottom:12px;margin-bottom:18px}h1{font-size:22px;margin:0 0 5px}p{margin:0;color:#64736c}.meta{text-align:right;font-size:10px;color:#64736c}table{width:100%;border-collapse:collapse;table-layout:auto}th{background:#edf2ef;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em}th,td{border:1px solid #d9e1dc;padding:7px 6px;vertical-align:top;overflow-wrap:anywhere}tbody tr:nth-child(even){background:#f8faf9}.empty{padding:24px;text-align:center;color:#64736c;border:1px dashed #cbd5cf;margin-top:12px}footer{margin-top:18px;padding-top:8px;border-top:1px solid #d9e1dc;color:#64736c;font-size:9px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><header><div><h1>"+escapePdfHtml(title)+"</h1><p>Gestro Global Consult Ltd · ProcureAI</p></div><div class='meta'>Generated: "+escapePdfHtml(generated)+"<br>Records: "+dataset.rows.length+"</div></header>"+(dataset.rows.length?"<table><thead><tr>"+tableHead+"</tr></thead><tbody>"+tableRows+"</tbody></table>":"<div class='empty'>No records match the current filters.</div>")+"<footer>Internal procurement report · Handle supplier and commercial information confidentially.</footer><script>window.onload=function(){window.print();};<\/script></body></html>";
   popup.document.open(); popup.document.write(html); popup.document.close();
 }
+
+async function loadInvoices() {
+  const body = document.getElementById("allInvoices");
+  if (!body) return;
+  try {
+    const response = await apiFetch(`${API}/invoices`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load invoices");
+    invoiceRecords = data.invoices || [];
+    const search = document.getElementById("invoiceSearch")?.value || "";
+    const status = document.getElementById("invoiceStatusFilter")?.value || "";
+    const visible = filterRecords(invoiceRecords, search, status, ["invoice_number","order_code","supplier","material","status"]);
+    body.innerHTML = visible.map(invoice => `
+      <tr>
+        <td class="code">${escapeHtml(invoice.invoice_number)}</td>
+        <td>${escapeHtml(invoice.order_code)}</td>
+        <td class="material">${escapeHtml(invoice.supplier)}</td>
+        <td>${escapeHtml(invoice.material)}</td>
+        <td>${formatMoney(invoice.total)}</td>
+        <td>${escapeHtml(invoice.issue_date)}</td>
+        <td>${escapeHtml(invoice.due_date)}</td>
+        <td><span class="pill ${invoice.status === "Paid" ? "green" : "amber"}">${escapeHtml(invoice.status)}</span></td>
+        <td><button type="button" class="action-btn" data-export-invoice="${invoice.id}">↓ PDF</button>${invoice.status !== "Paid" ? ` <button type="button" class="action-btn" data-mark-invoice-paid="${invoice.id}">Mark paid</button>` : ""}</td>
+      </tr>`).join("") || '<tr><td colspan="9" class="empty-state">No invoices match this view. Generate one from an approved purchase order.</td></tr>';
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="9">${escapeHtml(error.message)}</td></tr>`;
+  }
+}
+async function createInvoice(orderId) {
+  if (!window.confirm("Generate an invoice from this approved purchase order? The invoice will use the approved PO quantities and totals.")) return;
+  try {
+    const response = await apiFetch(`${API}/orders/${encodeURIComponent(orderId)}/invoice`, {method:"POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not create invoice");
+    showToast("Invoice " + data.invoice_number + " created");
+    await fetchDashboard();
+    document.querySelector('.nav-item[data-page="invoices"]')?.click();
+  } catch (error) { showToast(error.message, true); }
+}
+async function exportInvoice(invoiceId) {
+  const popup = window.open("", "_blank");
+  if (!popup) return showToast("Allow pop-ups to create the invoice PDF.", true);
+  popup.document.write("<!doctype html><title>Preparing invoice…</title><p style='font:16px Arial;padding:24px'>Preparing invoice PDF…</p>");
+  try {
+    const response = await apiFetch(`${API}/invoices/${encodeURIComponent(invoiceId)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load invoice");
+    const inv = data.invoice, safe = value => escapePdfHtml(value ?? "—");
+    const money = value => formatMoney(Number(value || 0));
+    const dateText = value => value ? new Date(value + "T00:00:00").toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"}) : "—";
+    const subtotal = Number(inv.quantity || 0) * Number(inv.unit_price || 0);
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${safe(inv.invoice_number)} - ProcureAI</title><style>
+      @page{size:A4;margin:18mm}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#17251f;margin:0}
+      header{display:flex;justify-content:space-between;gap:20px;border-bottom:3px solid #203c32;padding-bottom:18px;margin-bottom:22px}
+      .brand{font-size:19px;font-weight:800}.brand small{display:block;font-size:9px;color:#64736c;letter-spacing:.12em;margin-top:5px}
+      h1{font-size:24px;margin:0 0 8px;text-align:right}.meta{text-align:right;color:#64736c;line-height:1.7}
+      .status{display:inline-block;border:1px solid ${inv.invoice_status === "Paid" ? "#27734d" : "#b87916"};color:${inv.invoice_status === "Paid" ? "#27734d" : "#94600d"};padding:6px 10px;font-weight:bold;font-size:10px}
+      .parties{display:grid;grid-template-columns:1fr 1fr;gap:25px;margin:24px 0}.party h2{font-size:11px;color:#64736c;text-transform:uppercase;letter-spacing:.08em}.party b{display:block;font-size:14px;margin:7px 0}
+      .facts{display:flex;gap:12px;margin:18px 0}.fact{background:#f1f5f2;padding:11px;flex:1}.fact small{display:block;color:#64736c;font-size:9px;text-transform:uppercase;margin-bottom:5px}
+      table{width:100%;border-collapse:collapse;margin-top:10px}th{background:#edf2ef;text-align:left;font-size:9px;text-transform:uppercase}th,td{border:1px solid #d9e1dc;padding:11px 8px}td.num,th.num{text-align:right}
+      .totals{width:48%;margin:14px 0 0 auto}.totals td{padding:8px}.totals tr:last-child{font-weight:bold;font-size:15px;background:#edf2ef}
+      .notice{margin-top:24px;padding:12px;background:#f6f8f6;border:1px solid #dce5df;line-height:1.6}
+      footer{border-top:1px solid #d9e1dc;margin-top:36px;padding-top:10px;color:#64736c;font-size:9px}
+      @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
+      <header><div class="brand">${safe(inv.supplier)}<small>SUPPLIER INVOICE</small></div><div><h1>INVOICE</h1><span class="status">${safe(String(inv.invoice_status).toUpperCase())}</span><div class="meta"><b>${safe(inv.invoice_number)}</b><br>Issue date: ${safe(dateText(inv.issue_date))}<br>Due date: ${safe(dateText(inv.due_date))}</div></div></header>
+      <div class="parties"><section class="party"><h2>Bill to</h2><b>${safe(inv.buyer_name)}</b>Procurement / accounts payable<br>${safe(inv.site)}</section><section class="party"><h2>From</h2><b>${safe(inv.supplier)}</b>${safe(inv.supplier_contact)}<br>${safe(inv.supplier_address || inv.supplier_city)}<br>${safe(inv.supplier_email)}<br>${safe(inv.supplier_phone)}</section></div>
+      <div class="facts"><div class="fact"><small>Purchase order</small><b>${safe(inv.order_code)}</b></div><div class="fact"><small>Purchase request</small><b>${safe(inv.request_code)}</b></div><div class="fact"><small>Delivery required</small><b>${safe(dateText(inv.required_by))}</b></div></div>
+      <h2>Invoice details</h2><table><thead><tr><th>Description</th><th class="num">Quantity</th><th class="num">Unit price</th><th class="num">Amount</th></tr></thead><tbody><tr><td>${safe(inv.material)}<br><small>${safe(inv.category)}</small></td><td class="num">${Number(inv.quantity).toLocaleString()} ${safe(inv.unit)}</td><td class="num">${money(inv.unit_price)}</td><td class="num">${money(subtotal)}</td></tr></tbody></table>
+      <table class="totals"><tr><td>Subtotal</td><td class="num">${money(subtotal)}</td></tr><tr><td>Tax</td><td class="num">${money(inv.tax)}</td></tr><tr><td>Freight / delivery</td><td class="num">${money(inv.freight)}</td></tr><tr><td>Total due</td><td class="num">${money(inv.total)}</td></tr></table>
+      <div class="notice"><b>Payment terms</b><br>Payment is due by ${safe(dateText(inv.due_date))}. This invoice references approved purchase order ${safe(inv.order_code)}. Please quote the invoice number when making payment.</div>
+      <footer>Generated by ProcureAI from the approved purchase order. Verify supplier payment instructions independently before transferring funds.</footer>
+      <script>window.onload=function(){window.print();};<\/script></body></html>`;
+    popup.document.open(); popup.document.write(html); popup.document.close();
+  } catch (error) {
+    popup.document.body.innerHTML = "<p style='font:16px Arial;padding:24px'>" + escapePdfHtml(error.message) + "</p>";
+    showToast(error.message, true);
+  }
+}
+document.getElementById("invoiceSearch")?.addEventListener("input", loadInvoices);
+document.getElementById("invoiceStatusFilter")?.addEventListener("change", loadInvoices);
+document.addEventListener("click", async event => {
+  const create = event.target.closest("[data-create-invoice]");
+  if (create) return createInvoice(create.dataset.createInvoice);
+  const open = event.target.closest("[data-open-invoice]");
+  if (open) return exportInvoice(open.dataset.openInvoice);
+  const exportButton = event.target.closest("[data-export-invoice]");
+  if (exportButton) return exportInvoice(exportButton.dataset.exportInvoice);
+  const paid = event.target.closest("[data-mark-invoice-paid]");
+  if (paid) {
+    if (!confirm("Mark this invoice as paid?")) return;
+    try {
+      const response = await apiFetch(`${API}/invoices/${encodeURIComponent(paid.dataset.markInvoicePaid)}/paid`, {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not update invoice");
+      showToast("Invoice marked as paid"); await fetchDashboard(); await loadInvoices();
+    } catch (error) { showToast(error.message, true); }
+  }
+});
+
 async function exportPurchaseOrder(orderId) {
   const popup = window.open("", "_blank");
   if (!popup) return showToast("Allow pop-ups to export this purchase order.", true);
@@ -693,6 +797,7 @@ function renderDashboard() {
       <td><span class="pill ${o.status === 'Approved' ? 'green' : (o.status === 'Rejected' ? 'red' : 'amber')}">${o.status}</span></td>
       <td>
         <button type="button" class="action-btn" data-export-po="${o.id}">↓ Export PDF</button>
+        ${o.status === 'Approved' ? (invoiceRecords.find(i => Number(i.order_id) === Number(o.id)) ? `<button type="button" class="action-btn" data-open-invoice="${invoiceRecords.find(i => Number(i.order_id) === Number(o.id)).id}">View invoice</button>` : `<button type="button" class="action-btn" data-create-invoice="${o.id}">＋ Create invoice</button>`) : ''}
         ${o.status === 'Pending approval' ? `
           <button class="action-btn" onclick="decideOrder(${o.id}, 'approve')">Approve</button>
           <button class="action-btn reject" onclick="decideOrder(${o.id}, 'reject')">Reject</button>
