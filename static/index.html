@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2d">
+  <title>ProcureAI — Procurement workspace</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="#"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>CONSTRUCTION PROCUREMENT</small></span></a>
+    <div class="workspace-label">WORKSPACE</div>
+    <nav class="nav">
+      <button class="nav-item active" data-page="overview"><span>▦</span> Overview</button>
+      <button class="nav-item" data-page="requests"><span>▤</span> Purchase requests <i id="requestCount">5</i></button>
+      <button class="nav-item" data-page="suppliers"><span>♧</span> Suppliers</button>
+      <button class="nav-item" data-page="quotes"><span>⇄</span> RFQs & quotations</button>
+      <button class="nav-item" data-page="analysis"><span>◈</span> Bid analysis</button>
+      <button class="nav-item" data-page="orders"><span>▣</span> Purchase orders <i id="approvalCount">0</i></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="rule-card"><span class="rule-icon">✳</span><div><b>Built on clear decisions</b><p>AI reads. The math calculates. People approve.</p></div></div>
+      <div class="user-row"><div class="avatar">GO</div><div><b>Procurement team</b><small>Workspace admin</small></div><span class="dots">•••</span></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+      <div class="crumb">Workspace <span>/</span> <b id="crumbTitle">Overview</b></div>
+      <div class="top-actions"><span class="live-dot"></span><span class="system-label">System operational</span><button class="icon-btn" id="refreshBtn" title="Refresh">↻</button><div class="top-avatar">GO</div></div>
+    </header>
+
+    <section class="page active" id="page-overview">
+      <div class="page-heading">
+        <div><div class="eyebrow">TUESDAY, <span id="today"></span></div><h1>Procurement overview</h1><p class="subheading">A clear view of materials, suppliers and purchasing decisions.</p></div>
+        <button class="btn btn-primary" data-modal="requestModal">＋ New purchase request</button>
+      </div>
+      <div class="metric-grid">
+        <article class="metric"><div class="metric-top"><span>Open requests</span><span class="metric-icon blue">▤</span></div><strong id="mRequests">—</strong><small><span class="positive">●</span> Requiring procurement action</small></article>
+        <article class="metric"><div class="metric-top"><span>Active suppliers</span><span class="metric-icon purple">♧</span></div><strong id="mSuppliers">—</strong><small>Across your supplier network</small></article>
+        <article class="metric"><div class="metric-top"><span>Awaiting approval</span><span class="metric-icon amber">◷</span></div><strong id="mApprovals">—</strong><small>Human decision required</small></article>
+        <article class="metric"><div class="metric-top"><span>Approved spend</span><span class="metric-icon green">₦</span></div><strong id="mSpend">₦0</strong><small>Approved purchase orders</small></article>
+      </div>
+      <div class="content-grid">
+        <section class="panel requests-panel">
+          <div class="panel-heading"><div><h2>Recent purchase requests</h2><p>Material demand across your active projects</p></div><button class="text-btn" data-goto="requests">View all →</button></div>
+          <div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody id="recentRequests"></tbody></table></div>
+        </section>
+        <section class="panel supplier-panel">
+          <div class="panel-heading"><div><h2>Supplier performance</h2><p>Highest-rated suppliers</p></div><button class="text-btn" data-goto="suppliers">All suppliers →</button></div>
+          <div id="topSuppliers" class="supplier-list"></div>
+        </section>
+      </div>
+      <div class="content-grid lower-grid">
+        <section class="panel"><div class="panel-heading"><div><h2>Latest quotations</h2><p>Recently received supplier pricing</p></div><button class="text-btn" data-goto="quotes">Manage quotes →</button></div><div id="recentQuotes" class="quote-list"></div></section>
+        <section class="panel insight-panel"><div class="insight-mark">✳</div><div><span class="eyebrow">PROCUREMENT PRINCIPLE</span><h2>Decisions backed by evidence.</h2><p>Compare total cost, delivery risk and supplier reliability. Keep final award decisions in human hands.</p><button class="text-btn" data-goto="analysis">Explore bid analysis →</button></div></section>
+      </div>
+    </section>
+
+    <section class="page" id="page-requests">
+      <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials required across your construction sites.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
+      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Requests generated from stock monitoring or entered by your team.</p></div><input class="search" id="requestSearch" placeholder="Search requests…"></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
+    </section>
+
+    <section class="page" id="page-suppliers">
+      <div class="page-heading"><div><div class="eyebrow">SUPPLIER NETWORK</div><h1>Suppliers</h1><p class="subheading">A performance-led view of your supplier relationships.</p></div></div>
+      <div class="supplier-cards" id="supplierCards"></div>
+    </section>
+
+    <section class="page" id="page-quotes">
+      <div class="page-heading"><div><div class="eyebrow">SOURCING</div><h1>RFQs & quotations</h1><p class="subheading">Capture offers against open purchase requests.</p></div><button class="btn btn-primary" data-modal="quoteModal">＋ Add quotation</button></div>
+      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Supplier offers available for evaluation.</p></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
+    </section>
+
+    <section class="page" id="page-analysis">
+      <div class="page-heading"><div><div class="eyebrow">DECISION INTELLIGENCE</div><h1>Bid analysis</h1><p class="subheading">Compare landed cost, delivery and supplier reliability before award.</p></div></div>
+      <section class="panel analysis-picker"><div><label for="analysisRequest">Select a purchase request</label><select id="analysisRequest"></select></div><button class="btn btn-primary" id="runAnalysis">Analyse quotations →</button></section>
+      <div id="analysisResult" class="analysis-result"><div class="empty-state"><span>◈</span><h3>Ready to compare offers</h3><p>Select a purchase request and run the analysis to see a cost breakdown and supplier recommendation.</p></div></div>
+    </section>
+
+    <section class="page" id="page-orders">
+      <div class="page-heading"><div><div class="eyebrow">AWARD & CONTROL</div><h1>Purchase orders</h1><p class="subheading">Review generated orders and resolve approval decisions.</p></div></div>
+      <section class="panel"><div class="panel-heading"><div><h2>Purchase order register</h2><p>Every order retains its supplier, source request and decision status.</p></div></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>SUPPLIER</th><th>MATERIAL</th><th>TOTAL</th><th>DELIVERY</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allOrders"></tbody></table></div></section>
+    </section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="requestModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">DEMAND MANAGEMENT</span><h2>Create purchase request</h2></div><button class="close" data-close>×</button></div>
+<form id="requestForm" class="form-grid">
+<label class="wide">Material description<input name="material" required placeholder="e.g. Reinforcement steel T12"></label>
+<label>Category<select name="category"><option>Reinforcement</option><option>Cementitious</option><option>Aggregate</option><option>Formwork</option><option>Electrical</option><option>Plumbing</option><option>Other</option></select></label>
+<label>Quantity<input name="quantity" type="number" min="0.01" step="0.01" required placeholder="0"></label>
+<label>Unit<select name="unit"><option>kg</option><option>tonne</option><option>ea</option><option>m</option><option>bag</option><option>litre</option></select></label>
+<label>Project / site<input name="site" required placeholder="e.g. Lagos Tower"></label>
+<label>Required by<input name="required_by" type="date" required></label>
+<label>Priority<select name="priority"><option>Normal</option><option>Urgent</option></select></label>
+<div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Create request</button></div>
+</form></div></div>
+
+<div class="modal-backdrop" id="quoteModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">SOURCING</span><h2>Add supplier quotation</h2></div><button class="close" data-close>×</button></div>
+<form id="quoteForm" class="form-grid">
+<label class="wide">Purchase request<select name="request_id" id="quoteRequest" required></select></label>
+<label class="wide">Supplier<select name="supplier_id" id="quoteSupplier" required></select></label>
+<label>Unit price (₦)<input name="unit_price" type="number" min="0.01" step="0.01" required></label>
+<label>Freight (₦)<input name="freight" type="number" min="0" step="0.01" value="0" required></label>
+<label>Tax (%)<input name="tax_rate" type="number" min="0" max="100" step="0.01" value="7.5" required></label>
+<label>Lead time (days)<input name="lead_days" type="number" min="0" value="7" required></label>
+<label>Payment terms (days)<input name="payment_days" type="number" min="0" value="30" required></label>
+<label class="wide">Notes<input name="note" placeholder="Quote validity, exclusions or other commercial notes"></label>
+<div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Save quotation</button></div>
+</form></div></div>
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body></html>
