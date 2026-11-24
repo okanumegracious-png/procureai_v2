@@ -482,6 +482,7 @@ function renderDashboard() {
       <p>${escapeHtml(s.city)} · ${escapeHtml(s.phone || s.email || s.contact || "No contact supplied")}</p>
       <p class="supplier-capabilities">${escapeHtml(s.services || "Services not yet listed")}</p>
       <p class="supplier-capabilities">${escapeHtml([s.email,s.website,s.address].filter(Boolean).join(" · "))}</p>
+      ${s.contact ? `<p class="supplier-source-note"><b>Source / verification note:</b> ${escapeHtml(s.contact)}</p>` : ""}
       <div class="supplier-stats">
         <div><b>${s.on_time}%</b><small>On-time</small></div>
         <div><b>${escapeHtml(s.status)}</b><small>Status</small></div>
