@@ -1098,12 +1098,48 @@ class QuoteParsePayload(BaseModel):
     message: str = Field(min_length=3, max_length=12000)
 
 
+def _extract_quote_line_items(message: str) -> list[dict]:
+    """Extract independently priced material lines without creating quotations."""
+    items = []
+    unit_pattern = r"(kgs?|kilograms?|grams?|g|tonnes?|tons?|mt|litres?|liters?|l|metres?|meters?|m|pieces?|pcs|units?|bags?|boxes?|cartons?|packs?|sets?|rolls?|sheets?|pairs?|drums?|pallets?)"
+    quantity_re = re.compile(r"\b(\d[\d,]*(?:\.\d+)?)\s*" + unit_pattern + r"\b", re.I)
+    price_re = re.compile(
+        r"(?:at|@|for|unit\s+price(?:\s+is)?)\s*(?:₦\s*|NGN\s*|N\s*)?([\d,]+(?:\.\d{1,2})?)\s*(?:naira\s*)?(?:per|/)\s*" + unit_pattern + r"\b",
+        re.I,
+    )
+    compact_price_re = re.compile(
+        r"(?:₦\s*|NGN\s*|N\s*)?([\d,]+(?:\.\d{1,2})?)\s*/\s*" + unit_pattern + r"\b",
+        re.I,
+    )
+    for raw_line in message.splitlines():
+        line = " ".join(raw_line.replace("\u00a0", " ").split())
+        quantity = quantity_re.search(line)
+        if not quantity:
+            continue
+        price = price_re.search(line) or compact_price_re.search(line)
+        if not price:
+            continue
+        description = line[:quantity.start()] + " " + line[quantity.end():price.start()] + " " + line[price.end():]
+        description = re.sub(r"^\s*(?:[-*•]+\s*)?(?:i can|we can|we offer|we have|we supply|we supply|can supply|supply|quote for|quotation for)\s+", "", description, flags=re.I)
+        description = re.split(r"\b(?:delivery|lead\s*time|transport|freight|vat|tax|payment|validity|available)\b", description, maxsplit=1, flags=re.I)[0]
+        description = re.sub(r"^\s*(?:of|for|:|-)+\s*|\s*(?:of|for|at|:|-)+\s*$", "", description).strip(" .,:;-")
+        items.append({
+            "description": description or f"Line item {len(items) + 1}",
+            "quantity": float(quantity.group(1).replace(",", "")),
+            "unit": quantity.group(2).lower(),
+            "unit_price": float(price.group(1).replace(",", "")),
+            "price_unit": price.group(2).lower(),
+            "source_line": line,
+        })
+    return items[:50]
+
+
 def _parse_supplier_quote_message(message: str) -> dict:
     """Conservative, rule-based extraction. Never invent values."""
     text = " ".join(message.replace("\u00a0", " ").split())
     result = {"quantity": None, "unit": None, "unit_price": None, "freight": None,
               "tax_rate": None, "lead_days": None, "payment_days": None,
-              "payment_terms": None, "matched": []}
+              "payment_terms": None, "matched": [], "line_items": _extract_quote_line_items(message)}
     unit_pattern = r"(kgs?|kilograms?|grams?|g|tonnes?|tons?|mt|litres?|liters?|l|metres?|meters?|m|pieces?|pcs|units?|bags?|boxes?|cartons?|packs?|sets?)"
     quantity_match = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s*" + unit_pattern + r"\b", text, re.I)
     if quantity_match:
