@@ -194,7 +194,7 @@ function renderProjectCards() {
     <article class="project-card">
       <div class="project-card-top"><span class="project-status">${escapeHtml((project.status || "active").replace("_"," "))}</span>${dueBadge(project.due_status,project.due_label)}</div>
       <h3>${escapeHtml(project.title)}</h3><p class="project-client">${escapeHtml(project.client_name || "Client not specified")}</p>
-      <div class="project-card-meta"><span>Lead</span><b>${escapeHtml(project.procurement_lead || "Unassigned")}</b></div>
+      <div class="project-card-meta"><span>Lead</span><b>${escapeHtml(project.procurement_lead || "Unassigned")}</b><span>Purchase requests</span><b>${Number(project.purchase_requests_count || 0)}</b></div>
       <div class="project-card-progress"><div><span>Overall progress</span><b>${Number(project.progress_percent || 0).toFixed(0)}%</b></div><div class="project-progress-track"><i style="width:${Math.max(0,Math.min(100,Number(project.progress_percent||0)))}%"></i></div></div>
       <div class="project-card-footer"><span>Due ${projectDate(project.due_date)}</span><button type="button" class="text-btn" data-open-project="${escapeHtml(project.project_id)}">Open workspace →</button></div>
     </article>`).join("");
