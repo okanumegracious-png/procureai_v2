@@ -258,3 +258,24 @@ def test_job_completion_project_closure_and_termination(authenticated_client):
         "status":"Draft","job":"Should be blocked"
     })
     assert report_after_termination.status_code == 409
+
+
+def test_administrator_can_create_verify_and_download_database_backup(authenticated_client):
+    client = authenticated_client
+    created = client.post("/api/admin/database/backups")
+    assert created.status_code == 201, created.text
+    filename = created.json()["backup"]["filename"]
+    assert filename.startswith("procureai-") and filename.endswith(".sqlite3")
+
+    listing = client.get("/api/admin/database/backups")
+    assert listing.status_code == 200
+    assert any(item["filename"] == filename for item in listing.json()["backups"])
+
+    verified = client.post(f"/api/admin/database/backups/{filename}/verify-restore")
+    assert verified.status_code == 200, verified.text
+    assert verified.json()["verification"]["restore_test"] == "passed"
+    assert verified.json()["verification"]["live_database_changed"] is False
+
+    downloaded = client.get(f"/api/admin/database/backups/{filename}/download")
+    assert downloaded.status_code == 200
+    assert downloaded.content[:16] == b"SQLite format 3\x00"
