@@ -70,6 +70,16 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
+        # Add explicit technical, stock and compliance evidence to existing quotations.
+        quote_columns = {row["name"] for row in db.execute("PRAGMA table_info(quotes)").fetchall()}
+        for column, definition in {
+            "technical_status": "TEXT NOT NULL DEFAULT 'not_assessed'",
+            "stock_status": "TEXT NOT NULL DEFAULT 'not_confirmed'",
+            "compliance_status": "TEXT NOT NULL DEFAULT 'pending'"
+        }.items():
+            if column not in quote_columns:
+                db.execute(f"ALTER TABLE quotes ADD COLUMN {column} {definition}")
+
         # Link generated purchase-order proposals to the exact quotation used in analysis.
         order_columns = {row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()}
         for column, definition in {
@@ -397,6 +407,97 @@ def _bid_ai_judgement(request, offers, alternatives, days_left):
     return judgement
 
 
+def _project_budget_assessment(request_id, candidate_total):
+    """Compare this offer with the best known costs for the linked project requests."""
+    try:
+        project = one("""SELECT p.project_id,COALESCE(pi.estimated_budget,0) AS budget
+            FROM project_purchase_requests pr JOIN projects p ON p.project_id=pr.project_id
+            LEFT JOIN project_intake pi ON pi.project_id=p.project_id
+            WHERE pr.request_id=?""", (request_id,))
+        if not project:
+            return {"status": "not_assessed", "budget": 0, "known_estimate": None, "unquoted_requests": None}
+        budget = float(project["budget"] or 0)
+        if budget <= 0:
+            return {"status": "not_provided", "budget": 0, "known_estimate": None, "unquoted_requests": None}
+        project_requests = rows("""SELECT r.id,r.quantity FROM project_purchase_requests pr
+            JOIN requests r ON r.id=pr.request_id WHERE pr.project_id=?""", (project["project_id"],))
+        known_total = 0.0
+        unquoted = 0
+        for item in project_requests:
+            if int(item["id"]) == int(request_id):
+                known_total += float(candidate_total)
+                continue
+            alternatives = rows("SELECT unit_price,freight,tax_rate FROM quotes WHERE request_id=?", (item["id"],))
+            if not alternatives:
+                unquoted += 1
+                continue
+            costs = []
+            for quote in alternatives:
+                price = float(quote["unit_price"] or 0)
+                freight = float(quote["freight"] or 0)
+                tax_rate = float(quote["tax_rate"] or 0)
+                if price > 0 and freight >= 0 and 0 <= tax_rate <= 100:
+                    subtotal = float(item["quantity"]) * price
+                    costs.append(subtotal + subtotal * tax_rate / 100 + freight)
+            if costs:
+                known_total += min(costs)
+            else:
+                unquoted += 1
+        if known_total > budget:
+            status = "over_budget"
+        elif unquoted:
+            status = "incomplete"
+        else:
+            status = "within_budget"
+        return {"status": status, "budget": budget, "known_estimate": round(known_total, 2),
+                "unquoted_requests": unquoted}
+    except sqlite3.OperationalError:
+        # Older standalone databases may not yet contain the project workspace tables.
+        return {"status": "not_assessed", "budget": 0, "known_estimate": None, "unquoted_requests": None}
+
+
+def assess_offer_feasibility(*, days_left, lead_days, rating, supplier_status,
+                             technical_status, stock_status, compliance_status,
+                             budget_status, commercial_valid=True):
+    """Return a conservative, explainable readiness result from recorded evidence."""
+    blockers, unknowns, warnings = [], [], []
+    delivery = "on_time" if int(lead_days) <= int(days_left) else "late"
+    supplier = str(supplier_status or "").strip().lower()
+    technical = str(technical_status or "not_assessed").strip().lower()
+    stock = str(stock_status or "not_confirmed").strip().lower()
+    compliance = str(compliance_status or "pending").strip().lower()
+    if delivery == "late":
+        blockers.append("Quoted lead time exceeds the remaining delivery window.")
+    if supplier not in ("verified", "active"):
+        blockers.append("Supplier verification is incomplete.")
+    if float(rating or 0) < 2.5:
+        blockers.append("Supplier rating is below the minimum 2.5/5 threshold.")
+    if not commercial_valid:
+        blockers.append("Commercial quotation values are incomplete or invalid.")
+    if technical == "deviation":
+        blockers.append("Supplier declared a technical deviation from the requirement.")
+    elif technical != "compliant":
+        unknowns.append("Technical compliance has not been confirmed.")
+    if stock == "unavailable":
+        blockers.append("Supplier reports that the required stock is unavailable.")
+    elif stock != "available":
+        unknowns.append("Stock availability is not fully confirmed.")
+    if compliance == "non_compliant":
+        blockers.append("Required regulatory or product compliance evidence is non-compliant.")
+    elif compliance not in ("verified", "not_applicable"):
+        unknowns.append("Certificates and regulatory compliance evidence are pending review.")
+    if budget_status == "over_budget":
+        blockers.append("Known project procurement estimates exceed the approved project budget.")
+    elif budget_status != "within_budget":
+        unknowns.append("Project budget fit cannot yet be confirmed for all linked requests.")
+    if float(rating or 0) < 3.5 and float(rating or 0) >= 2.5:
+        warnings.append("Supplier rating is below the preferred 3.5/5 threshold.")
+    status = "infeasible" if blockers else ("conditional" if unknowns else "feasible")
+    return {"status": status, "delivery": delivery, "supplier": supplier,
+            "technical_compliance": technical, "stock": stock, "regulatory_compliance": compliance,
+            "budget": budget_status, "blockers": blockers, "unknowns": unknowns, "warnings": warnings}
+
+
 def analyse_request(request_id):
     req = one("SELECT * FROM requests WHERE id=?", (request_id,))
     if not req:
@@ -417,27 +518,26 @@ def analyse_request(request_id):
         reliability_risk = price * D("0.05") * (D("1") - D(str(q["on_time"])) / D("100"))
         unit_tco = price + tax + financing + delay_risk + reliability_risk
         total = unit_tco * qty + D(str(q["freight"]))
+        landed_total = qty * price + qty * tax + D(str(q["freight"]))
         seller_status = str(q["supplier_status"] or "").strip().lower()
-        issues = []
-        if int(q["lead_days"]) > days_left:
-            issues.append(f"Delivery is {int(q['lead_days']) - days_left} day(s) later than the remaining {days_left}-day window.")
-        if float(q["rating"] or 0) < 2.5:
-            issues.append("Seller rating is below the minimum 2.5/5 threshold.")
-        elif float(q["rating"] or 0) < 3.5:
-            issues.append("Seller rating is below the preferred 3.5/5 threshold.")
-        if float(q["on_time"] or 0) < 80:
-            issues.append("On-time performance is below 80%.")
-        if seller_status not in ("verified", "active") or "[fictional demo]" in str(q["supplier"]).lower():
-            issues.append("Seller verification is incomplete.")
-        feasible = int(q["lead_days"]) <= days_left and int(float(q["rating"] or 0) * 100) >= 250
+        commercial_valid = float(q["unit_price"]) > 0 and float(q["freight"]) >= 0 and 0 <= float(q["tax_rate"]) <= 100 and float(req["quantity"]) > 0
+        budget = _project_budget_assessment(request_id, float(landed_total))
+        feasibility = assess_offer_feasibility(
+            days_left=days_left, lead_days=q["lead_days"], rating=q["rating"],
+            supplier_status=seller_status, technical_status=q.get("technical_status"),
+            stock_status=q.get("stock_status"), compliance_status=q.get("compliance_status"),
+            budget_status=budget["status"], commercial_valid=commercial_valid)
+        issues = feasibility["blockers"] + feasibility["unknowns"] + feasibility["warnings"]
         results.append({
             **q, "unit_tco": float(unit_tco), "estimated_total": float(total),
-            "feasible": feasible, "award_eligible": feasible and seller_status in ("verified", "active") and "[fictional demo]" not in str(q["supplier"]).lower(),
+            "feasible": feasibility["status"] == "feasible",
+            "basic_screen_passed": int(q["lead_days"]) <= days_left and int(float(q["rating"] or 0) * 100) >= 250,
+            "award_eligible": feasibility["status"] == "feasible",
+            "feasibility": {**feasibility, "budget": {**budget, "status": budget["status"]}},
             "days_left": days_left, "issues": issues,
-            "components": {"base":float(price),"tax":float(tax),"financing":float(financing),
-                           "delay_risk":float(delay_risk),"reliability_risk":float(reliability_risk)}
+            "components": {"base":float(price),"tax":float(tax),"financing":float(financing),"delay_risk":float(delay_risk),"reliability_risk":float(reliability_risk)}
         })
-    results.sort(key=lambda x: (not x["feasible"], x["estimated_total"]))
+    results.sort(key=lambda x: (x["feasibility"]["status"] != "feasible", x["estimated_total"]))
 
     quoted_supplier_ids = {int(o["supplier_id"]) for o in offers}
     all_suppliers = rows("""SELECT id,name,city,rating,on_time,status,services,phone,email,website,address
@@ -451,7 +551,6 @@ def analyse_request(request_id):
         services = str(seller["services"] or "").lower()
         name_city = f"{seller['name']} {seller['city']}".lower()
         matches = [word for word in keywords if word in services or word in name_city]
-        # If service descriptions do not share exact terms, retain local candidates as unverified leads.
         local_match = bool(req["site"] and any(part.strip().lower() in str(seller["city"] or "").lower()
                           for part in str(req["site"]).replace(",", " ").split() if len(part.strip()) > 3))
         if matches or local_match:
@@ -477,7 +576,7 @@ def analyse_request(request_id):
         "decision_support": judgement,
         "alternatives": alternatives,
         "analysis_status": "completed",
-        "disclaimer": "Decision support only. Confirm specifications, stock, certificates, quote validity, references and commercial terms. Human approval is required before any purchase commitment."
+        "disclaimer": "Feasibility is confirmed only when project budget, delivery, supplier verification, technical compliance, stock and regulatory evidence are all supported by recorded data. Unknown information remains conditional; human approval is still required."
     }
 
 class Handler(BaseHTTPRequestHandler):
