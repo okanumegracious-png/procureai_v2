@@ -1401,7 +1401,7 @@ def dashboard_invoices():
     with dashboard_module.connect() as db:
         _ensure_invoice_table(db)
         rows = db.execute("""SELECT i.id,i.order_id,i.invoice_number,i.issue_date,i.due_date,i.status,i.created_at,
-            o.code AS order_code,o.total,o.material,o.quantity,r.unit,s.name AS supplier
+            o.code AS order_code,o.total,r.material,o.quantity,r.unit,s.name AS supplier
             FROM invoices i JOIN orders o ON o.id=i.order_id
             JOIN requests r ON r.id=o.request_id JOIN suppliers s ON s.id=o.supplier_id
             ORDER BY i.id DESC""").fetchall()
