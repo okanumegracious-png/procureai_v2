@@ -43,7 +43,12 @@ document.querySelectorAll(".nav-item").forEach(btn => {
     const page = btn.dataset.page;
     document.getElementById(`page-${page}`).classList.add("active");
     document.getElementById("crumbTitle").textContent = btn.textContent.trim().split(" ")[0];
-    if (page === "projects") loadProjects();
+    if (page === "projects") {
+      activeProjectId = null;
+      document.getElementById("projectWorkspaceView").hidden = true;
+      document.getElementById("projectsListView").hidden = false;
+      loadProjects();
+    }
     if (window.innerWidth < 800) document.getElementById("sidebar").classList.remove("open");
   });
 });
@@ -56,6 +61,8 @@ document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
 document.getElementById("projectCards").addEventListener("click", event => {
+  const create = event.target.closest('[data-modal="projectModal"]');
+  if (create) { document.querySelector('.project-page-heading [data-modal="projectModal"]')?.click(); return; }
   const retry = event.target.closest("#retryProjects");
   if (retry) return loadProjects();
   const open = event.target.closest("[data-open-project]");
