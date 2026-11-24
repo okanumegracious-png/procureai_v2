@@ -458,6 +458,12 @@ class ProjectCreatePayload(BaseModel):
     start_date: str
     due_date: str
     status: str = Field(default="active", pattern="^(active|on_hold|completed|cancelled)$")
+    project_location: str = Field(default="", max_length=240)
+    project_category: str = Field(default="", max_length=120)
+    estimated_budget: float = Field(default=0, ge=0)
+    expected_duration_days: int = Field(default=30, ge=1, le=3650)
+    priority: str = Field(default="medium", pattern="^(low|medium|high|urgent)$")
+    planned_purchase_requests: int = Field(default=1, ge=0, le=500)
 
 
 class ProjectDailyUpdatePayload(BaseModel):
@@ -565,6 +571,16 @@ def _project_overview(db, project_id: str) -> dict:
     progress = _recalculate_project(db, project_id)
     project = dict(db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone())
     project["deliverables"] = json.loads(project.pop("deliverables_json") or "[]")
+    try:
+        intake = db.execute("SELECT project_location,project_category,estimated_budget,expected_duration_days,priority,planned_purchase_requests FROM project_intake WHERE project_id=?", (project_id,)).fetchone()
+    except Exception:
+        intake = None
+    project["project_location"] = intake["project_location"] if intake else ""
+    project["project_category"] = intake["project_category"] if intake else ""
+    project["estimated_budget"] = intake["estimated_budget"] if intake else 0
+    project["expected_duration_days"] = intake["expected_duration_days"] if intake else 30
+    project["priority"] = intake["priority"] if intake else "medium"
+    project["planned_purchase_requests"] = intake["planned_purchase_requests"] if intake else 0
     project["milestones"] = progress["milestones"]
     project["progress_percent"] = progress["progress_percent"]
     project["progress_breakdown"] = {"milestones": progress["milestone_progress"], "daily_updates": round(progress["daily_progress"] * 0.4, 1)}
@@ -1396,6 +1412,15 @@ def create_project_workspace(payload: ProjectCreatePayload, request: Request):
     now = _now()
     milestones = [{**item, "completed": False} for item in PROJECT_MILESTONE_TEMPLATE]
     with connect() as db:
+        db.execute("""CREATE TABLE IF NOT EXISTS project_intake (
+            project_id TEXT PRIMARY KEY,
+            project_location TEXT NOT NULL DEFAULT '',
+            project_category TEXT NOT NULL DEFAULT '',
+            estimated_budget REAL NOT NULL DEFAULT 0,
+            expected_duration_days INTEGER NOT NULL DEFAULT 30,
+            priority TEXT NOT NULL DEFAULT 'medium',
+            planned_purchase_requests INTEGER NOT NULL DEFAULT 1
+        )""")
         db.execute("""INSERT INTO projects
             (project_id,title,client_name,agency_details,executive_summary,procurement_lead,deliverables_json,
              start_date,due_date,status,milestones_json,progress_percent,created_at,updated_at)
@@ -1404,6 +1429,11 @@ def create_project_workspace(payload: ProjectCreatePayload, request: Request):
              payload.executive_summary.strip(),payload.procurement_lead.strip(),
              json.dumps([x.strip() for x in payload.deliverables if x.strip()]),
              payload.start_date,payload.due_date,payload.status,json.dumps(milestones),now,now))
+        db.execute("""INSERT INTO project_intake
+            (project_id,project_location,project_category,estimated_budget,expected_duration_days,priority,planned_purchase_requests)
+            VALUES(?,?,?,?,?,?,?)""",
+            (project_id,payload.project_location.strip(),payload.project_category.strip(),
+             payload.estimated_budget,payload.expected_duration_days,payload.priority,payload.planned_purchase_requests))
         db.execute("""INSERT OR IGNORE INTO workflow_projects
             (project_id,summary,status,created_at,updated_at) VALUES(?,?,?,?,?)""",
             (project_id,payload.executive_summary.strip(), "created", now, now))
