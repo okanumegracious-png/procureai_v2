@@ -415,10 +415,7 @@ ${project.status === "completed" ? `<div class="project-closure-notice"><b>Proje
         </form>`}
       </article>
     </section>
-    <section class="project-overview-card project-archive-panel">
-      <div class="project-section-heading"><div><span class="eyebrow">PROJECT CONTROL</span><h2>Project closure & archive</h2><p>Terminate this project if work has been discontinued. Existing records remain available for audit and reference.</p></div></div>
-      ${project.status === "terminated" ? `<div class="project-closure-notice"><b>Project archived</b><span>This project is read-only. Its requests, quotations, purchase orders, invoices, job completion reports and audit history are retained.</span></div>` : project.status === "completed" ? `<p class="project-muted">This project is already completed and closed. Its records remain available for reference.</p>` : `<div class="project-archive-actions"><div><b>Terminate / archive project</b><span>Stops further project activity without deleting any records. This action cannot be reversed from the workspace.</span></div><button type="button" class="btn btn-danger" data-terminate-project>Terminate project</button></div>`}
-    </section>`;
+`;
   const progressInput = document.getElementById("projectReportedProgress");
   progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
   loadProjectQuotationOptions(project.project_id);
