@@ -21,12 +21,14 @@ Open http://127.0.0.1:8000. On Windows PowerShell, use `$env:NAME="value"` to se
 Mount a durable volume at `/data`. The container stores its database at `/data/procureai.db`; the local tracked database is deliberately not copied into the image.
 
 Required production configuration:
-- `PROCUREAI_WEBHOOK_SECRET`: strong random secret used by the server-side BOQ proxy and protected workflow endpoints.
+- `PROCUREAI_ADMIN_USERNAME`: the single administrator login name.
+- `PROCUREAI_ADMIN_PASSWORD_HASH`: PBKDF2-SHA256 password hash for the administrator; never store the plaintext password in source control.
+- `PROCUREAI_WEBHOOK_SECRET`: strong random secret used by protected BOQ and supplier workflow endpoints.
 - `OPENAI_API_KEY`: required for BOQ extraction. If it is absent, extraction returns a configuration error rather than fabricated sample items.
 - `PROCUREAI_DB_PATH`: optional; defaults to `/data/procureai.db` in Docker.
 - `FRONTEND_URL`: comma-separated allowed browser origins; defaults to localhost for development.
 
-Keep the API key in the Next.js server environment only. Do not expose it in browser JavaScript.
+Keep all API secrets in Railway server environment variables only. Never expose them in browser JavaScript.
 
 ## Unified data
 
@@ -42,7 +44,7 @@ The dashboard, BOQ workflow tables and agentic intake use the same SQLite file t
 
 ## Current limitations before production
 
-The existing browser dashboard has no user login or role-based access control yet. Do not expose dashboard endpoints publicly until an authenticated access layer is added. Supplier verification is a manual workflow, not a live external registry check. BOQ extraction requires a configured model provider and should be reviewed against the source document.
+The browser dashboard uses a single-administrator login. Dashboard, intake, quotation and purchase-order browser APIs require a server-side session cookie and CSRF token. Keep the admin password hash and webhook key in Railway variables only. Rotate the initial password after first access. Supplier verification is a manual workflow, not a live external registry check. BOQ extraction requires a configured model provider and should be reviewed against the source document.
 
 ## Tests
 
