@@ -1837,3 +1837,96 @@ def index():
 
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+# --- Project job completion reports (before / after evidence) ---
+@app.get("/api/projects/{project_id}/job-completion-report")
+def get_job_completion_report(project_id: str):
+    with connect() as db:
+        project = db.execute("SELECT project_id FROM projects WHERE project_id=?", (project_id,)).fetchone()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        db.execute("""CREATE TABLE IF NOT EXISTS project_job_completion_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL UNIQUE REFERENCES projects(project_id) ON DELETE CASCADE,
+            report_json TEXT NOT NULL,
+            before_photo_json TEXT,
+            after_photo_json TEXT,
+            status TEXT NOT NULL DEFAULT 'Draft',
+            recorded_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        row = db.execute("SELECT * FROM project_job_completion_reports WHERE project_id=?", (project_id,)).fetchone()
+        report = None
+        if row:
+            report = json.loads(row["report_json"])
+            report.update({"before_photo":json.loads(row["before_photo_json"]) if row["before_photo_json"] else None,
+                           "after_photo":json.loads(row["after_photo_json"]) if row["after_photo_json"] else None,
+                           "status":row["status"],"recorded_by":row["recorded_by"],
+                           "created_at":row["created_at"],"updated_at":row["updated_at"]})
+    return {"report":report}
+
+
+@app.post("/api/projects/{project_id}/job-completion-report")
+def save_job_completion_report(project_id: str, payload: dict, request: Request):
+    allowed = ("job","job_date","location","equipment","purpose","initial_condition","work_carried_out",
+               "final_condition","technician","supervisor","remarks")
+    values = {key:str(payload.get(key,"") or "").strip() for key in allowed}
+    status = str(payload.get("status","Draft"))
+    if status not in ("Draft","Submitted"):
+        raise HTTPException(status_code=422, detail="Report status must be Draft or Submitted.")
+    for key in ("job","job_date","location","equipment","purpose","initial_condition","work_carried_out"):
+        if status == "Submitted" and not values[key]:
+            raise HTTPException(status_code=422, detail=f"{key.replace('_',' ').capitalize()} is required before submission.")
+    def photo(value, label):
+        if value is None: return None
+        if not isinstance(value,dict) or not str(value.get("data_url","")).startswith("data:image/"):
+            raise HTTPException(status_code=422, detail=f"Invalid {label} photograph.")
+        data_url=str(value["data_url"])
+        if len(data_url) > 7 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail=f"{label.capitalize()} photograph is too large. Maximum size is 5 MB.")
+        mime=str(value.get("mime_type",""))
+        if mime not in ("image/jpeg","image/png","image/webp") or not data_url.startswith("data:"+mime+";base64,"):
+            raise HTTPException(status_code=422, detail=f"{label.capitalize()} photograph must be JPG, PNG or WebP.")
+        return {"name":str(value.get("name",""))[:180],"mime_type":mime,"data_url":data_url}
+    before=photo(payload.get("before_photo"),"before")
+    after=photo(payload.get("after_photo"),"after")
+    if status=="Submitted" and (not before or not after):
+        raise HTTPException(status_code=422, detail="Both before and after photographs are required before submission.")
+    now=_now(); actor=getattr(request.state,"auth_user","") or "Workspace user"
+    with connect() as db:
+        project=db.execute("SELECT project_id FROM projects WHERE project_id=?",(project_id,)).fetchone()
+        if not project: raise HTTPException(status_code=404,detail="Project not found")
+        db.execute("""CREATE TABLE IF NOT EXISTS project_job_completion_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL UNIQUE REFERENCES projects(project_id) ON DELETE CASCADE,
+            report_json TEXT NOT NULL,
+            before_photo_json TEXT,
+            after_photo_json TEXT,
+            status TEXT NOT NULL DEFAULT 'Draft',
+            recorded_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        existing=db.execute("SELECT created_at FROM project_job_completion_reports WHERE project_id=?",(project_id,)).fetchone()
+        created=existing["created_at"] if existing else now
+        db.execute("""INSERT INTO project_job_completion_reports
+            (project_id,report_json,before_photo_json,after_photo_json,status,recorded_by,created_at,updated_at)
+            VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(project_id) DO UPDATE SET report_json=excluded.report_json,
+            before_photo_json=excluded.before_photo_json,after_photo_json=excluded.after_photo_json,
+            status=excluded.status,recorded_by=excluded.recorded_by,updated_at=excluded.updated_at""",
+            (project_id,json.dumps(values),json.dumps(before) if before else None,json.dumps(after) if after else None,status,actor,created,now))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+                   (actor,"submit_job_completion_report" if status=="Submitted" else "save_job_completion_report",
+                    "project",project_id,json.dumps({"status":status,"job":values["job"]}),now))
+        row=db.execute("SELECT * FROM project_job_completion_reports WHERE project_id=?",(project_id,)).fetchone()
+        report=json.loads(row["report_json"])
+        report.update({"before_photo":json.loads(row["before_photo_json"]) if row["before_photo_json"] else None,
+                       "after_photo":json.loads(row["after_photo_json"]) if row["after_photo_json"] else None,
+                       "status":row["status"],"recorded_by":row["recorded_by"],
+                       "created_at":row["created_at"],"updated_at":row["updated_at"]})
+    return {"success":True,"report":report}
