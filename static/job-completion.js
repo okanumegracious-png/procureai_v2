@@ -44,7 +44,7 @@
     container.append(section);
     try{
       const data=await request(API+"/projects/"+encodeURIComponent(projectId)+"/job-completion-report");
-      const saved=data.report;
+      let saved=data.report;
       section.innerHTML=`<div class="jr-muted">JOB CLOSE-OUT · BEFORE & AFTER DOCUMENTATION</div><h2>Job completion report</h2><p class="jr-muted">This report is attached to this project and retained in its history.</p>
         <div class="jr-existing"></div>
         <form class="jr-form">
@@ -90,6 +90,7 @@
           const result=await request(API+"/projects/"+encodeURIComponent(projectId)+"/job-completion-report",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
           notify(status==="Draft"?"Job report draft saved":"Job completion report submitted");
           const fresh=await request(API+"/projects/"+encodeURIComponent(projectId)+"/job-completion-report");
+          saved=fresh.report;
           renderSaved(section.querySelector(".jr-existing"),fresh.report);
         }catch(e){notify(e.message,true);}finally{submit.disabled=false;}
       }
