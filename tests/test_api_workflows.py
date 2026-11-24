@@ -366,3 +366,12 @@ def test_archived_project_can_be_unarchived_and_history_is_retained(authenticate
     assert termination and termination["termination_note"] == "Paused pending client approval."
     assert audit and audit["action"] == "unarchive"
     assert client.post(f"/api/projects/{project_id}/unarchive").status_code == 409
+
+    rearchived = client.post(f"/api/projects/{project_id}/terminate", json={
+        "termination_note": "Archived again after restoration."
+    })
+    assert rearchived.status_code == 200, rearchived.text
+    assert rearchived.json()["project"]["status"] == "terminated"
+    restored_again = client.post(f"/api/projects/{project_id}/unarchive")
+    assert restored_again.status_code == 200, restored_again.text
+    assert restored_again.json()["project"]["status"] == "active"
