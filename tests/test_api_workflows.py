@@ -323,3 +323,46 @@ def test_only_completed_projects_can_be_removed_and_records_are_retained(authent
     assert deletion and deletion["deleted_by"] == "test-admin"
     assert audit and audit["action"] == "delete"
     assert client.delete(f"/api/projects/{project_id}").status_code == 404
+
+
+def test_archived_project_can_be_unarchived_and_history_is_retained(authenticated_client):
+    client = authenticated_client
+    created = client.post("/api/projects", json={
+        "title": "Unarchive workflow test",
+        "start_date": "2026-11-25",
+        "due_date": "2026-12-25",
+        "project_location": "Oyigbo, Rivers State",
+        "project_category": "Maintenance",
+        "estimated_budget": 180000,
+        "expected_duration_days": 30,
+        "priority": "medium",
+        "planned_purchase_requests": 0,
+    })
+    assert created.status_code == 201, created.text
+    project_id = created.json()["project"]["project_id"]
+
+    blocked = client.post(f"/api/projects/{project_id}/unarchive")
+    assert blocked.status_code == 409
+
+    archived = client.post(f"/api/projects/{project_id}/terminate", json={
+        "termination_note": "Paused pending client approval."
+    })
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["project"]["status"] == "terminated"
+
+    restored = client.post(f"/api/projects/{project_id}/unarchive")
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["success"] is True
+    assert restored.json()["project"]["status"] == "active"
+
+    listing = client.get("/api/projects")
+    assert listing.status_code == 200
+    listed = next(item for item in listing.json()["projects"] if item["project_id"] == project_id)
+    assert listed["status"] == "active"
+
+    with dashboard_module.connect() as db:
+        termination = db.execute("SELECT termination_note FROM project_terminations WHERE project_id=?", (project_id,)).fetchone()
+        audit = db.execute("SELECT action,details_json FROM audit_events WHERE entity_type='project' AND entity_id=? AND action='unarchive'", (project_id,)).fetchone()
+    assert termination and termination["termination_note"] == "Paused pending client approval."
+    assert audit and audit["action"] == "unarchive"
+    assert client.post(f"/api/projects/{project_id}/unarchive").status_code == 409
