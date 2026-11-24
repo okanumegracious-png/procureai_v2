@@ -60,6 +60,7 @@ document.querySelectorAll("[data-goto]").forEach(btn => {
 document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
+document.getElementById("projectStatusFilter").addEventListener("change", renderProjectCards);
 document.getElementById("projectCards").addEventListener("click", event => {
   const create = event.target.closest('[data-modal="projectModal"]');
   if (create) { document.querySelector('.project-page-heading [data-modal="projectModal"]')?.click(); return; }
@@ -224,12 +225,18 @@ async function loadProjectTrends() {
 }
 function renderProjectCards() {
   const grid = document.getElementById("projectCards");
-  document.getElementById("projectCount").textContent = `${projectRecords.length} ${projectRecords.length === 1 ? "project" : "projects"}`;
-  if (!projectRecords.length) {
-    grid.innerHTML = '<div class="project-empty"><span>▦</span><h3>No project workspaces yet</h3><p>Create your first project to start tracking its procurement lifecycle and daily progress.</p><button class="btn btn-primary" data-modal="projectModal">Create first project</button></div>';
+  const filter = document.getElementById("projectStatusFilter")?.value || "all";
+  const filteredProjects = projectRecords.filter(project => {
+    const completed = String(project.status || "").toLowerCase() === "completed";
+    return filter === "all" || (filter === "completed" && completed) || (filter === "uncompleted" && !completed);
+  });
+  document.getElementById("projectCount").textContent = `${filteredProjects.length} ${filteredProjects.length === 1 ? "project" : "projects"}`;
+  if (!filteredProjects.length) {
+    const message = filter === "completed" ? "No completed projects yet." : filter === "uncompleted" ? "No uncompleted projects. Great work!" : "No project workspaces yet.";
+    grid.innerHTML = `<div class="project-empty"><span>▦</span><h3>${escapeHtml(message)}</h3><p>${filter === "all" ? "Create your first project to get started." : "Try another filter or update a project's completion status."}</p>${filter === "all" ? '<button class="btn btn-primary" data-modal="projectModal">Create first project</button>' : ""}</div>`;
     return;
   }
-  grid.innerHTML = projectRecords.map(project => `
+  grid.innerHTML = filteredProjects.map(project => `
     <article class="project-card">
       <div class="project-card-top"><span class="project-status">${escapeHtml((project.status || "active").replace("_"," "))}</span>${dueBadge(project.due_status,project.due_label)}</div>
       <h3>${escapeHtml(project.title)}</h3><p class="project-client">${escapeHtml(project.client_name || "Client not specified")}</p>

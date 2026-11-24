@@ -271,3 +271,8 @@
 .project-closed-label{display:inline-flex;align-items:center;padding:6px 9px;border-radius:20px;background:#e8f6f0;color:#16815e;font-size:9px;font-weight:800;white-space:nowrap}
 .project-closure-notice{display:grid;gap:5px;margin:-4px 0 16px;padding:12px 15px;border:1px solid #d8eee3;border-radius:9px;background:#f5fbf7}.project-closure-notice b{font-size:11px;color:#176b4e}.project-closure-notice span{font-size:10px;color:#61766a;line-height:1.5}
 @media(max-width:650px){.project-trends-head{flex-direction:column}.project-trends-total{text-align:left}.project-trend-bars{gap:4px}.project-trend-column>small{font-size:7px}.project-trend-history>div>span{grid-template-columns:75px 1fr 20px}.project-month-feature{align-items:flex-start;padding:13px}.project-trend-chart{overflow-x:auto}.project-trend-bars{min-width:480px}}
+
+.project-toolbar-controls{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.project-filter-label{font-size:10px;font-weight:700;color:var(--muted)}
+.project-status-filter{min-width:175px}
+@media(max-width:620px){.project-list-toolbar{align-items:flex-start;gap:12px;flex-direction:column}.project-toolbar-controls{width:100%;justify-content:flex-start}.project-status-filter{flex:1;min-width:0}}
