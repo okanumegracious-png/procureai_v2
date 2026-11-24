@@ -1159,9 +1159,9 @@ def _extract_quote_line_items(message: str) -> list[dict]:
         if not price:
             continue
         description = line[:quantity.start()] + " " + line[quantity.end():price.start()] + " " + line[price.end():]
-        description = re.sub(r"^\s*(?:[-*•]+\s*)?(?:i can|we can|we offer|we have|we supply|we supply|can supply|supply|quote for|quotation for)\s+", "", description, flags=re.I)
+        description = re.sub(r"^\s*(?:[-*•]+\s*)?(?:i can do|i can|we can|we offer|we have|we supply|can supply|supply|quote for|quotation for)\s+", "", description, flags=re.I)
         description = re.split(r"\b(?:delivery|lead\s*time|transport|freight|vat|tax|payment|validity|available)\b", description, maxsplit=1, flags=re.I)[0]
-        description = re.sub(r"^\s*(?:of|for|:|-)+\s*|\s*(?:of|for|at|:|-)+\s*$", "", description).strip(" .,:;-")
+        description = re.sub(r"^\s*(?:of|for|:|-)+\s*|\s*(?:of|for|at|:|-)+\s*$", "", description).strip(" .,:;-–—")
         items.append({
             "description": description or f"Line item {len(items) + 1}",
             "quantity": float(quantity.group(1).replace(",", "")),
