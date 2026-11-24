@@ -34,6 +34,18 @@ ProcureAI does not treat an AI recommendation or an emailed request for quotatio
 10. Record project progress, delivery evidence and job completion reports.
 11. Complete or archive the project while preserving its records.
 
+## Evidence-based feasibility
+
+Each quotation records three explicit due-diligence fields in addition to its commercial terms:
+
+- **Technical compliance:** not assessed, compliant, or deviation.
+- **Stock availability:** not confirmed, available in full, partially available, or unavailable.
+- **Certificates / regulatory compliance:** pending, verified, not applicable, or non-compliant.
+
+Bid analysis also checks supplier verification, supplier rating, delivery lead time, commercial completeness and the combined known cost of the project's linked purchase requests against its approved budget. If another linked request has no quotation yet, budget fit remains provisional. Missing evidence is shown as conditional rather than being treated as a pass. Deviations, unavailable stock, non-compliant documents, over-budget estimates, late delivery and ineligible suppliers block PO review.
+
+Existing quotations receive conservative defaults (technical not assessed, stock not confirmed, compliance pending). They are not silently marked compliant by the migration; an administrator must review and update the evidence.
+
 ## Approval controls
 
 - Requests must belong to an active managed project before analysis or PO processing.
