@@ -77,3 +77,6 @@
 .po-approval-note span{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#9a741e;font-weight:800}.po-approval-note b{font-size:10px;line-height:1.6;color:#725a28}
 .po-preview-actions{justify-content:flex-end;margin-top:18px}
 @media(max-width:600px){.po-preview-grid{grid-template-columns:1fr}.po-preview-modal{padding:18px}.po-preview-actions{flex-direction:column-reverse}.po-preview-actions .btn{width:100%}}
+
+/* Supplier request email gate in PO preview */
+.po-email-step{margin:18px 0;padding:16px;border:1px solid #d9e4de;border-radius:12px;background:#f7faf8}.po-email-step p{font-size:13px;color:#61736a;margin:7px 0 12px}.po-email-step button{margin-top:4px}
