@@ -157,7 +157,7 @@ def _send_supplier_request_email(quote):
             raise HTTPException(status_code=502, detail="Could not reach Google Gmail over HTTPS. Check Railway outbound connectivity and try again.")
 
     # Optional Resend HTTPS provider remains available when explicitly selected.
-    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "resend":
+    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "resend" or (not os.getenv("EMAIL_PROVIDER", "").strip() and os.getenv("RESEND_API_KEY", "").strip()):
         resend_key = os.getenv("RESEND_API_KEY", "").strip()
         resend_sender = os.getenv("RESEND_FROM_EMAIL", "").strip()
         if not resend_key or not resend_sender:
