@@ -4,10 +4,21 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b2d">
   <title>ProcureAI — Procurement workspace</title>
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<div class="app-shell">
+<section class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span></span></div>
+    <span class="eyebrow">PRIVATE WORKSPACE</span><h1>Welcome back</h1><p>Sign in to access your procurement workspace.</p>
+    <label>Username<input id="loginUsername" name="username" autocomplete="username" required></label>
+    <label>Password<input id="loginPassword" name="password" type="password" autocomplete="current-password" required></label>
+    <p class="login-error" id="loginError" role="alert"></p>
+    <button class="btn btn-primary login-submit" type="submit">Sign in securely</button>
+    <small>Private access · Session expires after 12 hours</small>
+  </form>
+</section>
+<div class="app-shell" id="appShell" hidden>
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="#"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>CONSTRUCTION PROCUREMENT</small></span></a>
     <div class="workspace-label">WORKSPACE</div>
@@ -29,7 +40,7 @@
     <header class="topbar">
       <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
       <div class="crumb">Workspace <span>/</span> <b id="crumbTitle">Overview</b></div>
-      <div class="top-actions"><span class="live-dot"></span><span class="system-label">System operational</span><button class="icon-btn" id="refreshBtn" title="Refresh">↻</button><div class="top-avatar">GO</div></div>
+      <div class="top-actions"><span class="live-dot"></span><span class="system-label">Private workspace</span><button class="icon-btn" id="refreshBtn" title="Refresh">↻</button><button class="signout-btn" id="logoutBtn" type="button">Sign out</button><div class="top-avatar">GO</div></div>
     </header>
 
     <section class="page active" id="page-overview">
@@ -112,5 +123,5 @@
 <div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Save quotation</button></div>
 </form></div></div>
 <div class="toast" id="toast"></div>
-<script src="/static/app.js"></script>
+<script src="/app.js"></script>
 </body></html>
