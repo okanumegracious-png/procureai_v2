@@ -917,6 +917,29 @@ def dashboard_orders():
     return {"orders": dashboard_module.dashboard()["orders"]}
 
 
+@app.get("/api/orders/{order_id}")
+def dashboard_order_detail(order_id: int):
+    with dashboard_module.connect() as db:
+        row = db.execute("""SELECT
+            o.id, o.code, o.quantity, o.unit_price, o.freight, o.tax, o.total,
+            o.status, o.required_by, o.created_at, o.decision_note,
+            o.analysis_estimate, o.lead_days, o.payment_days,
+            s.name AS supplier, s.email AS supplier_email, s.phone AS supplier_phone,
+            s.contact AS supplier_contact, s.address AS supplier_address,
+            s.city AS supplier_city,
+            r.code AS request_code, r.material, r.category, r.unit,
+            r.site, r.priority, r.required_by AS request_required_by,
+            q.tax_rate, q.note AS quotation_note
+            FROM orders o
+            JOIN suppliers s ON s.id=o.supplier_id
+            JOIN requests r ON r.id=o.request_id
+            LEFT JOIN quotes q ON q.id=o.quote_id
+            WHERE o.id=?""", (order_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    return {"order": dict(row)}
+
+
 @app.delete("/api/requests/{request_id}")
 def dashboard_delete_request(request_id: int, request: Request):
     username = getattr(request.state, "auth_user", "")
