@@ -5,10 +5,6 @@
     {
       "source": "/api/:path*",
       "destination": "https://procureaiv2-production.up.railway.app/api/:path*"
-    },
-    {
-      "source": "/static/:path*",
-      "destination": "/:path*"
     }
   ]
 }
