@@ -1,0 +1,15 @@
+# Local runtime data and credentials
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
