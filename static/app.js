@@ -45,6 +45,7 @@ document.querySelectorAll(".nav-item").forEach(btn => {
     document.getElementById(`page-${page}`).classList.add("active");
     document.getElementById("crumbTitle").textContent = btn.textContent.trim().split(" ")[0];
     if (page === "overview") loadProjectTrends();
+    if (page === "settings") loadDatabaseBackups();
     if (page === "invoices") loadInvoices();
     if (page === "projects") {
       activeProjectId = null;
@@ -1363,6 +1364,85 @@ document.getElementById("companyProfileForm").addEventListener("submit", async e
     showToast("Company configuration saved");
   } catch (error) { status.textContent = error.message; showToast(error.message, true); }
 });
+// --- Administrator database backup and recovery ---
+async function loadDatabaseBackups() {
+  const status = document.getElementById("databaseBackupStatus");
+  const list = document.getElementById("databaseBackupList");
+  if (!status || !list) return;
+  status.textContent = "Checking backup storage…";
+  try {
+    const response = await apiFetch(API + "/admin/database/backups");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not load database backups");
+    status.textContent = data.automatic_backup
+      ? "Automatic daily backups are enabled. Seven recent copies are retained."
+      : "Automatic backups are disabled. Create a backup manually.";
+    list.replaceChildren();
+    if (!data.backups.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No database backups are available yet.";
+      list.append(empty);
+      return;
+    }
+    data.backups.forEach(backup => {
+      const row = document.createElement("div");
+      row.className = "database-backup-row";
+      const meta = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = backup.filename;
+      const detail = document.createElement("small");
+      detail.textContent = new Date(backup.created_at).toLocaleString() + " · " + Math.ceil(backup.size_bytes / 1024) + " KB";
+      meta.append(name, detail);
+      const actions = document.createElement("div");
+      actions.className = "backup-row-actions";
+      const verify = document.createElement("button");
+      verify.type = "button";
+      verify.className = "btn btn-ghost";
+      verify.textContent = "Verify restore";
+      verify.addEventListener("click", async () => {
+        verify.disabled = true;
+        status.textContent = "Testing backup in an isolated temporary database…";
+        try {
+          const result = await apiFetch(API + "/admin/database/backups/" + encodeURIComponent(backup.filename) + "/verify-restore", {method:"POST"});
+          const body = await result.json();
+          if (!result.ok) throw new Error(body.detail || "Restore verification failed");
+          status.textContent = "Restore test passed: " + body.verification.table_count + " tables and " + body.verification.row_count + " rows checked. Live database was not changed.";
+          showToast("Backup restore verification passed");
+        } catch (error) { status.textContent = error.message; showToast(error.message, true); }
+        finally { verify.disabled = false; }
+      });
+      const download = document.createElement("a");
+      download.className = "btn btn-secondary";
+      download.href = API + "/admin/database/backups/" + encodeURIComponent(backup.filename) + "/download";
+      download.textContent = "Download";
+      download.setAttribute("download", backup.filename);
+      actions.append(verify, download);
+      row.append(meta, actions);
+      list.append(row);
+    });
+  } catch (error) {
+    status.textContent = error.message;
+    list.replaceChildren();
+  }
+}
+document.getElementById("createDatabaseBackup")?.addEventListener("click", async event => {
+  const button = event.currentTarget;
+  const status = document.getElementById("databaseBackupStatus");
+  button.disabled = true;
+  status.textContent = "Creating and integrity-checking a database backup…";
+  try {
+    const response = await apiFetch(API + "/admin/database/backups", {method:"POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not create database backup");
+    status.textContent = "Backup created and integrity checked: " + data.backup.filename;
+    showToast("Database backup created");
+    await loadDatabaseBackups();
+  } catch (error) { status.textContent = error.message; showToast(error.message, true); }
+  finally { button.disabled = false; }
+});
+document.getElementById("refreshDatabaseBackups")?.addEventListener("click", loadDatabaseBackups);
+
 // --- Utilities ---
 function showToast(msg, isError = false) {
   const toast = document.getElementById("toast");
@@ -1392,7 +1472,7 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
     if (!response.ok) throw new Error(data.detail || data.error || "Unable to sign in");
     document.getElementById("loginPassword").value = "";
     showApp();
-    await Promise.all([fetchDashboard(), loadCompanyProfile()]);
+    await Promise.all([fetchDashboard(), loadCompanyProfile(), loadDatabaseBackups()]);
   } catch (err) {
     error.textContent = err.message || "Sign-in failed. Please try again.";
   } finally { button.disabled = false; }
