@@ -8,6 +8,7 @@ Money and quantities are parsed as Decimal, never inferred from an LLM total.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import uuid
@@ -112,8 +113,8 @@ def deterministic_extract(text: str) -> ProcurementRequest:
 
 class SQLiteRequestStore:
     """Durable request storage. SQLite is suitable for local development."""
-    def __init__(self, path: str | Path = "procureai_agent.db"):
-        self.path = str(path)
+    def __init__(self, path: str | Path | None = None):
+        self.path = str(path or os.getenv("PROCUREAI_DB_PATH", Path(__file__).resolve().parent.parent / "procureai.db"))
         with self._connect() as db:
             db.execute("""CREATE TABLE IF NOT EXISTS procurement_intake (
                 id TEXT PRIMARY KEY, status TEXT NOT NULL, payload TEXT NOT NULL,
@@ -121,7 +122,9 @@ class SQLiteRequestStore:
             )""")
 
     def _connect(self):
-        db = sqlite3.connect(self.path)
+        Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(self.path, timeout=30)
+        db.execute("PRAGMA busy_timeout=30000")
         db.row_factory = sqlite3.Row
         return db
 
