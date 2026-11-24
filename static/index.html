@@ -210,7 +210,10 @@
 <label>Tax (%)<input name="tax_rate" type="number" min="0" max="100" step="0.01" value="7.5" required></label>
 <label>Lead time (days)<input name="lead_days" type="number" min="0" value="7" required></label>
 <label>Payment terms (days)<input name="payment_days" type="number" min="0" value="30" required></label>
-<label class="wide">Notes<input name="note" placeholder="Quote validity, exclusions or other commercial notes"></label>
+<label>Technical compliance<select name="technical_status" required><option value="not_assessed">Not assessed</option><option value="compliant">Compliant with specification</option><option value="deviation">Deviation / exception</option></select></label>
+<label>Stock availability<select name="stock_status" required><option value="not_confirmed">Not confirmed</option><option value="available">Available in full</option><option value="partial">Partially available</option><option value="unavailable">Unavailable</option></select></label>
+<label class="wide">Certificates / regulatory compliance<select name="compliance_status" required><option value="pending">Pending verification</option><option value="verified">Documents verified</option><option value="not_applicable">Not applicable</option><option value="non_compliant">Non-compliant</option></select></label>
+<label class="wide">Notes<input name="note" placeholder="Quote validity, exclusions, deviations, stock evidence or other notes"></label>
 <div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">Save quotation</button></div>
 </form></div></div>
 <div class="modal-backdrop" id="requestDetailModal"><div class="modal request-detail-modal">
