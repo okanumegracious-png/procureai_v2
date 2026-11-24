@@ -82,3 +82,12 @@
 .po-email-step{margin:18px 0;padding:16px;border:1px solid #d9e4de;border-radius:12px;background:#f7faf8}.po-email-step p{font-size:13px;color:#61736a;margin:7px 0 12px}.po-email-step button{margin-top:4px}
 
 .supplier-card-actions{display:flex;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid #edf0f3}.edit-seller-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 10px}.edit-seller-btn svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.edit-seller-btn:hover{background:#edf8f3;border-color:#b9e2d1}
+
+
+/* Registered quotation controls */
+.quote-actions { white-space: nowrap; }
+.quote-actions .action-btn, .quote-detail-actions .btn { margin-right: 6px; }
+.icon-action { display:inline-grid; place-items:center; width:34px; height:34px; border:1px solid var(--border,#dbe2ea); border-radius:9px; background:var(--surface,#fff); color:inherit; cursor:pointer; font-size:19px; line-height:1; }
+.icon-action:hover { background:var(--surface-muted,#f3f5f8); }
+.quote-detail-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; }
+.quote-lock-note { margin-top:18px; padding:12px 14px; border-radius:10px; background:#f3f4f6; color:#475569; }
