@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 import main as procureai_main
+from app import assess_offer_feasibility as dashboard_feasibility
 
 
 def _gate_db(status="active", confirmation=None):
@@ -55,3 +56,45 @@ def test_analysis_and_po_gate_rejects_closed_projects():
         procureai_main._require_request_buyer_confirmation(db, 101)
     assert exc.value.status_code == 409
     db.close()
+
+
+def test_feasibility_requires_budget_technical_delivery_and_supplier_checks():
+    base = {
+        "estimated_total": 700000,
+        "days_left": 14,
+        "lead_days": 4,
+        "supplier_rating": 4.2,
+        "supplier_status": "verified",
+        "technical_status": "compliant",
+        "budget_context": {"budget": 850000, "available_budget": 850000},
+    }
+    result = dashboard_feasibility(**base)
+    assert result["feasible"] is True
+    assert result["award_eligible"] is True
+    assert result["budget_feasibility"] == "within_budget"
+
+
+def test_feasibility_blocks_over_budget_and_unreviewed_technical_offers():
+    base = {
+        "estimated_total": 900000,
+        "days_left": 14,
+        "lead_days": 4,
+        "supplier_rating": 4.2,
+        "supplier_status": "verified",
+        "technical_status": "pending",
+        "budget_context": {"budget": 850000, "available_budget": 800000},
+    }
+    result = dashboard_feasibility(**base)
+    assert result["budget_feasibility"] == "over_budget"
+    assert result["award_eligible"] is False
+    assert result["technical_feasibility"] == "pending"
+
+
+def test_feasibility_requires_project_budget_to_be_configured():
+    result = dashboard_feasibility(
+        estimated_total=1000, days_left=10, lead_days=2, supplier_rating=4.0,
+        supplier_status="verified", technical_status="compliant",
+        budget_context={"budget": 0, "available_budget": None},
+    )
+    assert result["budget_feasibility"] == "not_configured"
+    assert result["award_eligible"] is False
