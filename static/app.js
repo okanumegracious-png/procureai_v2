@@ -140,7 +140,7 @@ function projectDate(value) {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("en-GB", {day:"numeric",month:"short",year:"numeric"});
 }
 function dueBadge(status, label) {
-  const tone = status === "overdue" ? "overdue" : status === "due_soon" || status === "due_today" ? "soon" : status === "complete" ? "complete" : "ontime";
+  const tone = status === "overdue" ? "overdue" : status === "due_soon" || status === "due_today" ? "soon" : status === "complete" ? "complete" : status === "unscheduled" ? "unscheduled" : "ontime";
   return `<span class="project-due-badge ${tone}">${escapeHtml(label || "No due date")}</span>`;
 }
 async function loadProjects() {
