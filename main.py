@@ -692,8 +692,16 @@ def dashboard_create_request(payload: DashboardRequestPayload):
 def dashboard_quote_detail(quote_id: int):
     with dashboard_module.connect() as db:
         _ensure_supplier_request_email_table(db)
-        row = db.execute("SELECT q.*, s.name AS supplier, s.email AS supplier_email, s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.priority, r.status AS request_status, EXISTS(SELECT 1 FROM supplier_request_emails e WHERE e.quote_id=q.id) AS request_email_sent,
-        EXISTS(SELECT 1 FROM orders o WHERE o.quote_id=q.id) AS has_purchase_order FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?", (quote_id,)).fetchone()
+        row = db.execute("""SELECT q.*, s.name AS supplier, s.email AS supplier_email,
+            s.city AS supplier_city, s.contact AS supplier_contact, s.rating AS supplier_rating,
+            r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site,
+            r.required_by, r.priority, r.status AS request_status,
+            EXISTS(SELECT 1 FROM supplier_request_emails e WHERE e.quote_id=q.id) AS request_email_sent,
+            EXISTS(SELECT 1 FROM orders o WHERE o.quote_id=q.id) AS has_purchase_order
+            FROM quotes q
+            JOIN suppliers s ON s.id=q.supplier_id
+            JOIN requests r ON r.id=q.request_id
+            WHERE q.id=?""", (quote_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Quotation not found")
     quote = dict(row)
