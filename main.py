@@ -563,12 +563,24 @@ class BuyerConfirmationPayload(BaseModel):
 
 
 def _require_buyer_confirmation(db, project_id: str):
+    project = db.execute("SELECT status FROM projects WHERE project_id=?", (project_id,)).fetchone()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if str(project["status"] or "").strip().casefold() in ("completed", "terminated", "cancelled", "canceled", "archived"):
+        raise HTTPException(status_code=409, detail="This project is closed or archived. Procurement actions are read-only.")
     table = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='buyer_confirmations'").fetchone()
     if not table:
         raise HTTPException(status_code=409, detail="Buyer confirmation is required before AI bid analysis or PO creation.")
     latest = db.execute("SELECT status,budget_delivery_accepted FROM buyer_confirmations WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
     if not latest or latest["status"] != "confirmed" or latest["budget_delivery_accepted"] != "yes":
         raise HTTPException(status_code=409, detail="Explicit buyer confirmation of the requirements, budget and delivery is required. Record a confirmed decision and select Yes for budget and delivery acceptance in the Project Workspace.")
+
+
+def _require_verified_workflow_supplier(db, supplier_id: str):
+    supplier = db.execute("SELECT verification_status FROM workflow_suppliers WHERE supplier_id=?", (supplier_id,)).fetchone()
+    if not supplier or supplier["verification_status"] != "verified":
+        raise HTTPException(status_code=409, detail="Supplier must be verified at the point of purchase-order proposal.")
+    return supplier
 
 
 
@@ -1012,6 +1024,7 @@ def create_award_proposal(quotation_id: str, requested_by: str = Form(...)):
         if not quote:
             raise HTTPException(status_code=404, detail="Quotation not found")
         _require_buyer_confirmation(db, quote["project_id"])
+        _require_verified_workflow_supplier(db, quote["supplier_id"])
         if quote["technical_status"] != "compliant":
             raise HTTPException(status_code=409, detail="Technical compliance must be reviewed and marked compliant before creating a purchase-order proposal.")
         db.execute("""INSERT INTO workflow_purchase_orders
