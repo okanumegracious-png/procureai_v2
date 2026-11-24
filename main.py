@@ -1484,7 +1484,10 @@ def dashboard_create_order_from_analysis(payload: AnalysisPurchaseOrderPayload, 
         total = subtotal + tax + freight
         analysis = dashboard_module.analyse_request(int(quote["request_id"]))
         analysed_offer = next((offer for offer in analysis["offers"] if int(offer["id"]) == payload.quote_id), None)
-        analysis_estimate = Decimal(str(analysed_offer["estimated_total"])) if analysed_offer else total
+        if not analysed_offer or not analysed_offer.get("award_eligible"):
+            gaps = analysed_offer.get("issues", []) if analysed_offer else ["The selected quotation is not part of the current analysis."]
+            raise HTTPException(status_code=409, detail="This quotation is not feasible for PO review yet. Resolve the recorded feasibility gaps first: " + " ".join(gaps[:5]))
+        analysis_estimate = Decimal(str(analysed_offer["estimated_total"]))
         reasons = ["Generated from quotation analysis; human approval required before any purchase commitment."]
         if total > Decimal("2500000"): reasons.append("Order exceeds the configured review threshold.")
         if float(quote["supplier_rating"] or 0) < 3.5: reasons.append("Supplier rating is below the preferred threshold.")
@@ -1535,6 +1538,11 @@ def dashboard_create_order(payload: DashboardOrderPayload, request: Request):
             raise HTTPException(status_code=409, detail="Email the purchase request to this seller and receive a successful send confirmation before generating the PO proposal.")
         if db.execute("SELECT 1 FROM orders WHERE quote_id=?", (quote["id"],)).fetchone():
             raise HTTPException(status_code=409, detail="A purchase order proposal already exists for this quotation.")
+        analysis = dashboard_module.analyse_request(int(payload.request_id))
+        analysed_offer = next((offer for offer in analysis["offers"] if int(offer["id"]) == int(quote["id"])), None)
+        if not analysed_offer or not analysed_offer.get("award_eligible"):
+            gaps = analysed_offer.get("issues", []) if analysed_offer else ["The selected quotation is not part of the current analysis."]
+            raise HTTPException(status_code=409, detail="This quotation is not feasible for PO review yet. Resolve the recorded feasibility gaps first: " + " ".join(gaps[:5]))
         qty, price = Decimal(str(req["quantity"])), Decimal(str(quote["unit_price"]))
         tax = qty * price * Decimal(str(quote["tax_rate"])) / Decimal("100")
         freight = Decimal(str(quote["freight"]))
@@ -1558,7 +1566,7 @@ def dashboard_create_order(payload: DashboardOrderPayload, request: Request):
 def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload, request: Request):
     status = "Approved" if payload.action == "approve" else "Rejected"
     with dashboard_module.connect() as db:
-        order = db.execute("""SELECT o.request_id,o.supplier_id,s.status AS supplier_status,s.name AS supplier_name
+        order = db.execute("""SELECT o.request_id,o.supplier_id,o.quote_id,s.status AS supplier_status,s.name AS supplier_name
             FROM orders o JOIN suppliers s ON s.id=o.supplier_id WHERE o.id=? AND o.status='Pending approval'""", (order_id,)).fetchone()
         if not order:
             raise HTTPException(status_code=409, detail="Purchase order is not awaiting approval")
@@ -1566,6 +1574,13 @@ def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload, req
             _require_request_buyer_confirmation(db, int(order["request_id"]))
             if str(order["supplier_status"] or "").strip().casefold() not in {"verified", "active"} or "[fictional demo]" in str(order["supplier_name"]).casefold():
                 raise HTTPException(status_code=409, detail="Supplier verification must remain valid at the point of approval.")
+            if not order["quote_id"]:
+                raise HTTPException(status_code=409, detail="This legacy purchase-order proposal has no linked quotation. Recreate it through the verified quotation workflow before approval.")
+            latest_analysis = dashboard_module.analyse_request(int(order["request_id"]))
+            approved_offer = next((offer for offer in latest_analysis["offers"] if int(offer["id"]) == int(order["quote_id"])), None)
+            if not approved_offer or not approved_offer.get("award_eligible"):
+                gaps = approved_offer.get("issues", []) if approved_offer else ["The linked quotation is no longer available."]
+                raise HTTPException(status_code=409, detail="Purchase-order approval is blocked because the linked quotation no longer passes feasibility checks: " + " ".join(gaps[:5]))
         cur = db.execute("UPDATE orders SET status=?,decision_note=? WHERE id=? AND status='Pending approval'",
                          (status,payload.note,order_id))
         if cur.rowcount != 1:
