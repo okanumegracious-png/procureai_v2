@@ -1228,13 +1228,58 @@ document.querySelector('[data-modal="quoteModal"]').addEventListener("click", ()
   form.reset();
   document.getElementById("quoteModalTitle").textContent = "Add supplier quotation";
   document.getElementById("quoteModalDescription").textContent = "";
+  document.getElementById("quoteParseStatus").textContent = "Review all extracted values before saving.";
+  document.getElementById("quoteParseReview").hidden = true;
+  document.getElementById("quoteParseReview").innerHTML = "";
   setFormSubmitLabel(form, "Save quotation");
   document.getElementById("quoteRequest").innerHTML = dashboardData.requests.filter(r => r.status === "Open").map(r => `<option value="${r.id}">${escapeHtml(r.code)} - ${escapeHtml(r.material)}</option>`).join("");
   document.getElementById("quoteSupplier").innerHTML = dashboardData.suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
 });
+document.getElementById("parseQuoteMessage").addEventListener("click", async () => {
+  const form = document.getElementById("quoteForm");
+  const message = document.getElementById("quoteSourceMessage").value.trim();
+  const status = document.getElementById("quoteParseStatus");
+  const review = document.getElementById("quoteParseReview");
+  const button = document.getElementById("parseQuoteMessage");
+  if (message.length < 3) { status.textContent = "Paste the supplier's message first."; return; }
+  button.disabled = true; button.textContent = "Parsing…"; status.textContent = "Checking the message for quotation details…";
+  review.hidden = true; review.innerHTML = "";
+  try {
+    const response = await apiFetch(API + "/quotes/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not parse supplier message");
+    const x = data.extracted || {}, filled = [];
+    const setValue = (key,value) => { if (value !== null && value !== undefined && form.elements[key]) { form.elements[key].value = value; filled.push(key); } };
+    setValue("unit_price",x.unit_price); setValue("freight",x.freight); setValue("tax_rate",x.tax_rate);
+    setValue("lead_days",x.lead_days); setValue("payment_days",x.payment_days);
+    const selectedRequest = (dashboardData.requests || []).find(r => String(r.id) === String(form.elements.request_id.value));
+    const normalizeUnit = value => ({kgs:"kg",kilogram:"kg",kilograms:"kg",pcs:"piece",pieces:"piece",units:"unit",ton:"tonne",tons:"tonne",mt:"tonne"}[String(value || "").toLowerCase()] || String(value || "").toLowerCase());
+    const quantityNote = x.quantity !== null
+      ? (selectedRequest ? (Math.abs(Number(selectedRequest.quantity)-Number(x.quantity)) < 0.000001 && normalizeUnit(selectedRequest.unit) === normalizeUnit(x.unit)
+        ? "Supplier quantity matches the selected request."
+        : "Supplier states " + Number(x.quantity).toLocaleString() + " " + x.unit + "; selected request is " + Number(selectedRequest.quantity).toLocaleString() + " " + selectedRequest.unit + ". Confirm the discrepancy manually.")
+        : "Supplier quantity detected: " + Number(x.quantity).toLocaleString() + " " + x.unit + ". Select the correct purchase request to compare.")
+      : "No supplier quantity was confidently recognised.";
+    const lines = [];
+    if (x.unit_price !== null) lines.push("Unit price: ₦" + Number(x.unit_price).toLocaleString("en-NG"));
+    if (x.freight !== null) lines.push("Freight: ₦" + Number(x.freight).toLocaleString("en-NG"));
+    if (x.tax_rate !== null) lines.push("Tax: " + x.tax_rate + "%");
+    if (x.lead_days !== null) lines.push("Lead time: " + x.lead_days + " days");
+    if (x.payment_days !== null) lines.push("Payment period: " + x.payment_days + " days");
+    if (x.payment_terms) lines.push("Payment terms detected: " + x.payment_terms + " (recorded in the original message)");
+    lines.push(quantityNote);
+    review.innerHTML = "<strong>Extraction review</strong><ul>" + lines.map(line => "<li>" + escapeHtml(line) + "</li>").join("") + "</ul><small>Supplier quantity is checked against the purchase request, never used to overwrite the requirement. All extracted values remain editable.</small>";
+    review.hidden = false;
+    status.textContent = filled.length ? "Recognised " + filled.length + " form field(s). Please verify them." : "No supported price or delivery fields found. Enter the values manually.";
+  } catch(error) { status.textContent = error.message; }
+  finally { button.disabled = false; button.textContent = "✦ Parse message"; }
+});
 document.getElementById("quoteForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.currentTarget, payload = Object.fromEntries(new FormData(form).entries());
+  const sourceMessage = String(payload.source_message || "").trim();
+  delete payload.source_message;
+  if (sourceMessage) payload.note = [String(payload.note || "").trim(), "Supplier's original message:\n" + sourceMessage].filter(Boolean).join("\n\n");
   ["supplier_id","request_id","lead_days","payment_days","unit_price","freight","tax_rate"].forEach(key => payload[key] = Number(payload[key]));
   const quoteId = form.dataset.quoteId;
   const res = await apiFetch(API + (quoteId ? "/quotes/" + quoteId : "/quotes"), {
