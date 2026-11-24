@@ -263,6 +263,139 @@ def dashboard():
     }
 
 
+def _bid_ai_judgement(request, offers, alternatives, days_left):
+    """Use OpenAI when configured; always retain a deterministic fallback."""
+    quoted = [{
+        "quote_id": int(o["id"]), "seller": o["supplier"],
+        "unit_price": float(o["unit_price"]), "freight": float(o["freight"]),
+        "tax_rate": float(o["tax_rate"]), "estimated_total": float(o["estimated_total"]),
+        "lead_days": int(o["lead_days"]), "payment_days": int(o["payment_days"]),
+        "rating": float(o["rating"] or 0), "on_time_percent": float(o["on_time"] or 0),
+        "seller_status": o["supplier_status"], "feasible": bool(o["feasible"]),
+        "issues": o["issues"], "quotation_note": o["note"] or ""
+    } for o in offers]
+    fallback_reviews = []
+    for o in quoted:
+        strengths, gaps, improvements = [], [], []
+        if o["unit_price"] > 0:
+            strengths.append("A priced quotation is available for comparison.")
+        if o["lead_days"] <= days_left:
+            strengths.append("Quoted lead time fits the remaining delivery window.")
+        else:
+            gaps.append(f"Lead time is {o['lead_days'] - days_left} day(s) beyond the remaining delivery window.")
+            improvements.append("Submit a realistic accelerated delivery plan or phased delivery schedule.")
+        if o["rating"] >= 3.5:
+            strengths.append("Seller rating meets the preferred 3.5/5 threshold.")
+        elif o["rating"] < 2.5:
+            gaps.append("Seller rating is below the minimum analysis threshold.")
+            improvements.append("Provide recent client references, quality evidence and a corrective-action plan.")
+        else:
+            gaps.append("Seller rating is below the preferred 3.5/5 threshold.")
+            improvements.append("Provide recent performance references and warranty/support commitments.")
+        if o["on_time_percent"] < 80:
+            gaps.append("Recorded on-time performance is below 80%.")
+            improvements.append("Confirm stock availability, delivery milestones and remedies for late delivery.")
+        if str(o["seller_status"] or "").lower() not in ("verified", "active"):
+            gaps.append("Seller is not currently marked Active or Verified in the supplier register.")
+            improvements.append("Complete identity, capability, references and bank-account verification before award.")
+        if o["freight"] < 0:
+            gaps.append("Freight value needs correction.")
+            improvements.append("Resubmit a complete landed-cost breakdown.")
+        fallback_reviews.append({
+            "quote_id": o["quote_id"], "seller": o["seller"],
+            "strengths": strengths or ["Quotation captured for review."],
+            "gaps": gaps or ["No material issue identified by the current rule checks; confirm specifications and quote validity."],
+            "improvements": improvements or ["Confirm technical compliance, stock, warranty, quote validity and delivery commitments."],
+            "risk_level": "high" if (not o["feasible"] or str(o["seller_status"] or "").lower() not in ("verified", "active")) else ("medium" if gaps else "low"),
+            "next_step": "Request a revised quotation / clarification" if gaps else "Proceed to technical and commercial due diligence"
+        })
+
+    eligible = [o for o in offers if o["feasible"] and str(o["supplier_status"] or "").lower() in ("verified", "active")]
+    if not offers:
+        action = "Source additional quotations"
+        reason = "No quotations have been submitted for this request yet. The review can still be completed as a sourcing-gap assessment."
+        solution = "Invite suitable suppliers, request comparable itemised quotations, and confirm specifications, delivery lead time, warranty and payment terms."
+    elif eligible:
+        action = "Proceed to human review"
+        reason = "At least one offer passes the current delivery and minimum-rating checks. This is a shortlist recommendation, not an award decision."
+        solution = "Validate the recommended seller's technical compliance, stock, quotation validity, references and final landed cost before approval."
+    else:
+        action = "Do not award yet — seek revisions or alternatives"
+        reason = "No submitted offer currently meets both the basic feasibility checks and seller-status requirements. The analysis is still complete and identifies corrective actions."
+        solution = "Ask the strongest candidates to revise delivery, price or supporting evidence; invite additional sellers; or split the requirement into feasible lots if operationally safe."
+    judgement = {
+        "engine": "rules_fallback", "overall_assessment": reason,
+        "recommended_action": action, "solution": solution,
+        "seller_reviews": fallback_reviews,
+        "caveat": "Assessment is based only on data entered in ProcureAI. Missing specifications, stock, certificates and references must be checked."
+    }
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return judgement
+    try:
+        import urllib.request
+        prompt = {
+            "request": {k: request[k] for k in ("code", "material", "category", "quantity", "unit", "site", "required_by")},
+            "days_remaining": days_left,
+            "offers": quoted,
+            "unquoted_supplier_options": alternatives,
+            "instructions": (
+                "Act as a cautious procurement bid-evaluation adviser. Evaluate only the supplied facts. "
+                "Do not invent specifications, market prices, supplier capabilities, stock, certifications or references. "
+                "Do not automatically award or approve any seller. If there are no bids or all bids fail, still complete "
+                "the assessment and recommend concrete next steps. For every quoted seller explain strengths, gaps, "
+                "specific improvements and next step. Suggest alternatives only from unquoted_supplier_options, clearly "
+                "stating that they have not submitted a bid and require verification. Recommend a solution such as "
+                "clarification, revised bid, phased delivery, split lots only where safe, re-sourcing, or no-award. "
+                "Return JSON with keys overall_assessment, recommended_action, solution, seller_reviews (array with "
+                "quote_id, seller, strengths (array), gaps (array), improvements (array), risk_level, next_step), "
+                "alternative_recommendations (array of objects with supplier_id, supplier, reason, verification_note), "
+                "caveat. Keep language concise and evidence-based."
+            )
+        }
+        payload = json.dumps({
+            "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": "You are a procurement evaluation assistant. Never make an award decision or fabricate evidence."},
+                {"role": "user", "content": json.dumps(prompt, default=str)}
+            ]
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions", data=payload,
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=18) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        ai = json.loads(body["choices"][0]["message"]["content"])
+        if isinstance(ai, dict):
+            ai["engine"] = "openai"
+            # Keep deterministic seller review for any quote the model omitted.
+            supplied = {int(x.get("quote_id")): x for x in ai.get("seller_reviews", []) if str(x.get("quote_id", "")).isdigit()}
+            ai["seller_reviews"] = [supplied.get(int(x["quote_id"]), x) for x in fallback_reviews]
+            known_alternatives = {int(x["supplier_id"]): x for x in alternatives}
+            safe_alternatives = []
+            for candidate in ai.get("alternative_recommendations", []):
+                if not isinstance(candidate, dict):
+                    continue
+                try:
+                    candidate_id = int(candidate.get("supplier_id"))
+                except (TypeError, ValueError):
+                    continue
+                # Only recommend sellers already present in the supplier register.
+                if candidate_id in known_alternatives:
+                    safe_alternatives.append(known_alternatives[candidate_id])
+            ai["alternative_recommendations"] = safe_alternatives
+            ai.setdefault("caveat", judgement["caveat"])
+            return ai
+    except Exception as exc:
+        print("Bid AI judgement unavailable; using rules fallback:", type(exc).__name__)
+    return judgement
+
+
 def analyse_request(request_id):
     req = one("SELECT * FROM requests WHERE id=?", (request_id,))
     if not req:
@@ -283,18 +416,68 @@ def analyse_request(request_id):
         reliability_risk = price * D("0.05") * (D("1") - D(str(q["on_time"])) / D("100"))
         unit_tco = price + tax + financing + delay_risk + reliability_risk
         total = unit_tco * qty + D(str(q["freight"]))
-        feasible = int(q["lead_days"]) <= days_left and int(q["rating"] * 100) >= 250
+        seller_status = str(q["supplier_status"] or "").strip().lower()
+        issues = []
+        if int(q["lead_days"]) > days_left:
+            issues.append(f"Delivery is {int(q['lead_days']) - days_left} day(s) later than the remaining {days_left}-day window.")
+        if float(q["rating"] or 0) < 2.5:
+            issues.append("Seller rating is below the minimum 2.5/5 threshold.")
+        elif float(q["rating"] or 0) < 3.5:
+            issues.append("Seller rating is below the preferred 3.5/5 threshold.")
+        if float(q["on_time"] or 0) < 80:
+            issues.append("On-time performance is below 80%.")
+        if seller_status not in ("verified", "active") or "[fictional demo]" in str(q["supplier"]).lower():
+            issues.append("Seller verification is incomplete.")
+        feasible = int(q["lead_days"]) <= days_left and int(float(q["rating"] or 0) * 100) >= 250
         results.append({
             **q, "unit_tco": float(unit_tco), "estimated_total": float(total),
-            "feasible": feasible, "days_left": days_left,
+            "feasible": feasible, "award_eligible": feasible and seller_status in ("verified", "active") and "[fictional demo]" not in str(q["supplier"]).lower(),
+            "days_left": days_left, "issues": issues,
             "components": {"base":float(price),"tax":float(tax),"financing":float(financing),
                            "delay_risk":float(delay_risk),"reliability_risk":float(reliability_risk)}
         })
     results.sort(key=lambda x: (not x["feasible"], x["estimated_total"]))
-    return {"request": req, "offers": results,
-            "recommendation": next((x for x in results if x["feasible"]), None),
-            "disclaimer": "Illustrative estimate based on entered quotation data. Confirm supplier capacity, quote validity and commercial terms before award."}
 
+    quoted_supplier_ids = {int(o["supplier_id"]) for o in offers}
+    all_suppliers = rows("""SELECT id,name,city,rating,on_time,status,services,phone,email,website,address
+        FROM suppliers ORDER BY CASE WHEN lower(status) IN ('verified','active') THEN 0 ELSE 1 END,
+        rating DESC, name COLLATE NOCASE""")
+    keywords = [w.lower() for w in re.findall(r"[a-zA-Z]{4,}", f"{req['material']} {req['category']}")]
+    alternatives = []
+    for seller in all_suppliers:
+        if int(seller["id"]) in quoted_supplier_ids:
+            continue
+        services = str(seller["services"] or "").lower()
+        name_city = f"{seller['name']} {seller['city']}".lower()
+        matches = [word for word in keywords if word in services or word in name_city]
+        # If service descriptions do not share exact terms, retain local candidates as unverified leads.
+        local_match = bool(req["site"] and any(part.strip().lower() in str(seller["city"] or "").lower()
+                          for part in str(req["site"]).replace(",", " ").split() if len(part.strip()) > 3))
+        if matches or local_match:
+            alternatives.append({
+                "supplier_id": int(seller["id"]), "supplier": seller["name"],
+                "city": seller["city"], "status": seller["status"],
+                "services": seller["services"], "rating": float(seller["rating"] or 0),
+                "reason": "Service/category keyword match" if matches else "Location match only — confirm capability",
+                "verification_note": "Not yet quoted for this request. Verify identity, technical fit, stock, references and bank details before use."
+            })
+    alternatives = alternatives[:8]
+    judgement = _bid_ai_judgement(req, results, alternatives, days_left)
+    review_by_id = {int(x.get("quote_id")): x for x in judgement.get("seller_reviews", [])
+                    if isinstance(x, dict) and str(x.get("quote_id", "")).isdigit()}
+    for offer in results:
+        offer["ai_review"] = review_by_id.get(int(offer["id"]), {})
+    eligible = [x for x in results if x.get("award_eligible")]
+    preferred = eligible[0] if eligible else (results[0] if results else None)
+    return {
+        "request": req, "offers": results,
+        "recommendation": eligible[0] if eligible else None,
+        "preferred_offer": preferred,
+        "decision_support": judgement,
+        "alternatives": alternatives,
+        "analysis_status": "completed",
+        "disclaimer": "Decision support only. Confirm specifications, stock, certificates, quote validity, references and commercial terms. Human approval is required before any purchase commitment."
+    }
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProcureAI/1.0"

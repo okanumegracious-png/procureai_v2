@@ -815,50 +815,72 @@ document.getElementById("confirmGeneratePo").addEventListener("click", async () 
 document.getElementById("runAnalysis").addEventListener("click", async () => {
   const rid = document.getElementById("analysisRequest").value;
   if (!rid) return;
-  const res = await apiFetch(`${API}/analysis?request_id=${rid}`);
-  const data = await res.json();
-  latestAnalysis = data;
- 
+  const button = document.getElementById("runAnalysis");
   const resultContainer = document.getElementById("analysisResult");
-  if (!data.offers || data.offers.length === 0) {
-    resultContainer.innerHTML = `<div class="empty-state"><span>◈</span><h3>No quotes found</h3><p>Add quotations for this request to run an analysis.</p></div>`;
-    return;
+  button.disabled = true; button.textContent = "Reviewing bids…";
+  resultContainer.innerHTML = '<div class="empty-state"><span>◈</span><h3>Evaluating procurement options</h3><p>Reviewing quotations, delivery risks and possible alternatives…</p></div>';
+  try {
+    const res = await apiFetch(`${API}/analysis?request_id=${encodeURIComponent(rid)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Could not analyse this purchase request");
+    latestAnalysis = data;
+    const rec = data.recommendation;
+    const preferred = data.preferred_offer;
+    const judgement = data.decision_support || {};
+    const engineLabel = judgement.engine === "openai" ? "AI BID JUDGEMENT" : "PROCUREMENT RULE REVIEW";
+    let html = `
+      <section class="bid-judgement">
+        <div class="bid-judgement-top"><span class="eyebrow">${engineLabel}</span><span class="pill ${rec ? "green" : "amber"}">${escapeHtml(judgement.recommended_action || "Review completed")}</span></div>
+        <h3>${escapeHtml(judgement.overall_assessment || "The procurement review is complete.")}</h3>
+        <p>${escapeHtml(judgement.solution || "Review the recommendations below and complete due diligence.")}</p>
+        ${judgement.caveat ? `<small>${escapeHtml(judgement.caveat)}</small>` : ""}
+      </section>`;
+    if (!data.offers || data.offers.length === 0) {
+      html += `<section class="panel bid-no-quotes"><h3>No quotations received yet</h3><p>ProcureAI has completed a sourcing-gap review instead of stopping here. Invite suitable sellers, request comparable quotations and then run the analysis again.</p><div class="bid-next-step"><b>Recommended next step</b><span>${escapeHtml(judgement.solution || "Invite additional sellers and request complete quotations.")}</span></div></section>`;
+    } else {
+      if (rec) {
+        html += `<div class="recommendation"><div><span class="eyebrow">SHORTLIST FOR HUMAN REVIEW</span><h3>${escapeHtml(rec.supplier)} currently meets the basic checks</h3><p>${escapeHtml(data.disclaimer || "")}</p></div><div class="recommend-price">${formatMoney(rec.estimated_total)}<br><small style="font-size:10px;color:#73877f;font-weight:400">Estimated TCO</small></div></div>`;
+      } else if (preferred) {
+        html += `<div class="bid-caution"><b>No offer is currently award-eligible.</b><span>${escapeHtml(preferred.supplier)} is the closest candidate by the current comparison, but still needs the issues below resolved. This is not an award recommendation.</span></div>`;
+      }
+      html += `<div class="analysis-table"><table><thead><tr><th>SUPPLIER</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>CHECK</th><th>TCO (EST.)</th><th>NEXT ACTION</th></tr></thead><tbody>`;
+      data.offers.forEach(o => {
+        const eligible = !!o.award_eligible;
+        const review = o.ai_review || {};
+        const action = eligible ? `<button class="action-btn generate-po-btn" data-generate-po="${o.id}">Review PO</button>` : `<span class="po-unavailable">${!["verified","active"].includes(String(o.supplier_status||"").toLowerCase()) ? "Verify seller" : "Resolve gaps"}</span>`;
+        html += `<tr><td class="material">${escapeHtml(o.supplier)}</td><td>${formatMoney(o.unit_price)}</td><td>${formatMoney(o.freight)}</td><td>${Number(o.lead_days)} days</td><td><span class="pill ${eligible ? "green" : (o.feasible ? "amber" : "red")}">${eligible ? "Eligible for review" : (o.feasible ? "Conditional" : "Needs action")}</span></td><td><b>${formatMoney(o.estimated_total)}</b></td><td>${action}</td></tr>`;
+      });
+      html += `</tbody></table></div>`;
+      html += `<section class="bid-review-list"><div class="panel-heading"><div><h2>Seller-by-seller judgement</h2><p>What each bidder did well, what needs to improve and the next action.</p></div></div>`;
+      data.offers.forEach(o => {
+        const review = o.ai_review || {};
+        const list = (items, fallback) => (Array.isArray(items) && items.length ? items : [fallback]).map(x => `<li>${escapeHtml(x)}</li>`).join("");
+        html += `<article class="bid-seller-review"><div class="bid-seller-heading"><div><b>${escapeHtml(o.supplier)}</b><small>Quotation #${o.id}</small></div><span class="pill ${review.risk_level === "low" ? "green" : review.risk_level === "high" ? "red" : "amber"}">${escapeHtml((review.risk_level || (o.award_eligible ? "low" : "medium")).toUpperCase())} RISK</span></div><div class="bid-review-columns"><div><h4>Strengths</h4><ul>${list(review.strengths,"Quotation received and captured for comparison.")}</ul></div><div><h4>Gaps to address</h4><ul>${list(review.gaps,(o.issues||[]).join(" ") || "Confirm technical compliance and commercial validity.")}</ul></div><div><h4>How to improve</h4><ul>${list(review.improvements,"Confirm specifications, stock, warranty and delivery commitments.")}</ul></div></div><div class="bid-next-step"><b>Recommended next action</b><span>${escapeHtml(review.next_step || "Complete due diligence before proceeding.")}</span></div></article>`;
+      });
+      html += `</section>`;
+    }
+    const alternatives = Array.isArray(judgement.alternative_recommendations) && judgement.alternative_recommendations.length
+      ? judgement.alternative_recommendations
+      : (data.alternatives || []);
+    html += `<section class="panel bid-alternatives"><div class="panel-heading"><div><h2>Alternative sellers & sourcing options</h2><p>Potential leads not yet quoted for this request. They are not pre-approved.</p></div></div>`;
+    if (alternatives.length) {
+      html += `<div class="bid-alternative-grid">`;
+      alternatives.forEach(s => {
+        const name = s.supplier || s.name || "Potential seller";
+        html += `<article><b>${escapeHtml(name)}</b><small>${escapeHtml(s.city || s.reason || "Supplier directory match")}</small><p>${escapeHtml(s.reason || "Potential alternative based on the supplier directory.")}</p><span>${escapeHtml(s.verification_note || "Confirm capability, availability, references and registration before inviting to quote.")}</span></article>`;
+      });
+      html += `</div>`;
+    } else {
+      html += `<p class="muted">No suitable unquoted seller match was found in the current supplier register. Add more suppliers or broaden the sourcing area.</p>`;
+    }
+    html += `<div class="bid-next-step"><b>Alternative solution</b><span>${escapeHtml(judgement.solution || "Seek revised bids, widen sourcing or review delivery sequencing.")}</span></div></section>`;
+    html += `<p class="bid-disclaimer">${escapeHtml(data.disclaimer || "Decision support only. Human approval is required before any purchase commitment.")}</p>`;
+    resultContainer.innerHTML = html;
+  } catch (error) {
+    resultContainer.innerHTML = `<div class="empty-state"><h3>Could not complete the review</h3><p>${escapeHtml(error.message)}</p></div>`;
+  } finally {
+    button.disabled = false; button.textContent = "Analyse quotations →";
   }
-  const rec = data.recommendation;
-  let html = "";
- 
-  if (rec) {
-    html += `
-      <div class="recommendation">
-        <div>
-          <span class="eyebrow">AI RECOMMENDATION</span>
-          <h3>${rec.supplier} is the best value</h3>
-          <p>${data.disclaimer}</p>
-        </div>
-        <div class="recommend-price">${formatMoney(rec.estimated_total)}<br><small style="font-size:10px;color:#73877f;font-weight:400">Est. Landed Cost</small></div>
-      </div>
-    `;
-  }
-  html += `<div class="analysis-table"><table><thead><tr>
-    <th>SUPPLIER</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>FEASIBILITY</th><th>TCO (EST)</th><th>PO ACTION</th>
-  </tr></thead><tbody>`;
- 
-  data.offers.forEach(o => {
-    const sellerEligible=["verified","active"].includes(String(o.supplier_status||"").toLowerCase()) && !String(o.supplier||"").toLowerCase().includes("[fictional demo]");
-    html += `
-      <tr>
-        <td class="material">${escapeHtml(o.supplier)}</td>
-        <td>${formatMoney(o.unit_price)}</td>
-        <td>${formatMoney(o.freight)}</td>
-        <td>${o.lead_days} days</td>
-        <td><span class="pill ${o.feasible ? 'green' : 'red'}">${o.feasible ? 'Feasible' : 'Infeasible'}</span></td>
-        <td><b>${formatMoney(o.estimated_total)}</b></td>
-        <td>${o.feasible && sellerEligible ? `<button class="action-btn generate-po-btn" data-generate-po="${o.id}">Generate PO</button>` : `<span class="po-unavailable">${!sellerEligible ? "Verify seller first" : "Not feasible"}</span>`}</td>
-      </tr>
-    `;
-  });
-  html += `</tbody></table></div>`;
-  resultContainer.innerHTML = html;
 });
 document.addEventListener("click", event => { const trigger=event.target.closest("[data-generate-po]"); if(trigger) openPoPreview(trigger.dataset.generatePo); });
 // --- Modals & Forms ---

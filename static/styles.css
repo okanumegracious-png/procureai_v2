@@ -308,3 +308,33 @@
 .request-detail-loading,.request-detail-error{padding:36px 15px;text-align:center;color:#6f7e91;font-size:12px}
 .request-detail-error p{font-size:11px}
 @media(max-width:560px){.request-detail-content{padding:0 15px 17px}.request-detail-hero{margin:0 -15px 15px;padding:18px 15px}.request-detail-grid{grid-template-columns:1fr}.request-row-actions{gap:5px}.request-row-actions .action-btn{padding:7px 8px;font-size:10px}}
+
+/* Guided bid evaluation */
+.bid-judgement,.bid-no-quotes,.bid-alternatives{background:#fff;border:1px solid var(--line);border-radius:10px;padding:19px}
+.bid-judgement{border-left:4px solid var(--green);background:linear-gradient(120deg,#f1faf6,#fff 72%)}
+.bid-judgement-top,.bid-seller-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.bid-judgement h3{font:700 16px Manrope,sans-serif;color:#23344a;margin:12px 0 7px}
+.bid-judgement p,.bid-no-quotes p{font-size:11px;line-height:1.65;color:#68778a;margin:0}
+.bid-judgement>small{display:block;margin-top:12px;color:#8a95a4;font-size:9px;line-height:1.5}
+.bid-caution{display:flex;flex-direction:column;gap:6px;padding:15px 17px;border:1px solid #f0dfbd;background:#fff9ed;border-radius:9px;color:#805b20;font-size:11px;line-height:1.6}
+.bid-caution span{color:#786b55}
+.bid-review-list{display:grid;gap:12px}.bid-review-list>.panel-heading{margin:0 0 2px}
+.bid-seller-review{background:#fff;border:1px solid var(--line);border-radius:9px;padding:17px}
+.bid-seller-heading{margin-bottom:14px}.bid-seller-heading b{display:block;color:#304056;font-size:12px}
+.bid-seller-heading small{display:block;color:#98a3b1;font-size:9px;margin-top:4px}
+.bid-review-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.bid-review-columns>div{min-width:0;background:#f8fafb;border-radius:7px;padding:11px}
+.bid-review-columns h4{font-size:10px;color:#536176;margin:0 0 8px}
+.bid-review-columns ul{padding-left:15px;margin:0;color:#748195;font-size:10px;line-height:1.65}
+.bid-review-columns li+li{margin-top:5px}
+.bid-next-step{display:flex;flex-direction:column;gap:4px;margin-top:13px;padding:11px 13px;background:#f1f5f8;border-radius:7px;color:#526176;font-size:10px;line-height:1.55}
+.bid-next-step b{color:#34465d}
+.bid-alternative-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bid-alternative-grid article{border:1px solid #e9edf1;border-radius:8px;padding:13px;min-width:0}
+.bid-alternative-grid article b{display:block;color:#34445a;font-size:11px}
+.bid-alternative-grid article small{display:block;color:#9aa4b0;font-size:9px;margin-top:4px}
+.bid-alternative-grid article p{font-size:10px;color:#66758a;line-height:1.5;margin:9px 0}
+.bid-alternative-grid article span{display:block;color:#8a95a4;font-size:9px;line-height:1.5}
+.bid-disclaimer{margin:0;color:#98a2af;font-size:9px;line-height:1.6}
+.bid-no-quotes h3{font:700 13px Manrope;color:#35445a;margin:0 0 7px}
+@media(max-width:700px){.bid-review-columns,.bid-alternative-grid{grid-template-columns:1fr}.bid-judgement,.bid-no-quotes,.bid-alternatives,.bid-seller-review{padding:14px}}
