@@ -278,4 +278,4 @@ def test_administrator_can_create_verify_and_download_database_backup(authentica
 
     downloaded = client.get(f"/api/admin/database/backups/{filename}/download")
     assert downloaded.status_code == 200
-    assert downloaded.content[:16] == b"SQLite format 3\\x00"
+    assert downloaded.content[:16] == b"SQLite format 3\x00"
