@@ -91,3 +91,31 @@
 .icon-action:hover { background:var(--surface-muted,#f3f5f8); }
 .quote-detail-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; }
 .quote-lock-note { margin-top:18px; padding:12px 14px; border-radius:10px; background:#f3f4f6; color:#475569; }
+
+
+/* Refined registered quotation experience */
+.quote-edit-modal{width:min(720px,calc(100vw - 30px));padding:26px}
+.quote-edit-modal .modal-head{align-items:flex-start;padding-bottom:16px;border-bottom:1px solid #edf0f3;margin-bottom:16px}
+.quote-edit-modal .modal-head h2{font-size:21px;letter-spacing:-.45px}
+.quote-edit-modal .modal-head .subheading{max-width:540px;line-height:1.55;margin-top:7px}
+.quote-edit-hint{display:flex;flex-direction:column;gap:5px;padding:13px 15px;margin:0 0 18px;border:1px solid #dcece4;border-radius:10px;background:linear-gradient(120deg,#f3faf6,#fbfdfb)}
+.quote-edit-hint strong{font-size:11px;color:#176b4e}
+.quote-edit-hint span{font-size:10px;line-height:1.55;color:#718078}
+#quoteForm.form-grid{gap:16px 14px}
+#quoteForm.form-grid label{display:block;color:#536176;font-size:11px;font-weight:700}
+#quoteForm.form-grid input,#quoteForm.form-grid select{display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:11px 12px;border:1px solid #dce3e9;border-radius:8px;background:#fff;color:#27384d;font:12px 'DM Sans',sans-serif;transition:border-color .15s,box-shadow .15s}
+#quoteForm.form-grid input:focus,#quoteForm.form-grid select:focus{outline:0;border-color:#15966c;box-shadow:0 0 0 3px #15966c16}
+#quoteForm .form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;padding-top:16px;margin-top:4px;border-top:1px solid #edf0f3}
+#quoteForm .form-actions .btn{min-width:120px;padding:11px 16px}
+#page-quotes .panel{overflow:hidden}
+#page-quotes .panel-heading{align-items:flex-end;flex-wrap:wrap}
+#page-quotes .table-wrap{border:1px solid #edf0f3;border-radius:9px}
+#page-quotes table thead th{position:sticky;top:0;background:#f7f9fa;color:#778496;padding:12px 10px}
+#page-quotes table tbody tr{transition:background .15s}
+#page-quotes table tbody tr:hover{background:#f7fbf9}
+#page-quotes table td{padding:13px 10px;vertical-align:middle}
+#page-quotes .quote-actions{display:flex;align-items:center;gap:6px}
+#page-quotes .quote-actions .action-btn{margin:0;padding:7px 10px;border-radius:7px;font-size:10px}
+#page-quotes .quote-actions .icon-action{width:31px;height:31px;border-radius:7px;font-size:16px;color:#176b4e}
+#page-quotes .quote-actions .action-btn.reject{color:#b64d55}
+@media(max-width:600px){.quote-edit-modal{padding:19px 16px}.quote-edit-modal .modal-head h2{font-size:18px}#quoteForm.form-grid{grid-template-columns:1fr}#quoteForm .wide{grid-column:1}#quoteForm .form-actions{grid-column:1;flex-direction:column-reverse}#quoteForm .form-actions .btn{width:100%}}

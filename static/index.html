@@ -139,7 +139,8 @@
 <div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Create request</button></div>
 </form></div></div>
 
-<div class="modal-backdrop" id="quoteModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">SOURCING</span><h2 id="quoteModalTitle">Add supplier quotation</h2><p class="subheading" id="quoteModalDescription"></p></div><button class="close" data-close>×</button></div>
+<div class="modal-backdrop" id="quoteModal"><div class="modal quote-edit-modal"><div class="modal-head"><div><span class="eyebrow">QUOTATION MANAGEMENT</span><h2 id="quoteModalTitle">Add supplier quotation</h2><p class="subheading" id="quoteModalDescription">Capture the seller commercial offer against an open purchase request.</p></div><button class="close" data-close>×</button></div>
+<div class="quote-edit-hint"><strong>Commercial record</strong><span>Check the linked request, seller and landed-cost inputs before saving. Editing resets the seller email confirmation.</span></div>
 <form id="quoteForm" class="form-grid">
 <label class="wide">Purchase request<select name="request_id" id="quoteRequest" required></select></label>
 <label class="wide">Supplier<select name="supplier_id" id="quoteSupplier" required></select></label>
@@ -149,7 +150,7 @@
 <label>Lead time (days)<input name="lead_days" type="number" min="0" value="7" required></label>
 <label>Payment terms (days)<input name="payment_days" type="number" min="0" value="30" required></label>
 <label class="wide">Notes<input name="note" placeholder="Quote validity, exclusions or other commercial notes"></label>
-<div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Save quotation</button></div>
+<div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="submit" class="btn btn-primary">Save quotation</button></div>
 </form></div></div>
 <div class="modal-backdrop" id="quoteDetailModal"><div class="modal quote-detail-modal">
   <div class="modal-head"><div><span class="eyebrow">QUOTATION RECORD</span><h2 id="quoteDetailTitle">Quotation details</h2></div><button class="close" data-close>×</button></div>
