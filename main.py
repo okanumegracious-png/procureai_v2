@@ -967,7 +967,7 @@ class DashboardRequestPayload(BaseModel):
     material: str
     category: str
     quantity: float = Field(gt=0)
-    unit: str
+    unit: str = Field(min_length=1, max_length=40)
     site: str
     required_by: str
     priority: str = "Normal"
@@ -1170,7 +1170,7 @@ def dashboard_create_request(payload: DashboardRequestPayload):
         created_at = _now()
         cur = db.execute("""INSERT INTO requests(code,material,category,quantity,unit,site,required_by,priority,status,created_at)
             VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (code,payload.material.strip(),payload.category,payload.quantity,payload.unit,payload.site.strip(),
+            (code,payload.material.strip(),payload.category,payload.quantity,payload.unit.strip(),payload.site.strip(),
              payload.required_by,payload.priority,"Open",created_at))
         request_id = cur.lastrowid
         db.execute("""INSERT INTO project_purchase_requests(project_id,request_id,linked_by,linked_at)
