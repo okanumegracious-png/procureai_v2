@@ -285,3 +285,5 @@
 @media(max-width:760px){.project-intake-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .app-creator-footer{width:100%;padding:18px 16px 22px;text-align:center;color:#7c8796;font-size:12px;font-weight:600;letter-spacing:.02em;border-top:1px solid var(--line);background:var(--surface,#fff)}
+
+.request-open-filter.active{background:#e8f3ff;border-color:#a9cafa;color:#175ea8;font-weight:700}.request-open-filter:focus-visible{outline:3px solid #78aef4;outline-offset:2px}
