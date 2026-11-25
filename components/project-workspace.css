@@ -1,1 +1,25 @@
 .project-workspace-react{display:grid;gap:16px;color:#1c2b40;font:14px/1.55 Inter,system-ui,sans-serif}.pw-toolbar,.pw-hero,.pw-update-head{display:flex;justify-content:space-between;align-items:center;gap:16px}.pw-toolbar button{border:0;background:none;color:#16815e;cursor:pointer}.pw-toolbar span,.pw-card small,.pw-hero small{font-size:10px;letter-spacing:.09em;color:#8390a0}.pw-hero{align-items:flex-start;padding:24px;border-radius:14px;background:#14253b;color:#fff}.pw-hero h1{font-size:26px;line-height:1.2;margin:7px 0}.pw-hero p{color:#c2d0dc;margin:0}.pw-due{padding:7px 10px;border-radius:30px;background:#e8f6f0;color:#16815e;font-size:11px;white-space:nowrap}.pw-due.overdue{background:#fff0f0;color:#b6424b}.pw-due.due_soon,.pw-due.due_today{background:#fff5df;color:#a66a10}.pw-grid,.pw-activity{display:grid;grid-template-columns:1.3fr .9fr;gap:16px}.pw-card{background:#fff;border:1px solid #e8edf2;border-radius:13px;padding:20px;min-width:0}.pw-card h2{font-size:17px;margin:5px 0 12px}.pw-card p{color:#66758a;white-space:pre-wrap}.pw-card dl{display:grid;grid-template-columns:130px 1fr;gap:8px;font-size:12px}.pw-card dt{color:#8390a0}.pw-card dd{margin:0;overflow-wrap:anywhere}.pw-progress strong{font-size:42px;color:#16815e}.pw-track{height:9px;background:#edf1f4;border-radius:10px;overflow:hidden}.pw-track i{display:block;height:100%;background:#15966c}.pw-milestones{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.pw-milestones div{padding:12px;border:1px solid #edf0f3;border-radius:9px}.pw-milestones .done{background:#f3faf6;border-color:#d7eee4}.pw-milestones b,.pw-milestones span{display:block;font-size:11px}.pw-milestones span{font-size:10px;color:#8390a0;margin-top:5px}.pw-card li{margin:7px 0;color:#526176}.pw-update{padding:14px 0;border-bottom:1px solid #eef1f4}.pw-update-head b{font-size:12px}.pw-update time,.pw-update>span{font-size:10px;color:#8390a0}.pw-update p{font-size:12px}.pw-blocker{padding:9px;background:#fff8ed;border-radius:8px}.pw-card form{display:grid;gap:12px}.pw-card form label{display:grid;gap:6px;font-size:11px;font-weight:600;color:#526176}.pw-card input:not([type=checkbox]):not([type=range]),.pw-card select,.pw-card textarea{width:100%;padding:10px;border:1px solid #dce3e9;border-radius:8px;font:inherit}.pw-card input[type=range]{accent-color:#15966c}.pw-card fieldset{border:1px solid #e8edf2;border-radius:9px;padding:12px}.pw-card legend{font-size:11px;font-weight:700}.pw-card .pw-check{display:flex;align-items:center;margin:7px 0}.pw-card button[type=submit]{border:0;border-radius:8px;padding:12px;background:#15966c;color:#fff;font-weight:700;cursor:pointer}.pw-card button:disabled{opacity:.6}.pw-error{color:#b6424b}.pw-state{padding:35px;text-align:center;color:#718095}.pw-state button{margin-left:10px}@media(max-width:850px){.pw-grid,.pw-activity{grid-template-columns:1fr}.pw-milestones{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.pw-hero{flex-direction:column}.pw-milestones{grid-template-columns:1fr}.pw-card dl{grid-template-columns:105px 1fr}.pw-card{padding:16px}}
+
+/* Project workspace typography accessibility pass */
+.project-workspace-react { font-size: 15px; line-height: 1.6; }
+.pw-toolbar span, .pw-card small, .pw-hero small { font-size: 12px; }
+.pw-hero h1 { font-size: 30px; line-height: 1.25; }
+.pw-hero p { font-size: 15px; line-height: 1.6; }
+.pw-due { font-size: 13px; }
+.pw-card h2 { font-size: 19px; line-height: 1.35; }
+.pw-card p, .pw-card li { font-size: 14px; line-height: 1.6; }
+.pw-card dl { font-size: 14px; line-height: 1.5; }
+.pw-progress strong { font-size: 44px; }
+.pw-milestones b { font-size: 13px; line-height: 1.4; }
+.pw-milestones span { font-size: 12px; line-height: 1.45; }
+.pw-update-head b { font-size: 14px; }
+.pw-update time, .pw-update>span { font-size: 12px; }
+.pw-update p { font-size: 14px; line-height: 1.55; }
+.pw-card form label { font-size: 13px; }
+.pw-card input:not([type=checkbox]):not([type=range]), .pw-card select, .pw-card textarea { font-size: 14px; min-height: 44px; }
+.pw-card button[type=submit] { font-size: 14px; min-height: 44px; }
+@media (max-width: 560px) {
+  .pw-hero h1 { font-size: 26px; }
+  .pw-card h2 { font-size: 18px; }
+  .pw-card { padding: 17px; }
+}
