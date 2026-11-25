@@ -783,6 +783,14 @@ async function openPurchaseRequestDetails(requestId) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not load purchase request");
     const r = data.request;
+    const rfqResponse = await apiFetch(`${API}/rfq/request/${encodeURIComponent(requestId)}`);
+    const rfqData = rfqResponse.ok ? await rfqResponse.json() : {invites:[],quotes:[],summary:{quotation_count:0}};
+    const rfqSummary = rfqData.summary || {};
+    const inviteRows = (rfqData.invites || []).map(invite => {
+      const tone = invite.status === "submitted" ? "green" : invite.status === "failed" ? "red" : invite.status === "sent" ? "blue" : "gray";
+      const label = invite.status === "submitted" ? "Quotation received" : invite.status === "failed" ? "Email failed" : invite.status === "sent" ? "Awaiting response" : invite.status;
+      return `<div class="rfq-supplier-row"><div><b>${escapeHtml(invite.supplier_name)}</b><small>${escapeHtml(invite.recipient || "No email recorded")}</small>${invite.error ? `<small class="rfq-error">${escapeHtml(invite.error)}</small>` : ""}</div><span class="pill ${tone}">${escapeHtml(label)}</span></div>`;
+    }).join("");
     title.textContent = r.code || "Purchase request details";
     const displayDate = value => {
       if (!value) return "Not recorded";
@@ -815,14 +823,32 @@ async function openPurchaseRequestDetails(requestId) {
         <div class="request-detail-section-heading"><h4>Additional information & technical specifications</h4><p>Technical requirements and instructions supplied with this request.</p></div>
         <p class="request-detail-additional">${r.additional_information ? escapeHtml(r.additional_information) : "No additional information provided."}</p>
       </section>
-      <div class="request-detail-note"><span class="request-note-icon" aria-hidden="true">i</span><div><b>Next procurement step</b><p>Collect supplier offers against this request in RFQs & quotations. Buyer confirmation and approval remain part of the project workflow.</p></div></div>
-      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button><button type="button" class="btn btn-secondary" data-add-quote="${escapeHtml(r.id)}">✦ Add quotation with Magic Extraction</button><button type="button" class="btn btn-primary" data-open-quotes>View quotations</button></div>`;
+      <section class="request-detail-section rfq-tracking-section" aria-label="Supplier quotation collection">
+        <div class="request-detail-section-heading"><h4>Supplier RFQ & quotation tracking</h4><p>Invitations go to eligible active or verified suppliers. Each receives a unique, expiring submission link.</p></div>
+        <div class="rfq-summary-grid"><div><b>${Number(rfqSummary.invited || 0)}</b><span>Invited</span></div><div><b>${Number(rfqSummary.sent || 0)}</b><span>Awaiting response</span></div><div><b>${Number(rfqSummary.quotation_count || 0)}</b><span>Quotations saved</span></div><div><b>${Number(rfqSummary.failed || 0)}</b><span>Failed emails</span></div></div>
+        ${inviteRows ? `<div class="rfq-supplier-list">${inviteRows}</div>` : '<p class="request-detail-additional">No supplier invitations recorded yet. Invite eligible suppliers below.</p>'}
+        <div class="rfq-tracking-actions"><button type="button" class="btn btn-secondary" data-dispatch-rfq="${escapeHtml(r.id)}">${Number(rfqSummary.invited || 0) ? "Invite additional suppliers / retry failed" : "Send RFQ to eligible suppliers"}</button><span>Already invited suppliers and suppliers who have submitted are not sent duplicate invitations.</span></div>
+      </section>
+      <div class="request-detail-note"><span class="request-note-icon" aria-hidden="true">i</span><div><b>Manual quotation entry remains available</b><p>Use this fallback for WhatsApp, telephone or other offline supplier responses. The same supplier cannot be recorded twice against this request.</p></div></div>
+      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button><button type="button" class="btn btn-secondary" data-add-quote="${escapeHtml(r.id)}">＋ Add manual quotation (fallback)</button><button type="button" class="btn btn-primary" data-open-quotes>View quotations (${Number(rfqSummary.quotation_count || 0)})</button></div>`;
     content.querySelector("[data-close]")?.addEventListener("click", () => modal.classList.remove("open"));
   } catch (error) {
     content.innerHTML = `<div class="request-detail-error"><b>Request details unavailable</b><p>${escapeHtml(error.message)}</p></div>`;
   }
 }
-document.getElementById("requestDetailContent")?.addEventListener("click", event => {
+document.getElementById("requestDetailContent")?.addEventListener("click", async event => {
+  const dispatch = event.target.closest("[data-dispatch-rfq]");
+  if (dispatch) {
+    dispatch.disabled = true; dispatch.textContent = "Sending invitations…";
+    try {
+      const response = await apiFetch(`${API}/rfq/dispatch/${encodeURIComponent(dispatch.dataset.dispatchRfq)}`, {method:"POST"});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Could not send supplier invitations");
+      showToast(`RFQs sent to ${Number(result.sent_count || 0)} supplier(s); ${Number(result.failed_count || 0)} email(s) failed.`, Number(result.failed_count || 0) > 0);
+      await fetchDashboard(); await openPurchaseRequestDetails(dispatch.dataset.dispatchRfq);
+    } catch (error) { showToast(error.message, true); dispatch.disabled = false; dispatch.textContent = "Retry supplier invitations"; }
+    return;
+  }
   const addQuote = event.target.closest("[data-add-quote]");
   if (addQuote) {
     const requestId = addQuote.dataset.addQuote;
@@ -840,6 +866,18 @@ document.getElementById("requestDetailContent")?.addEventListener("click", event
   document.querySelector('.nav-item[data-page="quotes"]')?.click();
 });
 document.getElementById("allRequests")?.addEventListener("click", async event => {
+  const dispatch = event.target.closest("[data-dispatch-rfq]");
+  if (dispatch) {
+    dispatch.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/rfq/dispatch/${encodeURIComponent(dispatch.dataset.dispatchRfq)}`, {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not send supplier invitations");
+      showToast(`RFQs sent to ${data.sent_count || 0} supplier(s); ${data.failed_count || 0} email(s) failed.`, Number(data.failed_count || 0)>0);
+      await fetchDashboard();
+    } catch (error) { showToast(error.message, true); dispatch.disabled = false; }
+    return;
+  }
   const retry = event.target.closest("[data-retry-rfq]");
   if (retry) {
     retry.disabled = true;
@@ -889,7 +927,7 @@ function renderDashboard() {
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
       <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${escapeHtml(r.status)}</span></td>
       <td>${(() => { const q=(dashboardData.rfqStatus||{})[String(r.id)]||{}; const n=Number(q.quote_count||0), sent=Number(q.sent_count||0), failed=Number(q.failed_count||0); return n>0 ? '<span class="pill green">'+n+' quotation'+(n===1?'':'s')+' received</span>' : sent>0 ? '<span class="pill blue">RFQ sent · '+sent+'</span>' : failed>0 ? '<span class="pill red">RFQ email failed</span>' : '<span class="pill gray">No quotation yet</span>'; })()}</td>
-      <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button>${Number(((dashboardData.rfqStatus||{})[String(r.id)]||{}).failed_count||0)>0 ? `<button type="button" class="action-btn" data-retry-rfq="${r.id}">Retry failed RFQs</button>` : ""}<button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
+      <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button><button type="button" class="action-btn" data-dispatch-rfq="${r.id}">Invite suppliers</button>${Number(((dashboardData.rfqStatus||{})[String(r.id)]||{}).failed_count||0)>0 ? `<button type="button" class="action-btn" data-retry-rfq="${r.id}">Retry failed RFQs</button>` : ""}<button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
     </tr>
   `).join("");
   // Suppliers
