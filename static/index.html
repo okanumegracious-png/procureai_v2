@@ -57,10 +57,10 @@
         <button class="btn btn-primary" data-modal="requestModal">＋ New purchase request</button>
       </div>
       <div class="metric-grid">
-        <article class="metric"><div class="metric-top"><span>Open requests</span><span class="metric-icon blue">▤</span></div><strong id="mRequests">—</strong><small><span class="positive">●</span> Requiring procurement action</small></article>
-        <article class="metric"><div class="metric-top"><span>Active suppliers</span><span class="metric-icon purple">♧</span></div><strong id="mSuppliers">—</strong><small>Across your supplier network</small></article>
-        <article class="metric"><div class="metric-top"><span>Awaiting approval</span><span class="metric-icon amber">◷</span></div><strong id="mApprovals">—</strong><small>Human decision required</small></article>
-        <article class="metric"><div class="metric-top"><span>Approved spend</span><span class="metric-icon green">₦</span></div><strong id="mSpend">₦0</strong><small>Approved purchase orders</small></article>
+        <button type="button" class="metric metric-action" data-metric-page="requests" data-metric-filter="Open" aria-label="View open purchase requests"><span class="metric-top"><span>Open requests</span><span class="metric-icon blue">▤</span></span><strong id="mRequests">—</strong><small><span class="positive">●</span> Requiring procurement action · View requests →</small></button>
+        <button type="button" class="metric metric-action" data-metric-page="suppliers" data-metric-filter="Active" aria-label="View active suppliers"><span class="metric-top"><span>Active suppliers</span><span class="metric-icon purple">♧</span></span><strong id="mSuppliers">—</strong><small>Across your supplier network · View suppliers →</small></button>
+        <button type="button" class="metric metric-action" data-metric-page="orders" data-metric-filter="Pending approval" aria-label="View purchase orders awaiting approval"><span class="metric-top"><span>Awaiting approval</span><span class="metric-icon amber">◷</span></span><strong id="mApprovals">—</strong><small>Human decision required · Review approvals →</small></button>
+        <button type="button" class="metric metric-action" data-metric-page="orders" data-metric-filter="Approved" aria-label="View approved purchase orders"><span class="metric-top"><span>Approved spend</span><span class="metric-icon green">₦</span></span><strong id="mSpend">₦0</strong><small>Approved purchase orders · View orders →</small></button>
       </div>
       <section class="project-trends-panel" id="projectTrendsPanel"><div class="project-loading">Loading project completion trends…</div></section>
       <div class="content-grid">

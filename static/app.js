@@ -62,6 +62,20 @@ document.querySelectorAll("[data-goto]").forEach(btn => {
     document.querySelector(`.nav-item[data-page="${btn.dataset.goto}"]`).click();
   });
 });
+// Overview KPI cards navigate to the relevant register and apply the matching status filter.
+document.querySelectorAll("[data-metric-page]").forEach(card => {
+  card.addEventListener("click", () => {
+    const page = card.dataset.metricPage;
+    const filter = card.dataset.metricFilter || "";
+    document.querySelector(`.nav-item[data-page="${page}"]`)?.click();
+    const filterId = page === "requests" ? "requestStatusFilter" : page === "suppliers" ? "supplierStatusFilter" : "orderStatusFilter";
+    const control = document.getElementById(filterId);
+    if (control) {
+      control.value = filter;
+      control.dispatchEvent(new Event("change", {bubbles:true}));
+    }
+  });
+});
 document.getElementById("mobileMenu").addEventListener("click", () => {
   document.getElementById("sidebar").classList.toggle("open");
 });
@@ -907,8 +921,8 @@ function renderDashboard() {
   reqBody.innerHTML = requests.slice(0, 5).map(r => `
     <tr>
       <td class="code">${r.code}</td>
-      <td class="material">${r.material}</td>
-      <td>${Number(r.quantity).toLocaleString()} ${r.unit}</td>
+      <td class="material"><strong>${escapeHtml(r.material || "Item description not provided")}</strong><small class="item-context">${escapeHtml([r.category, r.site].filter(Boolean).join(" · "))}</small></td>
+      <td>${Number(r.quantity).toLocaleString()} ${escapeHtml(r.unit || "")}</td>
       <td>${r.required_by}</td>
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
       <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${r.status}</span></td>
@@ -919,9 +933,9 @@ function renderDashboard() {
   document.getElementById("allRequests").innerHTML = visibleRequests.map(r => `
     <tr>
       <td class="code">${r.code}</td>
-      <td class="material">${r.material}</td>
-      <td>${r.category}</td>
-      <td>${Number(r.quantity).toLocaleString()} ${r.unit}</td>
+      <td class="material"><strong>${escapeHtml(r.material || "Item description not provided")}</strong><small class="item-context">${escapeHtml(r.category || "Category not specified")}</small></td>
+      <td>${escapeHtml(r.category || "—")}</td>
+      <td>${Number(r.quantity).toLocaleString()} ${escapeHtml(r.unit || "")}</td>
       <td>${r.site}</td>
       <td>${r.required_by}</td>
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
@@ -978,7 +992,7 @@ function renderDashboard() {
     <tr>
       <td class="material">${q.supplier}</td>
       <td class="code">${q.request_code}</td>
-      <td>${q.material}</td>
+      <td class="material"><strong>${escapeHtml(q.material || "Item description not provided")}</strong><small class="item-context">${escapeHtml(q.category || "Category not specified")}</small></td>
       <td>${formatMoney(q.unit_price)}</td>
       <td>${formatMoney(q.freight)}</td>
       <td>${q.lead_days} days</td>
@@ -993,7 +1007,7 @@ function renderDashboard() {
     <tr>
       <td class="code">${o.code}</td>
       <td class="material">${o.supplier}</td>
-      <td>${o.material}</td>
+      <td class="material"><strong>${escapeHtml(o.material || "Item description not provided")}</strong><small class="item-context">${Number(o.quantity || 0).toLocaleString()} ${escapeHtml(o.unit || "units")} ordered</small></td>
       <td>${formatMoney(o.total)}</td>
       <td>${o.required_by}</td>
       <td><span class="pill ${o.status === 'Approved' ? 'green' : (o.status === 'Rejected' ? 'red' : 'amber')}">${o.status}</span></td>
