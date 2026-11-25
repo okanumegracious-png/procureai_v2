@@ -1974,3 +1974,23 @@ async function initializeApp() {
   } catch { showLogin("Unable to reach ProcureAI. Check your connection and try again."); }
 }
 initializeApp();
+// Restore an existing administrator session after a native POST redirect or page refresh.
+// The session cookie is HttpOnly, so the server—not local storage—confirms authentication.
+(async function restoreAdministratorSession() {
+  try {
+    const response = await apiFetch(`${API}/auth/me`);
+    if (!response.ok) {
+      showLogin();
+      return;
+    }
+    const session = await response.json();
+    if (!session || !session.authenticated) {
+      showLogin();
+      return;
+    }
+    showApp();
+    await Promise.all([fetchDashboard(), loadCompanyProfile(), loadDatabaseBackups()]);
+  } catch (_) {
+    showLogin("Unable to verify your session. Please sign in again.");
+  }
+})();
