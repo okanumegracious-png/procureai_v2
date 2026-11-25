@@ -1886,30 +1886,6 @@ function showToast(msg, isError = false) {
 }
 // Set today's date in header
 document.getElementById("today").textContent = new Date().toLocaleDateString("en-GB", { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase();
-// Authentication gate: dashboard data is never requested before a valid session exists.
-document.getElementById("loginForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const error = document.getElementById("loginError");
-  const button = event.currentTarget.querySelector("button[type=submit]");
-  button.disabled = true;
-  error.textContent = "";
-  try {
-    const response = await apiFetch(`${API}/auth/login`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: document.getElementById("loginUsername").value.trim(),
-        password: document.getElementById("loginPassword").value
-      })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || data.error || "Unable to sign in");
-    document.getElementById("loginPassword").value = "";
-    showApp();
-    await Promise.all([fetchDashboard(), loadCompanyProfile(), loadDatabaseBackups()]);
-  } catch (err) {
-    error.textContent = err.message || "Sign-in failed. Please try again.";
-  } finally { button.disabled = false; }
-});
 document.getElementById("logoutBtn").addEventListener("click", async () => {
   try { await apiFetch(`${API}/auth/logout`, { method: "POST" }); }
   finally { dashboardData = {}; showLogin("You have signed out."); }
@@ -1964,33 +1940,3 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
     });
   }, {once:true});
 }
-
-async function initializeApp() {
-  try {
-    const response = await apiFetch(`${API}/auth/me`);
-    if (!response.ok) return showLogin();
-    showApp();
-    await Promise.all([fetchDashboard(), loadCompanyProfile()]);
-  } catch { showLogin("Unable to reach ProcureAI. Check your connection and try again."); }
-}
-initializeApp();
-// Restore an existing administrator session after a native POST redirect or page refresh.
-// The session cookie is HttpOnly, so the server—not local storage—confirms authentication.
-(async function restoreAdministratorSession() {
-  try {
-    const response = await apiFetch(`${API}/auth/me`);
-    if (!response.ok) {
-      showLogin();
-      return;
-    }
-    const session = await response.json();
-    if (!session || !session.authenticated) {
-      showLogin();
-      return;
-    }
-    showApp();
-    await Promise.all([fetchDashboard(), loadCompanyProfile(), loadDatabaseBackups()]);
-  } catch (_) {
-    showLogin("Unable to verify your session. Please sign in again.");
-  }
-})();
