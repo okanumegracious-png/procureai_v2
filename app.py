@@ -70,6 +70,11 @@ def init_db():
           FOREIGN KEY(request_id) REFERENCES requests(id)
         );
         """)
+        # Preserve technical requirements on existing and new purchase requests.
+        request_columns = {row["name"] for row in db.execute("PRAGMA table_info(requests)").fetchall()}
+        if "additional_information" not in request_columns:
+            db.execute("ALTER TABLE requests ADD COLUMN additional_information TEXT NOT NULL DEFAULT ''")
+
         # Link generated purchase-order proposals to the exact quotation used in analysis.
         order_columns = {row["name"] for row in db.execute("PRAGMA table_info(orders)").fetchall()}
         for column, definition in {
