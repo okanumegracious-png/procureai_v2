@@ -442,3 +442,11 @@
 .project-delete-btn{padding:7px 11px;font-size:10px;border-radius:7px}
 .project-delete-btn:disabled{opacity:.55;cursor:wait}
 @media(max-width:520px){.project-card-footer{align-items:flex-start;flex-direction:column}.project-card-actions{width:100%;justify-content:space-between}}
+
+
+/* Native-app installation action in the workspace header */
+.btn-install{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:8px 12px;border:1px solid #bfe6d5;background:#eff9f4;color:#11734f;border-radius:8px;font-size:11px;font-weight:800;white-space:nowrap}
+.btn-install:hover{background:#e2f4eb;border-color:#8fd2b4}
+.btn-install:focus-visible{outline:3px solid #15966c55;outline-offset:2px}
+.btn-install[hidden]{display:none!important}
+@media(max-width:520px){.btn-install{padding:8px 9px;font-size:10px}.top-actions{gap:7px}.top-actions .signout-btn{padding:7px 9px;font-size:10px}}
