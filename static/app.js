@@ -839,7 +839,19 @@ document.getElementById("requestDetailContent")?.addEventListener("click", event
   document.getElementById("requestDetailModal")?.classList.remove("open");
   document.querySelector('.nav-item[data-page="quotes"]')?.click();
 });
-document.getElementById("allRequests")?.addEventListener("click", event => {
+document.getElementById("allRequests")?.addEventListener("click", async event => {
+  const retry = event.target.closest("[data-retry-rfq]");
+  if (retry) {
+    retry.disabled = true;
+    try {
+      const response = await apiFetch(`${API}/rfq/dispatch/${retry.dataset.retryRfq}`, {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not retry RFQ dispatch");
+      showToast(`RFQs sent to ${data.sent_count || 0} supplier(s); ${data.failed_count || 0} email(s) still failed.`, Number(data.failed_count || 0)>0);
+      await fetchDashboard();
+    } catch (error) { showToast(error.message, true); retry.disabled = false; }
+    return;
+  }
   const open = event.target.closest("[data-open-request]");
   if (open) openPurchaseRequestDetails(open.dataset.openRequest);
 });
@@ -877,7 +889,7 @@ function renderDashboard() {
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
       <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${escapeHtml(r.status)}</span></td>
       <td>${(() => { const q=(dashboardData.rfqStatus||{})[String(r.id)]||{}; const n=Number(q.quote_count||0), sent=Number(q.sent_count||0), failed=Number(q.failed_count||0); return n>0 ? '<span class="pill green">'+n+' quotation'+(n===1?'':'s')+' received</span>' : sent>0 ? '<span class="pill blue">RFQ sent · '+sent+'</span>' : failed>0 ? '<span class="pill red">RFQ email failed</span>' : '<span class="pill gray">No quotation yet</span>'; })()}</td>
-      <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button><button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
+      <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button>${Number(((dashboardData.rfqStatus||{})[String(r.id)]||{}).failed_count||0)>0 ? `<button type="button" class="action-btn" data-retry-rfq="${r.id}">Retry failed RFQs</button>` : ""}<button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
     </tr>
   `).join("");
   // Suppliers
