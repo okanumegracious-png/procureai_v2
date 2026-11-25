@@ -9,7 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code only; never bake the developer's local SQLite database into the image.
-COPY main.py app.py procureai_store.py ./
+COPY main.py app.py procureai_store.py supplier_portal.py ./
 COPY agentic ./agentic
 COPY static ./static
 
