@@ -60,6 +60,33 @@ def _project_brief(db, request_id):
         "due_date": linked["due_date"] or "",
     }
 
+def _project_brief_html(project_brief, safe):
+    if not project_brief:
+        return ""
+    budget = "₦{:,.2f}".format(project_brief["budget"]) if project_brief["budget"] > 0 else "Not specified"
+    rows = [
+        ("Project", project_brief["title"] or "Not specified"),
+        ("Client / organisation", project_brief["client"] or project_brief["agency_details"] or "Not specified"),
+        ("Overall project budget", budget),
+        ("Project summary", project_brief["summary"] or "Not supplied"),
+        ("Project category", project_brief["category"] or "Not specified"),
+        ("Project location", project_brief["location"] or "Not specified"),
+        ("Project timeline", (project_brief["start_date"] or "Not specified") + " to " + (project_brief["due_date"] or "Not specified")),
+        ("Key deliverables", "; ".join(project_brief["deliverables"]) if project_brief["deliverables"] else "Not specified"),
+    ]
+    table_rows = "".join(
+        '<tr><td style="padding:9px;background:#f7f9fc;width:38%">' + safe(label) +
+        '</td><td style="padding:9px">' + safe(value) + '</td></tr>'
+        for label, value in rows
+    )
+    return (
+        '<h3>Project brief</h3><table style="width:100%;border-collapse:collapse">' +
+        table_rows + '</table><p style="font-size:13px;color:#79520c;background:#fff8e8;padding:12px;border-radius:8px">'
+        'The overall project budget applies to the entire project; it is provided as context and is not necessarily '
+        'the amount allocated to this individual purchase request. Please submit a competitive, realistic offer.</p>'
+    )
+
+
 def _hash(token):
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -193,9 +220,9 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
             subject=f"Request for Quotation {req['code']} – {req['material']}"
             project_text = ""
             if project_brief:
-                project_text = "\\n\\nPROJECT BRIEF\\nProject: " + str(project_brief["title"]) + "\\nClient/organisation: " + str(project_brief["client"] or project_brief["agency_details"] or "Not specified") + "\\nOverall project budget: " + (("₦{:,.2f}".format(project_brief["budget"])) if project_brief["budget"] > 0 else "Not specified") + "\\nProject summary: " + str(project_brief["summary"] or "Not supplied") + "\\nProject location: " + str(project_brief["location"] or "Not specified") + "\\nProject timeline: " + str(project_brief["start_date"] or "Not specified") + " to " + str(project_brief["due_date"] or "Not specified") + "\\nKey deliverables: " + ("; ".join(project_brief["deliverables"]) if project_brief["deliverables"] else "Not specified")
-            text_body="Dear "+s["name"]+",\\n\\nYou are invited to submit a quotation for "+req["code"]+"."+project_text+"\\n\\nPURCHASE REQUEST\\nItem: "+req["material"]+"\\nCategory: "+str(req["category"])+"\\nQuantity: "+str(req["quantity"])+" "+str(req["unit"])+"\\nDelivery location: "+str(req["site"])+"\\nRequired by: "+str(req["required_by"])+"\\n\\nTechnical requirements:\\n"+str(req["additional_information"] or "See request details.")+"\\n\\nPlease prepare a competitive, realistic quotation that considers the published overall project budget and the full scope. The overall project budget covers the entire project, not necessarily this individual purchase request.\\n\\nSubmit securely using your unique link (valid for "+str(INVITE_DAYS)+" days):\\n"+link+"\\n\\nThis invitation is not a purchase order or award."
-            body=f"""<!doctype html><html><body style="margin:0;padding:24px;background:#f3f5f8;font:14px Arial;color:#243044"><main style="max-width:640px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden"><header style="background:#172b4d;color:white;padding:24px"><b style="color:#f5a623">PROCUREAI</b><h2>Request for Quotation</h2><span>{safe(req['code'])}</span></header><section style="padding:26px"><p>Dear <b>{safe(s['name'])}</b>,</p><p>You are invited to submit a quotation for this procurement requirement.</p><table style="width:100%;border-collapse:collapse"><tr><td style="padding:9px;background:#f7f9fc">Item</td><td style="padding:9px">{safe(req['material'])}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Category</td><td style="padding:9px">{safe(req['category'])}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Quantity</td><td style="padding:9px">{safe(str(req['quantity'])+' '+str(req['unit']))}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Delivery location</td><td style="padding:9px">{safe(req['site'])}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Required by</td><td style="padding:9px">{safe(req['required_by'])}</td></tr></table>{project_brief_html}<h3>Technical requirements</h3><p style="white-space:pre-wrap;line-height:1.6">{safe(req['additional_information'] or 'No additional specification supplied.')}</p><p style="margin:26px 0"><a href="{safe(link)}" style="background:#2457c5;color:white;text-decoration:none;padding:14px 22px;border-radius:8px;font-weight:bold">Submit quotation securely</a></p><p style="font-size:12px;color:#64748b">This unique link expires in {INVITE_DAYS} days. This RFQ is not a purchase order, award or authority to commence supply.</p></section></main></body></html>"""
+                project_text = "\n\\nPROJECT BRIEF\\nProject: " + str(project_brief["title"]) + "\nClient/organisation: " + str(project_brief["client"] or project_brief["agency_details"] or "Not specified") + "\nOverall project budget: " + (("₦{:,.2f}".format(project_brief["budget"])) if project_brief["budget"] > 0 else "Not specified") + "\nProject summary: " + str(project_brief["summary"] or "Not supplied") + "\nProject location: " + str(project_brief["location"] or "Not specified") + "\nProject timeline: " + str(project_brief["start_date"] or "Not specified") + " to " + str(project_brief["due_date"] or "Not specified") + "\nKey deliverables: " + ("; ".join(project_brief["deliverables"]) if project_brief["deliverables"] else "Not specified")
+            text_body="Dear "+s["name"]+",\\n\\nYou are invited to submit a quotation for "+req["code"]+"."+project_text+"\n\\nPURCHASE REQUEST\\nItem: "+req["material"]+"\nCategory: "+str(req["category"])+"\nQuantity: "+str(req["quantity"])+" "+str(req["unit"])+"\nDelivery location: "+str(req["site"])+"\nRequired by: "+str(req["required_by"])+"\n\\nTechnical requirements:\\n"+str(req["additional_information"] or "See request details.")+"\n\\nPlease prepare a competitive, realistic quotation that considers the published overall project budget and the full scope. The overall project budget covers the entire project, not necessarily this individual purchase request.\\n\\nSubmit securely using your unique link (valid for "+str(INVITE_DAYS)+" days):\\n"+link+"\n\\nThis invitation is not a purchase order or award."
+            body=f"""<!doctype html><html><body style="margin:0;padding:24px;background:#f3f5f8;font:14px Arial;color:#243044"><main style="max-width:640px;margin:auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden"><header style="background:#172b4d;color:white;padding:24px"><b style="color:#f5a623">PROCUREAI</b><h2>Request for Quotation</h2><span>{safe(req['code'])}</span></header><section style="padding:26px"><p>Dear <b>{safe(s['name'])}</b>,</p><p>You are invited to submit a quotation for this procurement requirement.</p><table style="width:100%;border-collapse:collapse"><tr><td style="padding:9px;background:#f7f9fc">Item</td><td style="padding:9px">{safe(req['material'])}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Category</td><td style="padding:9px">{safe(req['category'])}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Quantity</td><td style="padding:9px">{safe(str(req['quantity'])+' '+str(req['unit']))}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Delivery location</td><td style="padding:9px">{safe(req['site'])}</td></tr><tr><td style="padding:9px;background:#f7f9fc">Required by</td><td style="padding:9px">{safe(req['required_by'])}</td></tr></table>{_project_brief_html(project_brief, safe)}<h3>Technical requirements</h3><p style="white-space:pre-wrap;line-height:1.6">{safe(req['additional_information'] or 'No additional specification supplied.')}</p><p style="margin:26px 0"><a href="{safe(link)}" style="background:#2457c5;color:white;text-decoration:none;padding:14px 22px;border-radius:8px;font-weight:bold">Submit quotation securely</a></p><p style="font-size:12px;color:#64748b">This unique link expires in {INVITE_DAYS} days. This RFQ is not a purchase order, award or authority to commence supply.</p></section></main></body></html>"""
             try:
                 _send_email(email,subject,text_body,body)
                 db.execute("UPDATE supplier_rfq_invites SET status='sent',sent_at=? WHERE id=?",( _now(),invite_id))
