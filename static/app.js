@@ -1313,6 +1313,58 @@ document.getElementById("requestForm")?.addEventListener("reset", () => {
   requestCustomUnitWrap?.setAttribute("hidden", "");
   if (requestCustomUnitInput) requestCustomUnitInput.required = false;
 });
+const requestSourceMessage = document.getElementById("requestSourceMessage");
+const requestAdditionalInformation = document.getElementById("requestAdditionalInformation");
+const requestAdditionalCount = document.getElementById("requestAdditionalCount");
+requestAdditionalInformation?.addEventListener("input", () => {
+  if (requestAdditionalCount) requestAdditionalCount.textContent = requestAdditionalInformation.value.length.toLocaleString() + " / 8,000";
+});
+document.getElementById("parsePurchaseRequest")?.addEventListener("click", async () => {
+  const form = document.getElementById("requestForm");
+  const message = requestSourceMessage?.value.trim() || "";
+  const status = document.getElementById("requestParseStatus");
+  const review = document.getElementById("requestParseReview");
+  const button = document.getElementById("parsePurchaseRequest");
+  if (message.length < 3) { status.textContent = "Paste the purchase requirement first."; requestSourceMessage?.focus(); return; }
+  button.disabled = true; button.textContent = "Parsing…";
+  status.textContent = "Reading the requirement and identifying request details…";
+  review.hidden = true; review.innerHTML = "";
+  try {
+    const response = await apiFetch(API + "/requests/parse", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message})});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not parse purchase requirement");
+    const x = data.extracted || {}, filled = [];
+    const setValue = (key,value) => {
+      if (value !== null && value !== undefined && value !== "" && form.elements[key]) {
+        form.elements[key].value = value;
+        form.elements[key].dispatchEvent(new Event("change",{bubbles:true}));
+        filled.push(key);
+      }
+    };
+    setValue("material",x.material); setValue("quantity",x.quantity); setValue("unit",x.unit);
+    setValue("category",x.category); setValue("site",x.site); setValue("required_by",x.required_by); setValue("priority",x.priority);
+    if (x.additional_information && requestAdditionalInformation) {
+      requestAdditionalInformation.value = x.additional_information;
+      requestAdditionalInformation.dispatchEvent(new Event("input",{bubbles:true}));
+      filled.push("additional information");
+    }
+    const labels = {material:"Material / item",quantity:"Quantity",unit:"Unit",category:"Category",site:"Project / site",required_by:"Required date",priority:"Priority","additional information":"Additional information"};
+    const details = filled.map(key => labels[key] || key);
+    review.innerHTML = "<strong>Extraction review</strong><p>" + (details.length ? "Recognised and populated: " + details.map(escapeHtml).join(", ") + "." : "No fields could be confidently identified. You can still enter the details manually.") + "</p><small>Check every populated value and complete any missing fields before creating the request. The original message is retained in Additional information so technical instructions are not lost.</small>";
+    review.hidden = false;
+    status.textContent = filled.length ? "Recognised " + filled.length + " field(s). Review the form before saving." : "No supported fields found. Please complete the form manually.";
+    if (x.material) form.elements.material?.focus();
+  } catch(error) { status.textContent = error.message; }
+  finally { button.disabled = false; button.textContent = "✦ Parse request"; }
+});
+document.getElementById("requestForm").addEventListener("reset", () => {
+  if (requestSourceMessage) requestSourceMessage.value = "";
+  const status = document.getElementById("requestParseStatus");
+  if (status) status.textContent = "Paste the requirement, then parse to populate the fields below.";
+  const review = document.getElementById("requestParseReview");
+  if (review) { review.hidden = true; review.innerHTML = ""; }
+  if (requestAdditionalCount) requestAdditionalCount.textContent = "0 / 8,000";
+});
 document.getElementById("requestForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const formData = new FormData(e.target);
