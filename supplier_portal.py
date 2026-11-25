@@ -118,6 +118,8 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
         req=db.execute("SELECT * FROM requests WHERE id=?",(request_id,)).fetchone()
         if not req:
             raise HTTPException(status_code=404,detail="Purchase request not found.")
+        if req["status"] != "Open":
+            raise HTTPException(status_code=409,detail="This purchase request is no longer accepting supplier quotations.")
         suppliers=db.execute("SELECT * FROM suppliers ORDER BY name COLLATE NOCASE").fetchall()
         for supplier in suppliers:
             if not _supplier_matches(supplier, req["category"]):
@@ -125,9 +127,24 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
             email=(supplier["email"] or "").strip()
             if not email:
                 skipped.append(supplier["name"]+" (no email)"); continue
-            existing=db.execute("SELECT id,status FROM supplier_rfq_invites WHERE request_id=? AND supplier_id=?",(request_id,supplier["id"])).fetchone()
-            if existing and existing["status"] in ("sent","submitted","sending"):
-                skipped.append(supplier["name"]); continue
+            existing=db.execute("SELECT id,status,expires_at,created_at FROM supplier_rfq_invites WHERE request_id=? AND supplier_id=?",(request_id,supplier["id"])).fetchone()
+            if existing:
+                state=existing["status"]
+                if state=="submitted":
+                    skipped.append(supplier["name"]); continue
+                if state=="sent":
+                    try:
+                        if datetime.fromisoformat(existing["expires_at"].replace("Z","+00:00")).timestamp()>time.time():
+                            skipped.append(supplier["name"]); continue
+                    except (TypeError,ValueError):
+                        skipped.append(supplier["name"]); continue
+                if state=="sending":
+                    try:
+                        started=datetime.fromisoformat(existing["created_at"].replace("Z","+00:00")).timestamp()
+                        if started>time.time()-600:
+                            skipped.append(supplier["name"]); continue
+                    except (TypeError,ValueError):
+                        skipped.append(supplier["name"]); continue
             raw=secrets.token_urlsafe(36)
             expires=(datetime.utcnow()+timedelta(days=INVITE_DAYS)).replace(microsecond=0).isoformat()+"Z"
             if existing:
@@ -193,29 +210,49 @@ def supplier_portal_details(token: str):
     return {"status":"open","supplier":invite["supplier_name"],"request":{"code":invite["request_code"],"material":invite["material"],"category":invite["category"],"quantity":invite["quantity"],"unit":invite["unit"],"site":invite["site"],"required_by":invite["required_by"],"additional_information":invite["additional_information"]}}
 
 @router.post("/api/supplier-portal/{token}")
-def supplier_portal_submit(token: str,payload: SupplierPortalSubmission):
-    invite=_get_invite(token)
-    if not invite: raise HTTPException(status_code=404,detail="Invitation not found.")
-    if invite["status"]=="submitted" or invite["quote_id"]:
-        raise HTTPException(status_code=409,detail="A quotation has already been submitted for this invitation.")
-    if invite["status"]!="sent" or datetime.fromisoformat(invite["expires_at"].replace("Z","+00:00")).timestamp()<time.time():
-        raise HTTPException(status_code=410,detail="This invitation has expired or is no longer active.")
-    note=json.dumps({"source":"secure_supplier_portal","warranty":payload.warranty,"validity_days":payload.validity_days,"technical_response":payload.technical_response,"exclusions":payload.exclusions,"supplier_note":payload.note},ensure_ascii=False)
+def supplier_portal_submit(token: str, payload: SupplierPortalSubmission):
+    # Hash-only bearer links are single-use. BEGIN IMMEDIATE serializes concurrent
+    # submissions before checking the invitation and supplier/request duplicate.
+    if not token or len(token) > 200:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+    note=json.dumps({
+        "source":"secure_supplier_portal",
+        "warranty":payload.warranty,
+        "validity_days":payload.validity_days,
+        "technical_response":payload.technical_response,
+        "exclusions":payload.exclusions,
+        "supplier_note":payload.note
+    },ensure_ascii=False)
     with dashboard_module.connect() as db:
         ensure_tables(db)
-        current=db.execute("SELECT * FROM supplier_rfq_invites WHERE id=?",(invite["id"],)).fetchone()
-        if not current or current["status"]!="sent" or current["quote_id"]:
+        db.execute("BEGIN IMMEDIATE")
+        invite=db.execute("""SELECT i.*,r.status request_status
+            FROM supplier_rfq_invites i JOIN requests r ON r.id=i.request_id
+            WHERE i.token_hash=?""",(_hash(token),)).fetchone()
+        if not invite:
+            raise HTTPException(status_code=404,detail="Invitation not found.")
+        if invite["status"]=="submitted" or invite["quote_id"]:
             raise HTTPException(status_code=409,detail="A quotation has already been submitted for this invitation.")
+        if invite["status"]!="sent" or datetime.fromisoformat(invite["expires_at"].replace("Z","+00:00")).timestamp()<time.time():
+            raise HTTPException(status_code=410,detail="This invitation has expired or is no longer active.")
+        if invite["request_status"]!="Open":
+            raise HTTPException(status_code=409,detail="This purchase request is no longer accepting quotations.")
         duplicate=db.execute("SELECT id FROM quotes WHERE request_id=? AND supplier_id=?",(invite["request_id"],invite["supplier_id"])).fetchone()
         if duplicate:
             raise HTTPException(status_code=409,detail="This supplier already has a quotation recorded for this purchase request. Contact the buyer if a revision is required.")
         cur=db.execute("""INSERT INTO quotes(supplier_id,request_id,unit_price,freight,tax_rate,lead_days,payment_days,note,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?)""",(invite["supplier_id"],invite["request_id"],payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,note,_now()))
-        db.execute("UPDATE supplier_rfq_invites SET status='submitted',submitted_at=?,quote_id=? WHERE id=? AND status='sent'",(_now(),cur.lastrowid,invite["id"]))
-        if db.execute("SELECT changes()").fetchone()[0]!=1:
+            VALUES(?,?,?,?,?,?,?,?,?)""",
+            (invite["supplier_id"],invite["request_id"],payload.unit_price,payload.freight,payload.tax_rate,
+             payload.lead_days,payload.payment_days,note,_now()))
+        updated=db.execute("""UPDATE supplier_rfq_invites SET status='submitted',submitted_at=?,quote_id=?
+            WHERE id=? AND status='sent' AND quote_id IS NULL""",(_now(),cur.lastrowid,invite["id"]))
+        if updated.rowcount != 1:
+            db.rollback()
             raise HTTPException(status_code=409,detail="This invitation was already submitted.")
         db.execute("""CREATE TABLE IF NOT EXISTS audit_events(id INTEGER PRIMARY KEY AUTOINCREMENT,actor TEXT NOT NULL,action TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,details_json TEXT NOT NULL DEFAULT '{}',created_at TEXT NOT NULL)""")
-        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",("Supplier portal","supplier_quote_submitted","quotation",str(cur.lastrowid),json.dumps({"request_id":invite["request_id"],"supplier_id":invite["supplier_id"]}),_now()))
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            ("Supplier portal","supplier_quote_submitted","quotation",str(cur.lastrowid),
+             json.dumps({"request_id":invite["request_id"],"supplier_id":invite["supplier_id"]}),_now()))
     return {"success":True,"message":"Your quotation has been submitted successfully. The procurement team will review it.","quote_id":cur.lastrowid}
 
 @router.get("/api/rfq/status")
@@ -224,12 +261,36 @@ def admin_rfq_status():
         ensure_tables(db)
         rows=db.execute("""SELECT r.id request_id,r.code,
             COUNT(i.id) invited_count,
-            SUM(CASE WHEN i.status='sent' THEN 1 ELSE 0 END) sent_count,
-            SUM(CASE WHEN i.status='submitted' THEN 1 ELSE 0 END) submitted_count,
-            SUM(CASE WHEN i.status='failed' THEN 1 ELSE 0 END) failed_count,
+            COALESCE(SUM(CASE WHEN i.status='sent' THEN 1 ELSE 0 END),0) sent_count,
+            COALESCE(SUM(CASE WHEN i.status='submitted' THEN 1 ELSE 0 END),0) submitted_count,
+            COALESCE(SUM(CASE WHEN i.status='failed' THEN 1 ELSE 0 END),0) failed_count,
             (SELECT COUNT(*) FROM quotes q WHERE q.request_id=r.id) quote_count
-            FROM requests r LEFT JOIN supplier_rfq_invites i ON i.request_id=r.id GROUP BY r.id ORDER BY r.id DESC""").fetchall()
+            FROM requests r LEFT JOIN supplier_rfq_invites i ON i.request_id=r.id
+            GROUP BY r.id ORDER BY r.id DESC""").fetchall()
     return {"requests":[dict(row) for row in rows]}
+
+@router.get("/api/rfq/request/{request_id}")
+def admin_rfq_request_detail(request_id: int):
+    with dashboard_module.connect() as db:
+        ensure_tables(db)
+        req=db.execute("SELECT id,code,material,status FROM requests WHERE id=?",(request_id,)).fetchone()
+        if not req:
+            raise HTTPException(status_code=404,detail="Purchase request not found.")
+        invites=db.execute("""SELECT i.id,i.supplier_id,s.name supplier_name,i.recipient,i.status,
+            i.sent_at,i.expires_at,i.submitted_at,i.quote_id,i.error
+            FROM supplier_rfq_invites i JOIN suppliers s ON s.id=i.supplier_id
+            WHERE i.request_id=? ORDER BY i.created_at DESC,i.id DESC""",(request_id,)).fetchall()
+        quotes=db.execute("""SELECT q.id quote_id,q.supplier_id,s.name supplier_name,q.unit_price,
+            q.freight,q.tax_rate,q.lead_days,q.payment_days,q.created_at,q.technical_status
+            FROM quotes q JOIN suppliers s ON s.id=q.supplier_id
+            WHERE q.request_id=? ORDER BY q.created_at DESC,q.id DESC""",(request_id,)).fetchall()
+    return {"request":dict(req),"invites":[dict(row) for row in invites],
+        "quotes":[dict(row) for row in quotes],
+        "summary":{"invited":len(invites),
+            "sent":sum(1 for row in invites if row["status"]=="sent"),
+            "submitted":sum(1 for row in invites if row["status"]=="submitted"),
+            "failed":sum(1 for row in invites if row["status"]=="failed"),
+            "quotation_count":len(quotes)}}
 
 @router.post("/api/rfq/dispatch/{request_id}")
 def admin_dispatch_rfq(request_id:int,request:Request):

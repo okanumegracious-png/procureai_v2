@@ -1613,6 +1613,9 @@ def dashboard_parse_quote(payload: QuoteParsePayload):
 @app.post("/api/quotes", status_code=201)
 def dashboard_create_quote(payload: DashboardQuotePayload):
     with dashboard_module.connect() as db:
+        # Serialize the duplicate check and insert so simultaneous manual submissions
+        # cannot create two quotations for the same supplier/request pair.
+        db.execute("BEGIN IMMEDIATE")
         if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone():
