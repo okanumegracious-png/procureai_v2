@@ -1624,7 +1624,57 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   try { await apiFetch(`${API}/auth/logout`, { method: "POST" }); }
   finally { dashboardData = {}; showLogin("You have signed out."); }
 });
-document.getElementById("refreshBtn").addEventListener("click", fetchDashboard);
+
+// --- Installable ProcureAI app (PWA) ---
+let deferredInstallPrompt = null;
+const installAppButton = document.getElementById("installAppBtn");
+const isInstalledApp = () => window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+function syncInstallButton() {
+  if (!installAppButton) return;
+  installAppButton.hidden = isInstalledApp();
+}
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  syncInstallButton();
+  if (installAppButton && !isInstalledApp()) installAppButton.hidden = false;
+});
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  if (installAppButton) installAppButton.hidden = true;
+  showToast("ProcureAI has been installed on this device.");
+});
+if (installAppButton) {
+  installAppButton.addEventListener("click", async () => {
+    if (isInstalledApp()) {
+      installAppButton.hidden = true;
+      return;
+    }
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (choice?.outcome === "accepted") showToast("ProcureAI installation started.");
+      else showToast("Installation was cancelled. You can install ProcureAI later.");
+      syncInstallButton();
+      return;
+    }
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const instructions = isIOS
+      ? "To install ProcureAI on iPhone or iPad: tap the Share button in Safari, then choose “Add to Home Screen”."
+      : "To install ProcureAI: open your browser menu (⋮) and choose “Install app” or “Add to Home screen”. If that option is missing, open this site in Chrome and try again.";
+    showToast(instructions);
+  });
+}
+syncInstallButton();
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(error => {
+      console.warn("ProcureAI offline support could not be enabled:", error);
+    });
+  }, {once:true});
+}
+
 async function initializeApp() {
   try {
     const response = await apiFetch(`${API}/auth/me`);

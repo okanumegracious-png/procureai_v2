@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "ProcureAI — Industrial Operations Workspace",
+  "short_name": "ProcureAI",
+  "description": "Industrial procurement and operations workspace.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f8fb",
+  "theme_color": "#101b2d",
+  "icons": [
+    {
+      "src": "/static/procureai-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

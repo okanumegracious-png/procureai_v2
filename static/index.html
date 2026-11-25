@@ -3,6 +3,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b2d">
+  <meta name="description" content="ProcureAI industrial procurement and operations workspace.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/procureai-icon.svg" type="image/svg+xml">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ProcureAI — Industrial operations workspace</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -42,7 +48,7 @@
     <header class="topbar">
       <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
       <div class="crumb">Workspace <span>/</span> <b id="crumbTitle">Overview</b></div>
-      <div class="top-actions"><span class="live-dot"></span><span class="system-label">Private workspace</span><button class="icon-btn" id="refreshBtn" title="Refresh">↻</button><button class="signout-btn" id="logoutBtn" type="button">Sign out</button><div class="top-avatar">GO</div></div>
+      <div class="top-actions"><span class="live-dot"></span><span class="system-label">Private workspace</span><button class="btn btn-install" id="installAppBtn" type="button" hidden><span aria-hidden="true">↓</span> Install app</button><button class="signout-btn" id="logoutBtn" type="button">Sign out</button><div class="top-avatar">GO</div></div>
     </header>
 
     <section class="page active" id="page-overview">

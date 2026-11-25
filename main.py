@@ -2352,8 +2352,21 @@ def get_dashboard_analysis(request_id: int):
 
 @app.get("/")
 def index():
-    from fastapi.responses import FileResponse
     return FileResponse(BASE_DIR / "static" / "index.html")
+
+
+@app.get("/manifest.webmanifest")
+def web_app_manifest():
+    return FileResponse(BASE_DIR / "static" / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/sw.js")
+def web_app_service_worker():
+    return FileResponse(
+        BASE_DIR / "static" / "sw.js",
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"},
+    )
 
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
