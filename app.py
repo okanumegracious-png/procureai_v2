@@ -106,15 +106,14 @@ def init_db():
             if column not in supplier_columns:
                 db.execute(f"ALTER TABLE suppliers ADD COLUMN {column} {definition}")
 
-        # One-time reset of pre-MVP manually entered test procurement records.
-        # The migration marker prevents future startup from deleting live requests.
+        # Retired destructive fixture reset. Never delete operational procurement records at startup.
+        # Recording the legacy key prevents older code paths from attempting this reset again.
         db.execute("CREATE TABLE IF NOT EXISTS procureai_migrations (migration_key TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
         reset_key = "2026-11-24-clear-pre-mvp-request-fixtures"
-        if not db.execute("SELECT 1 FROM procureai_migrations WHERE migration_key=?", (reset_key,)).fetchone():
-            db.execute("DELETE FROM orders")
-            db.execute("DELETE FROM quotes")
-            db.execute("DELETE FROM requests")
-            db.execute("INSERT INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)", (reset_key, datetime.utcnow().isoformat()))
+        db.execute(
+            "INSERT OR IGNORE INTO procureai_migrations(migration_key,applied_at) VALUES(?,?)",
+            (reset_key, datetime.utcnow().isoformat()),
+        )
 
         # Explicitly requested fictional supplier for the generator-servicing demo section.
         # Clearly labelled as fictional and unverified; never present as a real vendor.
