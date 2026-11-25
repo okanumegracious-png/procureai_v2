@@ -806,10 +806,11 @@ def _now() -> str:
 
 
 PROJECT_MILESTONE_TEMPLATE = [
-    {"key": "boq_extraction", "label": "BOQ extraction", "weight": 15},
-    {"key": "rfq_dispatch", "label": "RFQ dispatch", "weight": 15},
-    {"key": "bid_evaluation", "label": "Bid evaluation", "weight": 15},
-    {"key": "po_award", "label": "PO award", "weight": 15},
+    {"key": "boq_extraction", "label": "BOQ extraction", "weight": 12},
+    {"key": "rfq_dispatch", "label": "RFQ dispatch", "weight": 12},
+    {"key": "buyer_confirmation", "label": "Buyer confirmation", "weight": 12},
+    {"key": "bid_evaluation", "label": "Bid evaluation", "weight": 12},
+    {"key": "po_award", "label": "PO award", "weight": 12},
 ]
 
 
@@ -827,24 +828,73 @@ def _project_milestones(raw: str) -> list:
     return result
 
 
-def _complete_project_milestone(db, project_id: str, key: str, source: str = "workflow") -> None:
+def _set_project_milestone(db, project_id: str, key: str, completed: bool, source: str = "workflow") -> None:
     row = db.execute("SELECT milestones_json FROM projects WHERE project_id=?", (project_id,)).fetchone()
     if not row:
         return
     milestones = _project_milestones(row["milestones_json"])
+    changed = False
     for item in milestones:
-        if item["key"] == key and not item["completed"]:
-            item["completed"] = True
-            item["completed_at"] = _now()
-            item["source"] = source
-    db.execute("UPDATE projects SET milestones_json=?,updated_at=? WHERE project_id=?",
-               (json.dumps(milestones), _now(), project_id))
+        if item["key"] != key:
+            continue
+        if completed and not item["completed"]:
+            item.update({"completed": True, "completed_at": _now(), "source": source})
+            changed = True
+        elif not completed and item["completed"]:
+            item.update({"completed": False, "completed_at": None, "source": source})
+            changed = True
+    if changed:
+        db.execute("UPDATE projects SET milestones_json=?,updated_at=? WHERE project_id=?",
+                   (json.dumps(milestones), _now(), project_id))
+
+
+def _complete_project_milestone(db, project_id: str, key: str, source: str = "workflow") -> None:
+    _set_project_milestone(db, project_id, key, True, source)
+
+
+def _sync_project_milestones(db, project_id: str) -> None:
+    """Reconcile timeline milestones against saved procurement records."""
+    project = db.execute("SELECT project_id FROM projects WHERE project_id=?", (project_id,)).fetchone()
+    if not project:
+        return
+    boq_count = db.execute("SELECT COUNT(*) FROM workflow_boq_items WHERE project_id=?", (project_id,)).fetchone()[0]
+    if boq_count:
+        _complete_project_milestone(db, project_id, "boq_extraction", "Saved BOQ records")
+
+    table_names = {row["name"] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "supplier_request_emails" in table_names:
+        sent_count = db.execute("""SELECT COUNT(*) FROM supplier_request_emails e
+            JOIN project_purchase_requests pr ON pr.request_id=e.request_id
+            WHERE pr.project_id=?""", (project_id,)).fetchone()[0]
+        if sent_count:
+            _complete_project_milestone(db, project_id, "rfq_dispatch", "Successfully sent supplier request")
+
+    if "buyer_confirmations" in table_names:
+        confirmation = db.execute("""SELECT status,budget_delivery_accepted FROM buyer_confirmations
+            WHERE project_id=? ORDER BY id DESC LIMIT 1""", (project_id,)).fetchone()
+        confirmed = bool(confirmation and confirmation["status"] == "confirmed"
+                         and confirmation["budget_delivery_accepted"] == "yes")
+        _set_project_milestone(db, project_id, "buyer_confirmation", confirmed,
+                               "Current buyer confirmation" if confirmed else "Buyer confirmation not accepted")
+
+    if "workflow_purchase_orders" in table_names:
+        workflow_approved = db.execute("""SELECT COUNT(*) FROM workflow_purchase_orders
+            WHERE project_id=? AND status='approved'""", (project_id,)).fetchone()[0]
+    else:
+        workflow_approved = 0
+    dashboard_approved = db.execute("""SELECT COUNT(*) FROM orders o
+        JOIN project_purchase_requests pr ON pr.request_id=o.request_id
+        WHERE pr.project_id=? AND lower(o.status)='approved'""", (project_id,)).fetchone()[0]
+    if workflow_approved or dashboard_approved:
+        _complete_project_milestone(db, project_id, "po_award", "Approved purchase order")
 
 
 def _recalculate_project(db, project_id: str) -> dict:
     project = db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    _sync_project_milestones(db, project_id)
+    project = db.execute("SELECT * FROM projects WHERE project_id=?", (project_id,)).fetchone()
     milestones = _project_milestones(project["milestones_json"])
     if project["status"] == "terminated":
         latest = db.execute("SELECT progress_percent FROM project_updates WHERE project_id=? ORDER BY id DESC LIMIT 1", (project_id,)).fetchone()
@@ -1229,8 +1279,8 @@ def recommend_supplier(payload: RecommendationRequest):
     eligible = [item for item in ranked
                 if item.get("verification_status") == "verified" and item.get("technical_status") == "compliant"]
     with connect() as db:
-        if db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
-            _complete_project_milestone(db, payload.project_id, "bid_evaluation", "Supplier comparison workflow")
+        if eligible and db.execute("SELECT 1 FROM projects WHERE project_id=?", (payload.project_id,)).fetchone():
+            _complete_project_milestone(db, payload.project_id, "bid_evaluation", "Completed supplier comparison")
             _recalculate_project(db, payload.project_id)
     return {"success":True,"recommended":eligible[0] if eligible else None,"ranking":ranked,
             "recommendation_note":"Only quotations with verified suppliers and recorded technical compliance are eligible for recommendation. If none qualify, resolve the listed checks before award.",
@@ -1816,6 +1866,10 @@ def dashboard_send_supplier_request(quote_id: int, request: Request):
         db.execute("INSERT INTO supplier_request_emails(quote_id,supplier_id,request_id,recipient,sent_by,sent_at) VALUES(?,?,?,?,?,?)", (quote_id, quote["supplier_id"], quote["request_id"], recipient, getattr(request.state, "auth_user", ""), sent_at))
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)", (getattr(request.state, "auth_user", ""), "send_supplier_request_email", "quotation", str(quote_id), json.dumps({"recipient": recipient, "request_code": quote["request_code"]}), sent_at))
+        linked = db.execute("SELECT project_id FROM project_purchase_requests WHERE request_id=?", (quote["request_id"],)).fetchone()
+        if linked:
+            _complete_project_milestone(db, linked["project_id"], "rfq_dispatch", "Successfully sent supplier request")
+            _recalculate_project(db, linked["project_id"])
     return {"success": True, "already_sent": False, "recipient": recipient, "sent_at": sent_at}
 
 def _parse_purchase_request_message(message: str) -> dict:
@@ -2099,6 +2153,11 @@ def dashboard_decide_order(order_id: int, payload: DashboardDecisionPayload, req
             raise HTTPException(status_code=409, detail="Purchase order is no longer awaiting approval")
         if payload.action == "approve":
             db.execute("UPDATE requests SET status='Awarded' WHERE id=?",(order["request_id"],))
+            linked_project = db.execute("SELECT project_id FROM project_purchase_requests WHERE request_id=?",
+                                        (order["request_id"],)).fetchone()
+            if linked_project:
+                _complete_project_milestone(db, linked_project["project_id"], "po_award", "Approved dashboard purchase order")
+                _recalculate_project(db, linked_project["project_id"])
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
             (getattr(request.state,"auth_user",""), "approve" if payload.action=="approve" else "reject", "purchase_order", str(order_id), json.dumps({"status":status,"note":payload.note}), _now()))
@@ -2815,6 +2874,10 @@ def record_buyer_confirmation(project_id: str, payload: BuyerConfirmationPayload
                 "budget_delivery_accepted":payload.budget_delivery_accepted
             }),now))
         saved = dict(db.execute("SELECT * FROM buyer_confirmations WHERE id=?", (confirmation_id,)).fetchone())
+        _set_project_milestone(db, project_id, "buyer_confirmation",
+            payload.status == "confirmed" and payload.budget_delivery_accepted == "yes",
+            "Recorded buyer decision")
+        _recalculate_project(db, project_id)
     return {"success":True,"confirmation":saved,"confirmations":[saved],"updated":bool(existing)}
 
 
@@ -2869,11 +2932,15 @@ def get_dashboard():
 @app.get("/api/analysis")
 def get_dashboard_analysis(request_id: int):
     with dashboard_module.connect() as db:
-        _require_request_buyer_confirmation(db, int(request_id))
-    try:
-        return dashboard_module.analyse_request(request_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        project_id = _require_request_buyer_confirmation(db, int(request_id))
+        try:
+            analysis = dashboard_module.analyse_request(request_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        if analysis.get("recommendation"):
+            _complete_project_milestone(db, project_id, "bid_evaluation", "Completed quotation analysis")
+            _recalculate_project(db, project_id)
+        return analysis
 
 
 @app.get("/")
