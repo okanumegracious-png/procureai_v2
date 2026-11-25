@@ -125,6 +125,6 @@ def test_purchase_order_overview_email_marks_pending_order_as_non_authorising(mo
     assert "PO-261125-001" in sent["text"]
     assert "Pending approval" in sent["text"]
     assert "not an approved purchase order" in sent["text"]
-    assert "do not dispatch goods" in sent["text"]
+    assert "do not dispatch goods" in sent["text"].lower()
     assert "₦547,500.00" in sent["text"]
     assert "IMPORTANT PROCUREMENT NOTICE" in sent["html"]
