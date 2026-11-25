@@ -214,14 +214,58 @@ document.getElementById("projectWorkspaceContent").addEventListener("click", asy
     }
     return;
   }
+  const buyerToggle = event.target.closest("#toggleBuyerConfirmation");
+  if (buyerToggle) {
+    const buyerForm = document.getElementById("buyerConfirmationForm");
+    if (buyerForm) {
+      buyerForm.hidden = !buyerForm.hidden;
+      buyerToggle.textContent = buyerForm.hidden ? (buyerForm.dataset.saved === "yes" ? "✎ Edit confirmation" : "＋ Record confirmation") : "− Close form";
+      if (!buyerForm.hidden) buyerForm.querySelector("input[name=buyer_name]")?.focus();
+    }
+    return;
+  }
+  const requestRow = event.target.closest("[data-open-project-request]");
+  if (requestRow) {
+    if (requestRow.tagName === "TR" && event.target.closest("button") && !event.target.closest("[data-open-project-request]")) return;
+    const requestId = Number(requestRow.dataset.openProjectRequest);
+    const requestRecord = (dashboardData.requests || []).find(item => Number(item.id) === requestId);
+    if (!requestRecord) { showToast("Purchase request details are unavailable. Refresh the dashboard and try again.", true); return; }
+    const form = document.getElementById("requestForm");
+    form.reset();
+    await populateRequestProjects(requestRecord.project_id || activeProjectId);
+    form.elements.project_id.value = requestRecord.project_id || activeProjectId;
+    for (const key of ["material","category","quantity","site","required_by","priority","additional_information"]) {
+      if (form.elements[key]) form.elements[key].value = requestRecord[key] ?? "";
+    }
+    const unit = form.elements.unit;
+    if (unit) {
+      const known = [...unit.options].some(option => option.value === requestRecord.unit);
+      unit.value = known ? requestRecord.unit : "other";
+      if (!known && form.elements.custom_unit) form.elements.custom_unit.value = requestRecord.unit || "";
+      syncRequestCustomUnit();
+    }
+    form.dataset.requestId = String(requestId);
+    document.querySelector("#requestModal .modal-head h2").textContent = "Edit purchase request · " + requestRecord.code;
+    setFormSubmitLabel(form, "Save changes");
+    document.getElementById("requestModal").classList.add("open");
+    return;
+  }
   const button = event.target.closest("[data-add-project-request]");
   if (!button || !activeProjectId) return;
   const form = document.getElementById("requestForm");
   form.reset();
+  delete form.dataset.requestId;
+  setFormSubmitLabel(form, "Create request");
   await populateRequestProjects(activeProjectId);
   form.elements.project_id.value = activeProjectId;
   document.querySelector("#requestModal .modal-head h2").textContent = "Add purchase request to project";
   document.getElementById("requestModal").classList.add("open");
+});
+document.getElementById("projectWorkspaceContent").addEventListener("keydown", event => {
+  const row = event.target.closest("tr[data-open-project-request]");
+  if (!row || !["Enter"," "].includes(event.key)) return;
+  event.preventDefault();
+  row.click();
 });
 document.getElementById("projectWorkspaceContent").addEventListener("submit", async event => {
   if (event.target.id === "projectLinkQuotationForm") {
@@ -415,7 +459,7 @@ function renderProjectWorkspace(project) {
   const progress = Math.max(0,Math.min(100,Number(project.progress_percent || 0)));
   const latestReported = updates.length ? Number(updates[0].progress_percent || 0) : 0;
   const purchaseRequests = project.purchase_requests || [];
-  const purchaseRequestsMarkup = purchaseRequests.length ? `<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody>${purchaseRequests.map(r => `<tr><td><b>${escapeHtml(r.code)}</b></td><td><b>${escapeHtml(r.material)}</b><small>${escapeHtml(r.category)}</small></td><td>${escapeHtml(r.quantity)} ${escapeHtml(r.unit)}</td><td>${projectDate(r.required_by)}</td><td><span class="project-request-priority ${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">${escapeHtml(r.status)}</span></td></tr>`).join("")}</tbody></table></div>` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>';
+  const purchaseRequestsMarkup = purchaseRequests.length ? `<div class="project-request-table-wrap"><table class="project-request-table"><thead><tr><th>REFERENCE</th><th>ITEM / MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody>${purchaseRequests.map(r => `<tr class="project-request-row" ${projectLocked ? "" : `data-open-project-request="${Number(r.id)}" tabindex="0" role="button" aria-label="Open and edit ${escapeHtml(r.code)} — ${escapeHtml(r.material)}"`}><td><b>${escapeHtml(r.code)}</b></td><td><b>${escapeHtml(r.material)}</b><small>${escapeHtml(r.category)}</small>${projectLocked ? "" : '<small class="project-request-hint">Tap to open / edit</small>'}</td><td>${escapeHtml(r.quantity)} ${escapeHtml(r.unit)}</td><td>${projectDate(r.required_by)}</td><td><span class="project-request-priority ${String(r.priority).toLowerCase()==="urgent"?"urgent":""}">${escapeHtml(r.priority)}</span></td><td><span class="project-request-status">${escapeHtml(r.status)}</span></td></tr>`).join("")}</tbody></table></div>` : '<div class="project-feed-empty">No purchase requests have been added to this project yet. Add the first request to start tracking procurement requirements here.</div>';
   const milestoneMarkup = milestones.map(item => `
     <div class="project-milestone ${item.completed ? "is-complete" : ""}">
       <span class="project-milestone-check">${item.completed ? "✓" : "○"}</span><div><b>${escapeHtml(item.label)}</b><small>${item.completed ? "Completed" + (item.completed_at ? " · " + projectDate(item.completed_at.slice(0,10)) : "") : "Awaiting completion"}</small></div><strong>${Number(item.weight || 0)}%</strong>
@@ -461,9 +505,9 @@ ${project.status === "completed" ? `<div class="project-closure-notice"><b>Proje
       <div class="project-request-list">${purchaseRequestsMarkup}</div>
     </section>
     <section class="project-overview-card project-buyer-confirmation-card">
-      <div class="project-section-heading"><div><span class="eyebrow">PROCUREMENT GATE · STAGE 3</span><h2>Buyer confirmation</h2><p>Record the buyer's response received by email, WhatsApp or phone. No buyer login or automated email link is required.</p></div><span class="project-deliverable-count" id="buyerConfirmationStatus">Loading status…</span></div>
+      <div class="project-section-heading"><div><span class="eyebrow">PROCUREMENT GATE · STAGE 3</span><h2>Buyer confirmation</h2><p>Capture the buyer's actual decision on requirements, budget and delivery.</p></div><div class="buyer-confirmation-heading-actions"><span class="project-deliverable-count" id="buyerConfirmationStatus">Loading status…</span>${projectLocked ? "" : '<button type="button" class="btn btn-secondary buyer-confirmation-toggle" id="toggleBuyerConfirmation">＋ Record confirmation</button>'}</div></div>
       <div id="buyerConfirmationHistory" class="project-linked-quote-list"><div class="project-feed-empty">Loading confirmation history…</div></div>
-      ${projectLocked ? '<p class="project-muted">This project is closed. Buyer confirmation records are read-only.</p>' : `<form id="buyerConfirmationForm" class="project-link-quote-form buyer-confirmation-form">
+      ${projectLocked ? '<p class="project-muted">This project is closed. Buyer confirmation records are read-only.</p>' : `<form id="buyerConfirmationForm" class="project-link-quote-form buyer-confirmation-form" hidden>
         <label>Buyer name<input name="buyer_name" required minlength="2" maxlength="200" placeholder="Name of the person who responded"></label>
         <label>Buyer organisation<input name="organisation" maxlength="200" placeholder="Organisation / department (optional)"></label>
         <label>Response received through<select name="channel" required><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="phone">Phone call</option></select></label>
@@ -522,6 +566,9 @@ ${project.status === "completed" ? `<div class="project-closure-notice"><b>Proje
       if (!response.ok) throw new Error(data.detail || "Could not save buyer confirmation");
       showToast("Buyer confirmation saved");
       await loadBuyerConfirmations(project.project_id);
+      buyerForm.hidden = true;
+      const toggle = document.getElementById("toggleBuyerConfirmation");
+      if (toggle) toggle.textContent = "✎ Edit confirmation";
     } catch(error) { showToast(error.message,true); }
     finally { button.disabled = false; }
   });
@@ -551,9 +598,17 @@ async function loadBuyerConfirmations(projectId) {
       }
       const submit = form.querySelector('button[type="submit"]');
       if (submit) submit.textContent = "Update buyer confirmation";
+      form.dataset.saved = "yes";
+      form.hidden = true;
+      const toggle = document.getElementById("toggleBuyerConfirmation");
+      if (toggle) toggle.textContent = "✎ Edit confirmation";
     } else if (form) {
       const submit = form.querySelector('button[type="submit"]');
       if (submit) submit.textContent = "Save buyer confirmation";
+      form.dataset.saved = "no";
+      form.hidden = true;
+      const toggle = document.getElementById("toggleBuyerConfirmation");
+      if (toggle) toggle.textContent = "＋ Record confirmation";
     }
   } catch(error) {
     status.textContent = "Unavailable";
@@ -1430,6 +1485,9 @@ document.querySelectorAll("[data-close]").forEach(btn => {
     backdrop.classList.remove("open");
     if (backdrop.id === "requestModal") {
       document.getElementById("requestForm").reset();
+      const requestForm = document.getElementById("requestForm");
+      delete requestForm.dataset.requestId;
+      setFormSubmitLabel(requestForm, "Create request");
       document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
     }
     if (backdrop.id === "quoteModal") {
@@ -1509,7 +1567,8 @@ document.getElementById("requestForm").addEventListener("reset", () => {
 });
 document.getElementById("requestForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const formData = new FormData(e.target);
+  const form = e.target;
+  const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
   if (payload.unit === "other") {
     payload.unit = (payload.custom_unit || "").trim();
@@ -1528,17 +1587,20 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
   const submitButton = e.target.querySelector('button[type="submit"]');
   if (submitButton) submitButton.disabled = true;
   try {
-    const res = await apiFetch(`${API}/requests`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    const editingRequestId = form.dataset.requestId;
+    const res = await apiFetch(editingRequestId ? `${API}/requests/${encodeURIComponent(editingRequestId)}` : `${API}/requests`, {
+      method: editingRequestId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
     });
     const result = await res.json();
     if (!res.ok) throw new Error(result.detail || result.error || "Could not create purchase request");
     document.getElementById("requestModal").classList.remove("open");
     e.target.reset();
+    delete form.dataset.requestId;
+    setFormSubmitLabel(form, "Create request");
     document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
     const rfqDispatch = result.rfq_dispatch || {};
     const rfqSent = Number(rfqDispatch.sent_count || 0), rfqFailed = Number(rfqDispatch.failed_count || 0);
-    showToast(`Purchase request ${result.code} created. RFQs emailed to ${rfqSent} eligible supplier(s)${rfqFailed ? `; ${rfqFailed} email(s) need attention` : ""}.`, rfqFailed > 0);
+    showToast(editingRequestId ? `Purchase request ${result.code} updated.` : `Purchase request ${result.code} created. RFQs emailed to ${rfqSent} eligible supplier(s)${rfqFailed ? `; ${rfqFailed} email(s) need attention` : ""}.`, !editingRequestId && rfqFailed > 0);
     await fetchDashboard();
     if (projectId && activeProjectId === projectId) await openProjectWorkspace(projectId);
   } catch (error) {
