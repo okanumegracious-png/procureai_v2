@@ -509,3 +509,14 @@
 
 /* Saved technical compliance review state */
 .technical-review-saved{display:grid;gap:6px;margin-top:16px;padding:14px 16px;border:1px solid #bfe3cf;border-radius:10px;background:#f1faf4}.technical-review-saved strong{font-size:12px;color:#176b49}.technical-review-saved p{margin:0;color:#5d7467;font-size:11px;line-height:1.6;overflow-wrap:anywhere}.technical-review-edit{margin-top:10px;align-self:flex-start}.technical-review-form[hidden],.technical-review-saved[hidden]{display:none!important}
+
+
+/* Project purchase request editing */
+.project-request-row{cursor:pointer;transition:background .15s ease}
+.project-request-row:hover,.project-request-row:focus-visible{background:rgba(44,105,85,.07);outline:none}
+.project-request-row:focus-visible{box-shadow:inset 0 0 0 2px var(--accent,#23856b)}
+.project-request-open{white-space:nowrap;font-size:11px;padding:7px 10px}
+.buyer-confirmation-heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.buyer-confirmation-toggle{white-space:nowrap}
+.buyer-confirmation-form[hidden]{display:none!important}
+@media(max-width:640px){.buyer-confirmation-heading-actions{width:100%;justify-content:flex-start}.project-request-open{padding:6px 8px;font-size:10px}}
