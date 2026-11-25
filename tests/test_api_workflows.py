@@ -75,6 +75,10 @@ def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authen
     })
     assert project_response.status_code == 201, project_response.text
     project_id = project_response.json()["project"]["project_id"]
+    initial_milestones = project_response.json()["project"]["milestones"]
+    assert len(initial_milestones) == 5
+    assert sum(item["weight"] for item in initial_milestones) == 60
+    assert all(item["completed"] is False for item in initial_milestones)
 
     request_response = client.post("/api/requests", json={
         "project_id": project_id,
