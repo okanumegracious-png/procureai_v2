@@ -214,26 +214,19 @@ document.getElementById("projectWorkspaceContent").addEventListener("click", asy
     }
     return;
   }
-  const buyerToggle = event.target.closest("#toggleBuyerConfirmation");
-  if (buyerToggle) {
-    const buyerForm = document.getElementById("buyerConfirmationForm");
-    if (buyerForm) {
-      buyerForm.hidden = !buyerForm.hidden;
-      buyerToggle.textContent = buyerForm.hidden ? (buyerForm.dataset.saved === "yes" ? "✎ Edit confirmation" : "＋ Record confirmation") : "− Close form";
-      if (!buyerForm.hidden) buyerForm.querySelector("input[name=buyer_name]")?.focus();
-    }
-    return;
-  }
   const requestRow = event.target.closest("[data-open-project-request]");
   if (requestRow) {
     if (requestRow.tagName === "TR" && event.target.closest("button") && !event.target.closest("[data-open-project-request]")) return;
     const requestId = Number(requestRow.dataset.openProjectRequest);
-    const requestRecord = (dashboardData.requests || []).find(item => Number(item.id) === requestId);
-    if (!requestRecord) { showToast("Purchase request details are unavailable. Refresh the dashboard and try again.", true); return; }
+    const requestsResponse = await apiFetch(`${API}/requests`);
+    const requestsData = await requestsResponse.json();
+    if (!requestsResponse.ok) throw new Error(requestsData.detail || "Could not load purchase request details");
+    const requestRecord = (requestsData.requests || []).find(item => Number(item.id) === requestId);
+    if (!requestRecord) { showToast("This purchase request could not be found. Refresh the project workspace and try again.", true); return; }
     const form = document.getElementById("requestForm");
     form.reset();
-    await populateRequestProjects(requestRecord.project_id || activeProjectId);
-    form.elements.project_id.value = requestRecord.project_id || activeProjectId;
+    await populateRequestProjects(activeProjectId);
+    form.elements.project_id.value = activeProjectId;
     for (const key of ["material","category","quantity","site","required_by","priority","additional_information"]) {
       if (form.elements[key]) form.elements[key].value = requestRecord[key] ?? "";
     }
@@ -548,6 +541,20 @@ ${project.status === "completed" ? `<div class="project-closure-notice"><b>Proje
       </article>
     </section>
 `;
+  const buyerToggle = document.getElementById("toggleBuyerConfirmation");
+  const buyerForm = document.getElementById("buyerConfirmationForm");
+  if (buyerToggle && buyerForm) {
+    buyerToggle.setAttribute("aria-controls", "buyerConfirmationForm");
+    buyerToggle.setAttribute("aria-expanded", "false");
+    buyerToggle.addEventListener("click", () => {
+      buyerForm.hidden = !buyerForm.hidden;
+      buyerToggle.setAttribute("aria-expanded", String(!buyerForm.hidden));
+      buyerToggle.textContent = buyerForm.hidden
+        ? (buyerForm.dataset.saved === "yes" ? "✎ Edit confirmation" : "＋ Record confirmation")
+        : "− Close form";
+      if (!buyerForm.hidden) buyerForm.querySelector("input[name=buyer_name]")?.focus();
+    });
+  }
   const progressInput = document.getElementById("projectReportedProgress");
   progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
   loadProjectQuotationOptions(project.project_id);
