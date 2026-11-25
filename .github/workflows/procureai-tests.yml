@@ -23,6 +23,8 @@ jobs:
           python -m pip install -r requirements.txt pytest httpx==0.27.2
       - name: Compile Python modules
         run: python -m compileall -q app.py main.py procureai_store.py agentic tests
+      - name: Check browser JavaScript syntax
+        run: node --check static/app.js && node --check static/auth.js && node --check static/job-completion.js
       - name: Run regression suite
         env:
           PROCUREAI_AUTO_BACKUP: "false"
