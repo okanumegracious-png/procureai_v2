@@ -1518,7 +1518,7 @@ def dashboard_send_supplier_request(quote_id: int, request: Request):
 def _parse_purchase_request_message(message: str) -> dict:
     """Conservatively extract request fields from informal buyer instructions."""
     raw = message.strip()
-    text = " ".join(raw.replace("\\u00a0", " ").split())
+    text = " ".join(raw.replace("\u00a0", " ").split())
     result = {"material": None, "quantity": None, "unit": None, "category": None,
               "site": None, "required_by": None, "priority": None,
               "additional_information": raw}
@@ -1535,22 +1535,32 @@ def _parse_purchase_request_message(message: str) -> dict:
         "job":"job","jobs":"job","bag":"bag","bags":"bag"
     }
     unit_pattern = "|".join(sorted((re.escape(k) for k in unit_map), key=len, reverse=True))
-    quantity_match = re.search(r"\\b(\\d[\\d,]*(?:\\.\\d+)?)\\s*(" + unit_pattern + r")\\b", text, re.I)
+    quantity_match = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s*(" + unit_pattern + r")\b", text, re.I)
     if quantity_match:
         result["quantity"] = float(quantity_match.group(1).replace(",", ""))
         result["unit"] = unit_map[quantity_match.group(2).lower()]
         before = text[:quantity_match.start()].strip(" ,:-")
         after = text[quantity_match.end():].strip(" ,:-")
-        before = re.sub(r"^(?:(?:we|i)\\s+)?(?:need|require|want|request|procure|purchase|supply|order)(?:\\s+for)?\\s+", "", before, flags=re.I)
-        after = re.split(r"[,;\\n]|\\b(?:at|in|for delivery|deliver to|required by|needed by|within)\\b", after, maxsplit=1, flags=re.I)[0].strip(" ,:-")
+        before = re.sub(r"^(?:(?:we|i)\s+)?(?:need|require|want|request|procure|purchase|supply|order)(?:\s+for)?\s+", "", before, flags=re.I)
+        after = re.split(r"[,;\n]|\b(?:at|in|for delivery|deliver to|required by|needed by|within)\b", after, maxsplit=1, flags=re.I)[0].strip(" ,:-")
         candidate = before if before else after
-        candidate = re.sub(r"^(?:of|for|a|an|the)\\s+", "", candidate, flags=re.I).strip(" .,:;-")
+        candidate = re.sub(r"^(?:of|for|a|an|the)\s+", "", candidate, flags=re.I).strip(" .,:;-")
         if candidate and len(candidate) <= 180:
             result["material"] = candidate
     else:
-        material_match = re.search(r"\\b(?:we need|we require|please supply|need|require|procure|purchase)\\s+(?:a|an|the)?\\s*([^,;\\n.]{3,120})", text, re.I)
-        if material_match:
-            result["material"] = material_match.group(1).strip()
+        count_match = re.search(r"\b(\d[\d,]*(?:\.\d+)?)\s+(?=(?:main|distribution|panel|board|cable|breaker|motor|pump|transformer|switchgear|conduit|tray|light|lamp|socket|generator|valve|pipe|equipment|installation)\b)", text, re.I)
+        if count_match:
+            result["quantity"] = float(count_match.group(1).replace(",", ""))
+            result["unit"] = "ea"
+            candidate = text[count_match.end():]
+            candidate = re.split(r"[,;\n]|\b(?:at|in|for delivery|deliver to|required by|needed by|within)\b", candidate, maxsplit=1, flags=re.I)[0].strip(" ,:-")
+            candidate = re.sub(r"^(?:of|for|a|an|the)\s+", "", candidate, flags=re.I).strip(" .,:;-")
+            if candidate and len(candidate) <= 180:
+                result["material"] = candidate
+        if not result["material"]:
+            material_match = re.search(r"\b(?:we need|we require|please supply|need|require|procure|purchase)\s+(?:a|an|the)?\s*([^,;\n.]{3,120})", text, re.I)
+            if material_match:
+                result["material"] = material_match.group(1).strip()
     lower = text.lower()
     category_terms = [
         ("Electrical",("electrical","distribution panel","mccb","circuit breaker","cable","switchgear","transformer")),
@@ -1564,19 +1574,19 @@ def _parse_purchase_request_message(message: str) -> dict:
         if any(term in lower for term in terms):
             result["category"] = category
             break
-    site_match = re.search(r"\\b(?:site|location|workshop)\\s*(?:is|:|at)?\\s+([^,;\\n.]{2,100})", text, re.I)
+    site_match = re.search(r"\b(?:site|location|workshop)\s*(?:is|:|at)?\s+([^,;\n.]{2,100})", text, re.I)
     if site_match:
         result["site"] = site_match.group(1).strip()
-    date_match = re.search(r"\\b(?:required by|needed by|delivery date|deliver by)\\s*(?:is|:)?\\s*(\\d{4}-\\d{2}-\\d{2})\\b", text, re.I)
+    date_match = re.search(r"\b(?:required by|needed by|delivery date|deliver by)\s*(?:is|:)?\s*(\d{4}-\d{2}-\d{2})\b", text, re.I)
     if date_match:
         try:
             date.fromisoformat(date_match.group(1))
             result["required_by"] = date_match.group(1)
         except ValueError:
             pass
-    if re.search(r"\\b(urgent|asap|immediately|emergency)\\b", lower):
+    if re.search(r"\b(urgent|asap|immediately|emergency)\b", lower):
         result["priority"] = "Urgent"
-    elif re.search(r"\\b(normal priority|standard priority)\\b", lower):
+    elif re.search(r"\b(normal priority|standard priority)\b", lower):
         result["priority"] = "Normal"
     return result
 
