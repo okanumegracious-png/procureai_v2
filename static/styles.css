@@ -503,3 +503,6 @@
 .rfq-tracking-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}
 .rfq-tracking-actions>span{font-size:11px;color:var(--muted,#64748b);max-width:390px;line-height:1.5}
 @media(max-width:620px){.rfq-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rfq-supplier-row{align-items:flex-start;flex-direction:column}.rfq-tracking-section{padding:13px}}
+
+/* Clickable overview KPI cards */
+.metric-action{width:100%;display:block;text-align:left;color:inherit;font:inherit;cursor:pointer;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}.metric-action:hover,.metric-action:focus-visible{transform:translateY(-2px);border-color:#b9d9ce;box-shadow:0 7px 20px rgba(16,27,45,.07);outline:none}.metric-action:focus-visible{box-shadow:0 0 0 3px rgba(21,150,108,.18)}.metric-action .metric-top{width:100%}.metric-action small{display:block}.item-context{display:block;margin-top:4px;font-size:9px;font-weight:500;color:#8b97a6;white-space:normal;line-height:1.4}.material strong{display:block;color:#35445a;font-weight:700;white-space:normal;min-width:130px;max-width:260px;line-height:1.45}
