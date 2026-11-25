@@ -1448,7 +1448,9 @@ document.getElementById("requestForm").addEventListener("submit", async (e) => {
     document.getElementById("requestModal").classList.remove("open");
     e.target.reset();
     document.querySelector("#requestModal .modal-head h2").textContent = "Create purchase request";
-    showToast(projectId ? `Purchase request ${result.code} added to project` : "Purchase request created");
+    const rfqDispatch = result.rfq_dispatch || {};
+    const rfqSent = Number(rfqDispatch.sent_count || 0), rfqFailed = Number(rfqDispatch.failed_count || 0);
+    showToast(`Purchase request ${result.code} created. RFQs emailed to ${rfqSent} eligible supplier(s)${rfqFailed ? `; ${rfqFailed} email(s) need attention` : ""}.`, rfqFailed > 0);
     await fetchDashboard();
     if (projectId && activeProjectId === projectId) await openProjectWorkspace(projectId);
   } catch (error) {
