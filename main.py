@@ -823,6 +823,7 @@ def _project_milestones(raw: str) -> list:
     result = []
     for template in PROJECT_MILESTONE_TEMPLATE:
         item = {**template, **by_key.get(template["key"], {})}
+        item["weight"] = template["weight"]
         item["completed"] = bool(item.get("completed", False))
         result.append(item)
     return result
@@ -1796,6 +1797,10 @@ def dashboard_create_request(payload: DashboardRequestPayload):
         rfq_result = dispatch_request_rfq(request_id, "ProcureAI")
     except Exception as exc:
         rfq_result = {"sent_count":0,"failed_count":0,"error":str(exc)[:240]}
+    if int(rfq_result.get("sent_count", 0) or 0) > 0:
+        with dashboard_module.connect() as db:
+            _complete_project_milestone(db, payload.project_id, "rfq_dispatch", "Automatically dispatched supplier RFQ")
+            _recalculate_project(db, payload.project_id)
     return {"success":True,"id":request_id,"code":code,"project_id":payload.project_id,"rfq_dispatch":rfq_result}
 
 
