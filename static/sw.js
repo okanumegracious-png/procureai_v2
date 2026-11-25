@@ -1,9 +1,10 @@
-const CACHE_NAME = "procureai-shell-v3";
+const CACHE_NAME = "procureai-shell-v4";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
   "/static/styles.css",
   "/static/app.js",
+  "/static/auth.js",
   "/static/job-completion.js",
   "/static/procureai-icon.svg"
 ];
