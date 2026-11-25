@@ -795,8 +795,9 @@ async def login(request: Request, response: Response):
     # Accept both the normal JSON/AJAX request and a safe POST form fallback.
     # Never allow browser-native form submission to put credentials in the URL.
     content_type = request.headers.get("content-type", "").lower()
+    is_form_submission = "application/json" not in content_type
     try:
-        if "application/json" in content_type:
+        if not is_form_submission:
             submitted = await request.json()
         else:
             raw_form = (await request.body()).decode("utf-8", errors="replace")
@@ -832,6 +833,10 @@ async def login(request: Request, response: Response):
                         secure=COOKIE_SECURE, samesite="lax", path="/")
     response.set_cookie(CSRF_COOKIE, csrf, max_age=SESSION_TTL_SECONDS, httponly=False,
                         secure=COOKIE_SECURE, samesite="lax", path="/")
+    if is_form_submission:
+        response.status_code = 303
+        response.headers["Location"] = "/"
+        return response
     return {"success": True, "username": configured_username, "expires_in": SESSION_TTL_SECONDS}
 
 @app.get("/api/auth/me")
