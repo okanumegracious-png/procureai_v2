@@ -127,6 +127,9 @@ def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authen
         "comments": "Integration test approval",
     })
     assert confirmation.status_code == 200, confirmation.text
+    project_after_buyer = client.get(f"/api/projects/{project_id}/overview").json()["project"]
+    buyer_milestone = next(item for item in project_after_buyer["milestones"] if item["key"] == "buyer_confirmation")
+    assert buyer_milestone["completed"] is True
 
     analysis_pending = client.get("/api/analysis", params={"request_id": request_id})
     assert analysis_pending.status_code == 200
@@ -145,6 +148,8 @@ def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authen
     assert analysis_compliant.status_code == 200
     assert analysis_compliant.json()["recommendation"]["id"] == quote_id
     assert analysis_compliant.json()["recommendation"]["budget_feasibility"] == "within_budget"
+    project_after_analysis = client.get(f"/api/projects/{project_id}/overview").json()["project"]
+    assert next(item for item in project_after_analysis["milestones"] if item["key"] == "bid_evaluation")["completed"] is True
 
     po_without_rfq = client.post("/api/orders/from-analysis", json={"quote_id": quote_id})
     assert po_without_rfq.status_code == 409
@@ -162,11 +167,15 @@ def test_procurement_flow_requires_buyer_technical_supplier_and_rfq_gates(authen
             (quote_id,supplier_id,request_id,recipient,sent_by,sent_at)
             VALUES(?,?,?,?,?,?)""",
             (quote_id,supplier_id,request_id,"supplier@example.test","test-admin","2026-11-25T12:00:00"))
+    project_after_rfq = client.get(f"/api/projects/{project_id}/overview").json()["project"]
+    assert next(item for item in project_after_rfq["milestones"] if item["key"] == "rfq_dispatch")["completed"] is True
     po_created = client.post("/api/orders/from-analysis", json={"quote_id": quote_id})
     assert po_created.status_code == 201, po_created.text
     order_id = po_created.json()["id"]
     approval = client.post(f"/api/orders/{order_id}/decision", json={"action":"approve","note":"Integration approval"})
     assert approval.status_code == 200, approval.text
+    project_after_approval = client.get(f"/api/projects/{project_id}/overview").json()["project"]
+    assert next(item for item in project_after_approval["milestones"] if item["key"] == "po_award")["completed"] is True
 
     invoice_created = client.post(f"/api/orders/{order_id}/invoice")
     assert invoice_created.status_code == 201, invoice_created.text
