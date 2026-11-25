@@ -1958,11 +1958,136 @@ def dashboard_mark_invoice_paid(invoice_id: int, request: Request):
             (getattr(request.state,"auth_user",""),"mark_paid","invoice",str(invoice_id),"{}",now))
     return {"success":True,"status":"Paid"}
 
+def _database_inventory(path: Path) -> dict:
+    """Read aggregate table counts from a SQLite database without modifying it."""
+    if not path.is_file():
+        return {"integrity": "missing", "table_count": 0, "row_count": 0, "table_counts": {}}
+    tracked_tables = (
+        "projects", "workflow_projects", "project_updates", "project_quotations",
+        "requests", "quotes", "orders", "suppliers", "workflow_suppliers",
+        "workflow_quotations", "workflow_purchase_orders", "invoices", "audit_events",
+    )
+    with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True, timeout=30) as db:
+        integrity_row = db.execute("PRAGMA integrity_check").fetchone()
+        table_names = {row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()}
+        counts = {}
+        for table in tracked_tables:
+            if table in table_names:
+                safe_name = table.replace('"', '""')
+                counts[table] = int(db.execute(f'SELECT COUNT(*) FROM "{safe_name}"').fetchone()[0])
+            else:
+                counts[table] = 0
+        return {
+            "integrity": integrity_row[0] if integrity_row else "unknown",
+            "table_count": len(table_names),
+            "row_count": sum(counts.values()),
+            "table_counts": counts,
+        }
+
+
+_RECOVERY_COMPARE_TABLES = (
+    "projects", "workflow_projects", "project_updates", "project_quotations",
+    "requests", "quotes", "orders", "suppliers", "workflow_suppliers",
+    "workflow_quotations", "workflow_purchase_orders", "invoices",
+)
+
+
+def _restore_database_backup(filename: str) -> dict:
+    """Restore a verified, data-richer backup after preserving the live database snapshot."""
+    backup_path = _resolve_database_backup(filename)
+    verification = _verify_database_backup(filename)
+    live_path = _database_file()
+    current_inventory = _database_inventory(live_path)
+    backup_inventory = _database_inventory(backup_path)
+    if backup_inventory["integrity"] != "ok":
+        raise RuntimeError("Selected backup failed SQLite integrity verification")
+    current_counts = current_inventory["table_counts"]
+    backup_counts = backup_inventory["table_counts"]
+    improved = [table for table in _RECOVERY_COMPARE_TABLES
+                if backup_counts.get(table, 0) > current_counts.get(table, 0)]
+    if not improved:
+        raise ValueError("This backup does not contain more records in the tracked procurement tables than the live database.")
+
+    # Keep a full, independent snapshot of the current live database before restoring.
+    snapshot_dir = live_path.parent / "recovery-snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    snapshot_path = snapshot_dir / f"before-restore-{stamp}.sqlite3"
+    with sqlite3.connect(str(live_path), timeout=30) as current_db:
+        current_db.execute("PRAGMA wal_checkpoint(FULL)")
+        with sqlite3.connect(str(snapshot_path), timeout=30) as snapshot_db:
+            current_db.backup(snapshot_db)
+            snapshot_integrity = snapshot_db.execute("PRAGMA integrity_check").fetchone()
+            if not snapshot_integrity or snapshot_integrity[0] != "ok":
+                snapshot_path.unlink(missing_ok=True)
+                raise RuntimeError("Could not create a verified safety snapshot of the live database")
+
+    # SQLite's online backup API replaces database contents transactionally; no raw file copy.
+    with sqlite3.connect(str(backup_path), timeout=30) as source_db:
+        with sqlite3.connect(str(live_path), timeout=30) as target_db:
+            source_db.backup(target_db)
+            restored_integrity = target_db.execute("PRAGMA integrity_check").fetchone()
+            if not restored_integrity or restored_integrity[0] != "ok":
+                raise RuntimeError("Restored database failed SQLite integrity verification")
+            target_db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    restored_inventory = _database_inventory(live_path)
+    return {
+        "filename": filename,
+        "verification": verification,
+        "safety_snapshot": snapshot_path.name,
+        "restored_counts": restored_inventory["table_counts"],
+        "previous_counts": current_counts,
+        "improved_tables": improved,
+        "integrity": restored_inventory["integrity"],
+    }
+
+
 @app.get("/api/admin/database/backups")
 def list_database_backups():
-    return {"backups": _list_database_backups(), "retention": 7,
-            "automatic_backup": os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"),
-            "storage_note": "Backups are stored beside the configured SQLite database on the Railway volume. Copy them off-volume for disaster recovery."}
+    current = _database_inventory(_database_file())
+    backups = []
+    for backup in _list_database_backups():
+        inventory = _database_inventory(_resolve_database_backup(backup["filename"]))
+        backup.update(inventory)
+        backup["recoverable"] = (
+            inventory["integrity"] == "ok"
+            and any(inventory["table_counts"].get(table, 0) > current["table_counts"].get(table, 0)
+                    for table in _RECOVERY_COMPARE_TABLES)
+        )
+        backups.append(backup)
+    return {
+        "backups": backups,
+        "current_counts": current["table_counts"],
+        "current_integrity": current["integrity"],
+        "retention": 7,
+        "automatic_backup": os.getenv("PROCUREAI_AUTO_BACKUP", "true").strip().lower() in ("1", "true", "yes", "on"),
+        "storage_note": "Backups are stored beside the configured SQLite database on the Railway volume. Copy them off-volume for disaster recovery.",
+    }
+
+
+@app.post("/api/admin/database/backups/{filename}/restore")
+def restore_database_backup(filename: str, payload: dict, request: Request):
+    if payload.get("confirm") is not True:
+        raise HTTPException(status_code=400, detail="Explicit confirmation is required before restoring a database backup.")
+    try:
+        result = _restore_database_backup(filename)
+        # Bring older snapshots forward to the current safe schema. The retired fixture reset is non-destructive.
+        dashboard_module.init_db()
+        init_store()
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except (OSError, sqlite3.Error, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=f"Database restore failed safely: {type(exc).__name__}")
+    with connect() as db:
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state,"auth_user",""), "restore_database_backup", "database_backup", filename,
+             json.dumps({"safety_snapshot":result["safety_snapshot"],"improved_tables":result["improved_tables"]}), _now()))
+    result["post_migration_counts"] = _database_inventory(_database_file())["table_counts"]
+    return {"success": True, "restore": result}
 
 
 def _resolve_database_backup(filename: str) -> Path:

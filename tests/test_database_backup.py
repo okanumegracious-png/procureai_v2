@@ -63,3 +63,43 @@ def test_backup_path_traversal_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("PROCUREAI_DB_PATH", str(tmp_path / "procureai.db"))
     with pytest.raises(Exception):
         procureai_main._resolve_database_backup("../secrets.sqlite3")
+
+
+def test_recovery_inventory_counts_core_procurement_tables(tmp_path, monkeypatch):
+    database = tmp_path / "procureai.db"
+    monkeypatch.setenv("PROCUREAI_DB_PATH", str(database))
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE requests (id INTEGER PRIMARY KEY, code TEXT)")
+        db.execute("INSERT INTO requests(code) VALUES('PR-1'),('PR-2')")
+        db.execute("CREATE TABLE quotes (id INTEGER PRIMARY KEY)")
+        db.execute("INSERT INTO quotes DEFAULT VALUES")
+    inventory = procureai_main._database_inventory(database)
+    assert inventory["integrity"] == "ok"
+    assert inventory["table_counts"]["requests"] == 2
+    assert inventory["table_counts"]["quotes"] == 1
+    assert inventory["table_counts"]["orders"] == 0
+
+
+def test_restore_preserves_live_database_snapshot_and_restores_data_richer_backup(tmp_path, monkeypatch):
+    database = tmp_path / "procureai.db"
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setenv("PROCUREAI_DB_PATH", str(database))
+    monkeypatch.setenv("PROCUREAI_BACKUP_DIR", str(backup_dir))
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE requests (id INTEGER PRIMARY KEY, code TEXT NOT NULL)")
+        db.execute("INSERT INTO requests(code) VALUES('PR-OLD-001'),('PR-OLD-002')")
+    backup = procureai_main._create_database_backup()
+    with sqlite3.connect(database) as db:
+        db.execute("DELETE FROM requests WHERE code='PR-OLD-002'")
+    result = procureai_main._restore_database_backup(backup["filename"])
+    assert result["integrity"] == "ok"
+    assert result["safety_snapshot"].startswith("before-restore-")
+    assert "requests" in result["improved_tables"]
+    with sqlite3.connect(database) as db:
+        restored = [row[0] for row in db.execute("SELECT code FROM requests ORDER BY code")]
+    assert restored == ["PR-OLD-001", "PR-OLD-002"]
+    snapshot = tmp_path / "recovery-snapshots" / result["safety_snapshot"]
+    assert snapshot.is_file()
+    with sqlite3.connect(snapshot) as db:
+        preserved = [row[0] for row in db.execute("SELECT code FROM requests ORDER BY code")]
+    assert preserved == ["PR-OLD-001"]
