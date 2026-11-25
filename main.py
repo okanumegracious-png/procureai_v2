@@ -1154,6 +1154,10 @@ class QuoteParsePayload(BaseModel):
     message: str = Field(min_length=3, max_length=12000)
 
 
+class PurchaseRequestParsePayload(BaseModel):
+    message: str = Field(min_length=3, max_length=12000)
+
+
 def _extract_quote_line_items(message: str) -> list[dict]:
     """Extract independently priced material lines without creating quotations."""
     items = []
@@ -1510,6 +1514,78 @@ def dashboard_send_supplier_request(quote_id: int, request: Request):
         db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
         db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)", (getattr(request.state, "auth_user", ""), "send_supplier_request_email", "quotation", str(quote_id), json.dumps({"recipient": recipient, "request_code": quote["request_code"]}), sent_at))
     return {"success": True, "already_sent": False, "recipient": recipient, "sent_at": sent_at}
+
+def _parse_purchase_request_message(message: str) -> dict:
+    """Conservatively extract request fields from informal buyer instructions."""
+    raw = message.strip()
+    text = " ".join(raw.replace("\\u00a0", " ").split())
+    result = {"material": None, "quantity": None, "unit": None, "category": None,
+              "site": None, "required_by": None, "priority": None,
+              "additional_information": raw}
+    unit_map = {
+        "each":"ea","ea":"ea","piece":"pcs","pieces":"pcs","pcs":"pcs","unit":"unit","units":"unit","qty":"qty",
+        "pair":"pair","pairs":"pair","set":"set","sets":"set","dozen":"dozen","kg":"kg","kgs":"kg",
+        "kilogram":"kg","kilograms":"kg","g":"g","gram":"g","grams":"g","tonne":"tonne","tonnes":"tonnes",
+        "ton":"tonne","tons":"tonnes","mm":"mm","millimetre":"mm","millimetres":"mm","cm":"cm",
+        "m":"m","metre":"m","metres":"m","meter":"m","meters":"m","km":"km","litre":"litre",
+        "litres":"litre","liter":"litre","liters":"litre","l":"litre","ml":"ml","pack":"pack","packs":"pack",
+        "box":"box","boxes":"box","carton":"carton","cartons":"carton","roll":"roll","rolls":"roll",
+        "drum":"drum","drums":"drum","pallet":"pallet","pallets":"pallet","ream":"ream","reams":"ream",
+        "hour":"hour","hours":"hour","day":"day","days":"day","trip":"trip","trips":"trip","lot":"lot",
+        "job":"job","jobs":"job","bag":"bag","bags":"bag"
+    }
+    unit_pattern = "|".join(sorted((re.escape(k) for k in unit_map), key=len, reverse=True))
+    quantity_match = re.search(r"\\b(\\d[\\d,]*(?:\\.\\d+)?)\\s*(" + unit_pattern + r")\\b", text, re.I)
+    if quantity_match:
+        result["quantity"] = float(quantity_match.group(1).replace(",", ""))
+        result["unit"] = unit_map[quantity_match.group(2).lower()]
+        before = text[:quantity_match.start()].strip(" ,:-")
+        after = text[quantity_match.end():].strip(" ,:-")
+        before = re.sub(r"^(?:(?:we|i)\\s+)?(?:need|require|want|request|procure|purchase|supply|order)(?:\\s+for)?\\s+", "", before, flags=re.I)
+        after = re.split(r"[,;\\n]|\\b(?:at|in|for delivery|deliver to|required by|needed by|within)\\b", after, maxsplit=1, flags=re.I)[0].strip(" ,:-")
+        candidate = before if before else after
+        candidate = re.sub(r"^(?:of|for|a|an|the)\\s+", "", candidate, flags=re.I).strip(" .,:;-")
+        if candidate and len(candidate) <= 180:
+            result["material"] = candidate
+    else:
+        material_match = re.search(r"\\b(?:we need|we require|please supply|need|require|procure|purchase)\\s+(?:a|an|the)?\\s*([^,;\\n.]{3,120})", text, re.I)
+        if material_match:
+            result["material"] = material_match.group(1).strip()
+    lower = text.lower()
+    category_terms = [
+        ("Electrical",("electrical","distribution panel","mccb","circuit breaker","cable","switchgear","transformer")),
+        ("Plumbing",("plumbing","pipe","valve","fitting","pump")),
+        ("Reinforcement",("reinforcement","rebar","steel rod","tmt")),
+        ("Cementitious",("cement","concrete","mortar")),
+        ("Aggregate",("aggregate","granite","sharp sand","stone chippings")),
+        ("Formwork",("formwork","shuttering","plywood"))
+    ]
+    for category, terms in category_terms:
+        if any(term in lower for term in terms):
+            result["category"] = category
+            break
+    site_match = re.search(r"\\b(?:site|location|workshop)\\s*(?:is|:|at)?\\s+([^,;\\n.]{2,100})", text, re.I)
+    if site_match:
+        result["site"] = site_match.group(1).strip()
+    date_match = re.search(r"\\b(?:required by|needed by|delivery date|deliver by)\\s*(?:is|:)?\\s*(\\d{4}-\\d{2}-\\d{2})\\b", text, re.I)
+    if date_match:
+        try:
+            date.fromisoformat(date_match.group(1))
+            result["required_by"] = date_match.group(1)
+        except ValueError:
+            pass
+    if re.search(r"\\b(urgent|asap|immediately|emergency)\\b", lower):
+        result["priority"] = "Urgent"
+    elif re.search(r"\\b(normal priority|standard priority)\\b", lower):
+        result["priority"] = "Normal"
+    return result
+
+
+@app.post("/api/requests/parse")
+def dashboard_parse_purchase_request(payload: PurchaseRequestParsePayload):
+    """Extract clearly stated purchase-request details without creating a record."""
+    return {"success": True, "extracted": _parse_purchase_request_message(payload.message)}
+
 
 @app.post("/api/quotes/parse")
 def dashboard_parse_quote(payload: QuoteParsePayload):
