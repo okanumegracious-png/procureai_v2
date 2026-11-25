@@ -1272,6 +1272,42 @@ def dashboard_requests():
     return {"requests": dashboard_module.rows("SELECT * FROM requests ORDER BY id DESC")}
 
 
+@app.put("/api/requests/{request_id}")
+def dashboard_update_request(request_id: int, payload: DashboardRequestPayload, request: Request):
+    try:
+        date.fromisoformat(payload.required_by)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="required_by must be an ISO date")
+    now = _now()
+    with dashboard_module.connect() as db:
+        current = db.execute("""SELECT r.*, p.project_id AS linked_project_id, p.status AS project_status
+            FROM requests r JOIN project_purchase_requests ppr ON ppr.request_id=r.id
+            JOIN projects p ON p.project_id=ppr.project_id WHERE r.id=?""", (request_id,)).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Project purchase request not found")
+        if current["project_status"] in ("completed", "terminated"):
+            raise HTTPException(status_code=409, detail="This project is closed. Its purchase requests are read-only.")
+        if payload.project_id != current["linked_project_id"]:
+            raise HTTPException(status_code=409, detail="A purchase request cannot be moved to another project while editing.")
+        before = {key: current[key] for key in ("material","category","quantity","unit","site","required_by","priority","additional_information")}
+        db.execute("""UPDATE requests SET material=?,category=?,quantity=?,unit=?,site=?,required_by=?,priority=?,additional_information=? WHERE id=?""",
+            (payload.material.strip(),payload.category,payload.quantity,payload.unit.strip(),payload.site.strip(),
+             payload.required_by,payload.priority,payload.additional_information.strip(),request_id))
+        db.execute("""CREATE TABLE IF NOT EXISTS audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL,
+            entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+            details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)""")
+        after = {"material":payload.material.strip(),"category":payload.category,"quantity":payload.quantity,
+            "unit":payload.unit.strip(),"site":payload.site.strip(),"required_by":payload.required_by,
+            "priority":payload.priority,"additional_information":payload.additional_information.strip()}
+        db.execute("""INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at)
+            VALUES(?,?,?,?,?,?)""",
+            (getattr(request.state, "auth_user", ""), "update", "purchase_request", str(request_id),
+             json.dumps({"before":before,"after":after}, ensure_ascii=False), now))
+        db.execute("UPDATE projects SET updated_at=? WHERE project_id=?", (now,current["linked_project_id"]))
+    return {"success":True,"id":request_id,"code":current["code"],"project_id":current["linked_project_id"]}
+
+
 @app.get("/api/suppliers")
 def dashboard_suppliers():
     return {"suppliers": dashboard_module.rows("SELECT * FROM suppliers ORDER BY name COLLATE NOCASE")}
