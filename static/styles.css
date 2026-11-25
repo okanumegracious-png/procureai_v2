@@ -523,3 +523,88 @@
 
 /* Keep sign-in action text as readable as the username and password fields. */
 .login-card .login-submit { font-size: 13px; line-height: 1.4; min-height: 46px; }
+
+
+/* Readability pass: accessible, consistent typography across ProcureAI */
+:root { font-size: 16px; }
+body { font-size: 15px; line-height: 1.55; }
+button, input, select, textarea { font-size: inherit; }
+.nav-item { font-size: 14px; line-height: 1.4; }
+.nav-item i { font-size: 11px; }
+.workspace-label { font-size: 11px; }
+.brand small { font-size: 10px; }
+.rule-card b, .user-row b { font-size: 13px; }
+.rule-card p, .user-row small { font-size: 12px; line-height: 1.55; }
+.crumb { font-size: 13px; }
+.top-actions { font-size: 12px; }
+.page-heading h1 { font-size: 30px; line-height: 1.2; }
+.eyebrow { font-size: 11px; letter-spacing: 1.1px; }
+.subheading { font-size: 14px; line-height: 1.5; }
+.btn { font-size: 13px; line-height: 1.35; padding: 11px 16px; }
+.metric-top { font-size: 13px; }
+.metric strong { font-size: 28px; }
+.metric small { font-size: 12px; }
+.panel-heading h2, .insight-panel h2 { font-size: 17px; line-height: 1.35; }
+.panel-heading p { font-size: 12px; line-height: 1.5; }
+.text-btn { font-size: 12px; }
+th { font-size: 10px; letter-spacing: .7px; }
+td { font-size: 13px; line-height: 1.45; }
+.pill { font-size: 11px; padding: 5px 9px; }
+.supplier-info b, .quote-item b { font-size: 13px; }
+.supplier-info small, .quote-item small { font-size: 11px; }
+.rating, .quote-price { font-size: 13px; }
+.supplier-card h3 { font-size: 17px; }
+.supplier-card p { font-size: 12px; line-height: 1.5; }
+.supplier-stats b { font-size: 17px; }
+.supplier-stats small { font-size: 11px; }
+.analysis-picker label, .form-grid label { font-size: 13px; line-height: 1.45; }
+.analysis-picker select, .form-grid input, .form-grid select { font-size: 14px; min-height: 44px; }
+.recommendation h3 { font-size: 17px; }
+.recommendation p { font-size: 13px; line-height: 1.5; }
+.recommend-price { font-size: 23px; }
+.breakdown span { font-size: 11px; }
+.breakdown b { font-size: 13px; }
+.empty-state h3 { font-size: 17px; }
+.empty-state p { font-size: 13px; line-height: 1.5; }
+.action-btn { font-size: 11px; padding: 8px 10px; }
+.modal-head h2 { font-size: 22px; }
+.toast { font-size: 13px; }
+.search, .filter-select { font-size: 13px; min-height: 42px; }
+.quote-detail-field small { font-size: 12px; }
+.quote-detail-field b { font-size: 14px; }
+.setup-intro h2 { font-size: 22px; }
+.setup-intro p { font-size: 14px; line-height: 1.65; }
+.setup-section-title h2 { font-size: 17px; }
+.setup-section-title p { font-size: 13px; line-height: 1.5; }
+.setup-form label { font-size: 13px; }
+.setup-form input, .setup-form select, .setup-form textarea { font-size: 14px; min-height: 44px; }
+.setup-form label small { font-size: 12px; line-height: 1.45; }
+.setup-save b { font-size: 13px; }
+.setup-save span { font-size: 12px; }
+.po-preview-field small { font-size: 11px; }
+.po-preview-field b { font-size: 14px; }
+.po-preview-note { font-size: 13px; line-height: 1.6; }
+.po-approval-note span { font-size: 11px; }
+.po-approval-note b { font-size: 13px; line-height: 1.55; }
+.po-email-step p { font-size: 14px; line-height: 1.55; }
+@media (max-width: 800px) {
+  .page-heading h1 { font-size: 27px; }
+  .page-heading>.btn { font-size: 13px; }
+  .metric strong { font-size: 25px; }
+}
+@media (max-width: 520px) {
+  body { font-size: 15px; }
+  .crumb { font-size: 12px; }
+  .page-heading h1 { font-size: 25px; }
+  .metric-top { font-size: 12px; }
+  .metric small { font-size: 11px; }
+  .panel-heading h2, .insight-panel h2 { font-size: 16px; }
+  .panel-heading p { font-size: 12px; }
+  .btn { font-size: 13px; }
+  .search { font-size: 13px; }
+}
+/* Visible keyboard focus and comfortable tap targets */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid rgba(21,150,108,.42);
+  outline-offset: 2px;
+}
