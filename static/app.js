@@ -1158,6 +1158,29 @@ window.openQuote = async function(id) {
       const submit = document.createElement("button");
       submit.type = "submit"; submit.className = "btn btn-primary"; submit.textContent = "Save technical review";
       reviewForm.append(heading, help, statusLabel, notesLabel, submit);
+
+      const hasSavedReview = Boolean(q.technical_reviewed_at) && (q.technical_status || "pending") !== "pending";
+      if (hasSavedReview) {
+        const savedReview = document.createElement("section");
+        savedReview.className = "technical-review-saved";
+        const savedTitle = document.createElement("strong");
+        savedTitle.textContent = "✓ Technical compliance review recorded";
+        const savedDetail = document.createElement("p");
+        const outcome = (q.technical_status || "pending").replaceAll("_", " ");
+        const reviewedAt = q.technical_reviewed_at ? new Date(q.technical_reviewed_at).toLocaleString() : "";
+        savedDetail.textContent = "Review outcome: " + outcome + (q.technical_reviewed_by ? " · Reviewed by " + q.technical_reviewed_by : "") + (reviewedAt ? " · " + reviewedAt : "");
+        savedReview.append(savedTitle, savedDetail);
+        const editReview = document.createElement("button");
+        editReview.type = "button"; editReview.className = "btn btn-ghost technical-review-edit";
+        editReview.textContent = "✎ Edit technical review";
+        editReview.addEventListener("click", () => {
+          savedReview.hidden = true;
+          reviewForm.hidden = false;
+          statusSelect.focus();
+        });
+        content.append(savedReview, editReview);
+        reviewForm.hidden = true;
+      }
       reviewForm.addEventListener("submit", async event => {
         event.preventDefault(); submit.disabled = true;
         try {
@@ -1167,7 +1190,7 @@ window.openQuote = async function(id) {
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.detail || "Could not save technical review");
-          showToast("Technical review saved");
+          showToast(hasSavedReview ? "Technical review updated" : "Technical review saved");
           await window.openQuote(id);
           await fetchDashboard();
         } catch(error) { showToast(error.message,true); }
