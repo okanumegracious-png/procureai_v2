@@ -1637,6 +1637,8 @@ def dashboard_update_quote(quote_id: int, payload: DashboardQuotePayload, reques
             raise HTTPException(status_code=409, detail="This quotation already has a purchase-order proposal. It is locked to preserve approval and audit history.")
         if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone(): raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone(): raise HTTPException(status_code=404, detail="Supplier not found")
+        duplicate = db.execute("SELECT id FROM quotes WHERE request_id=? AND supplier_id=? AND id<>?", (payload.request_id,payload.supplier_id,quote_id)).fetchone()
+        if duplicate: raise HTTPException(status_code=409, detail="This supplier already has another quotation recorded for this purchase request.")
         before = {key: current[key] for key in ("supplier_id","request_id","unit_price","freight","tax_rate","lead_days","payment_days","note")}
         db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,note=?,technical_status='pending',technical_notes='',technical_reviewed_by='',technical_reviewed_at=NULL WHERE id=?""",
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,payload.note,quote_id))
