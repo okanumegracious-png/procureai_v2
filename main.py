@@ -41,6 +41,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import app as dashboard_module
+from supplier_portal import router as supplier_portal_router, dispatch_request_rfq
 from procureai_store import connect, init_store
 from agentic.intake import IntakeAgent, SQLiteRequestStore
 
@@ -51,6 +52,7 @@ MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="ProcureAI Unified API", version="3.0.0")
+app.include_router(supplier_portal_router)
 allowed_origins = [v.strip().rstrip("/") for v in os.getenv("FRONTEND_URL", "http://localhost:3000,http://127.0.0.1:3000").split(",") if v.strip()]
 VERCEL_ORIGIN_RE = r"https://[a-z0-9-]+\.vercel\.app"
 SESSION_COOKIE = "procureai_session"
@@ -386,7 +388,7 @@ def _origin_allowed(origin: str | None) -> bool:
 @app.middleware("http")
 async def require_browser_session(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/api/") and not path.startswith("/api/v1/") and path != "/api/auth/login" and request.method != "OPTIONS":
+    if path.startswith("/api/") and not path.startswith("/api/v1/") and path != "/api/auth/login" and not path.startswith("/api/supplier-portal/") and request.method != "OPTIONS":
         token = request.cookies.get(SESSION_COOKIE, "")
         session = _session_record(token)
         if not session:
@@ -1443,7 +1445,11 @@ def dashboard_create_request(payload: DashboardRequestPayload):
             VALUES(?,?,?,?)""",
             (payload.project_id,request_id,"Workspace user",created_at))
         db.execute("UPDATE projects SET updated_at=? WHERE project_id=?", (created_at,payload.project_id))
-    return {"success":True,"id":request_id,"code":code,"project_id":payload.project_id}
+    try:
+        rfq_result = dispatch_request_rfq(request_id, "ProcureAI")
+    except Exception as exc:
+        rfq_result = {"sent_count":0,"failed_count":0,"error":str(exc)[:240]}
+    return {"success":True,"id":request_id,"code":code,"project_id":payload.project_id,"rfq_dispatch":rfq_result}
 
 
 @app.get("/api/quotes/{quote_id}")
@@ -1611,6 +1617,8 @@ def dashboard_create_quote(payload: DashboardQuotePayload):
             raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone():
             raise HTTPException(status_code=404, detail="Supplier not found")
+        if db.execute("SELECT 1 FROM quotes WHERE request_id=? AND supplier_id=?", (payload.request_id,payload.supplier_id)).fetchone():
+            raise HTTPException(status_code=409, detail="This supplier already has a quotation recorded for this purchase request. Open the existing quotation instead of entering it again.")
         cur = db.execute("""INSERT INTO quotes(supplier_id,request_id,unit_price,freight,tax_rate,lead_days,payment_days,note,created_at)
             VALUES(?,?,?,?,?,?,?,?,?)""",
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,
@@ -1629,6 +1637,8 @@ def dashboard_update_quote(quote_id: int, payload: DashboardQuotePayload, reques
             raise HTTPException(status_code=409, detail="This quotation already has a purchase-order proposal. It is locked to preserve approval and audit history.")
         if not db.execute("SELECT 1 FROM requests WHERE id=?", (payload.request_id,)).fetchone(): raise HTTPException(status_code=404, detail="Purchase request not found")
         if not db.execute("SELECT 1 FROM suppliers WHERE id=?", (payload.supplier_id,)).fetchone(): raise HTTPException(status_code=404, detail="Supplier not found")
+        duplicate = db.execute("SELECT id FROM quotes WHERE request_id=? AND supplier_id=? AND id<>?", (payload.request_id,payload.supplier_id,quote_id)).fetchone()
+        if duplicate: raise HTTPException(status_code=409, detail="This supplier already has another quotation recorded for this purchase request.")
         before = {key: current[key] for key in ("supplier_id","request_id","unit_price","freight","tax_rate","lead_days","payment_days","note")}
         db.execute("""UPDATE quotes SET supplier_id=?,request_id=?,unit_price=?,freight=?,tax_rate=?,lead_days=?,payment_days=?,note=?,technical_status='pending',technical_notes='',technical_reviewed_by='',technical_reviewed_at=NULL WHERE id=?""",
             (payload.supplier_id,payload.request_id,payload.unit_price,payload.freight,payload.tax_rate,payload.lead_days,payload.payment_days,payload.note,quote_id))
