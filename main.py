@@ -154,6 +154,205 @@ def _password_matches(password: str) -> bool:
 def _ensure_supplier_request_email_table(db):
     db.execute("""CREATE TABLE IF NOT EXISTS supplier_request_emails (id INTEGER PRIMARY KEY AUTOINCREMENT, quote_id INTEGER NOT NULL UNIQUE, supplier_id INTEGER NOT NULL, request_id INTEGER NOT NULL, recipient TEXT NOT NULL, sent_by TEXT NOT NULL DEFAULT '', sent_at TEXT NOT NULL)""")
 
+
+def _deliver_supplier_email(message: EmailMessage, recipient: str, body_text: str, html_body: str):
+    """Deliver supplier communications through the configured HTTPS or SMTP provider."""
+    host = os.getenv("SMTP_HOST", "").strip()
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    sender = os.getenv("SMTP_FROM_EMAIL", username).strip()
+    # Gmail API uses HTTPS, avoiding Railway's restricted outbound SMTP ports.
+    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "gmail":
+        client_id = os.getenv("GMAIL_CLIENT_ID", "").strip()
+        client_secret = os.getenv("GMAIL_CLIENT_SECRET", "").strip()
+        refresh_token = os.getenv("GMAIL_REFRESH_TOKEN", "").strip()
+        gmail_sender = os.getenv("GMAIL_SENDER_EMAIL", "").strip()
+        if not all((client_id, client_secret, refresh_token, gmail_sender)):
+            raise HTTPException(status_code=503, detail="Gmail delivery is selected but its OAuth credentials are incomplete. Configure GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN and GMAIL_SENDER_EMAIL in Railway.")
+        message["From"] = gmail_sender
+        token_payload = urllib.parse.urlencode({
+            "client_id": client_id, "client_secret": client_secret,
+            "refresh_token": refresh_token, "grant_type": "refresh_token",
+        }).encode("utf-8")
+        token_request = urllib.request.Request(
+            "https://oauth2.googleapis.com/token", data=token_payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST",
+        )
+        stage = "OAuth refresh-token exchange"
+        try:
+            with urllib.request.urlopen(token_request, timeout=25) as response:
+                token_data = json.loads(response.read().decode("utf-8"))
+            access_token = token_data.get("access_token", "")
+            if not access_token:
+                raise HTTPException(status_code=502, detail="Google OAuth token refresh succeeded without an access token. Reconnect the Gmail account.")
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii").rstrip("=")
+            gmail_request = urllib.request.Request(
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                data=json.dumps({"raw": raw_message}).encode("utf-8"),
+                headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+                method="POST",
+            )
+            stage = "Gmail API send"
+            with urllib.request.urlopen(gmail_request, timeout=25) as response:
+                if response.status < 200 or response.status >= 300:
+                    raise HTTPException(status_code=502, detail=f"Gmail API returned HTTP {response.status}.")
+            return
+        except urllib.error.HTTPError as exc:
+            try:
+                error_body = json.loads(exc.read().decode("utf-8", "replace"))
+            except Exception:
+                error_body = {}
+            error_info = error_body.get("error", {}) if isinstance(error_body, dict) else {}
+            if isinstance(error_info, str):
+                error_code, error_description = error_info, error_body.get("error_description", "")
+            elif isinstance(error_info, dict):
+                error_code = error_info.get("status") or error_info.get("code") or error_info.get("error", "")
+                error_description = error_info.get("message", "")
+            else:
+                error_code, error_description = "", ""
+            diagnostic = f"{stage} failed with HTTP {exc.code}"
+            if error_code: diagnostic += f" ({str(error_code)[:80]})"
+            if error_description: diagnostic += f": {' '.join(str(error_description).split())[:240]}"
+            raise HTTPException(status_code=502, detail=diagnostic)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise HTTPException(status_code=502, detail="Could not reach Google Gmail over HTTPS. Check Railway outbound connectivity and try again.")
+
+    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "resend" or (not os.getenv("EMAIL_PROVIDER", "").strip() and os.getenv("RESEND_API_KEY", "").strip()):
+        resend_key = os.getenv("RESEND_API_KEY", "").strip()
+        resend_sender = os.getenv("RESEND_FROM_EMAIL", "").strip()
+        if not resend_key or not resend_sender:
+            raise HTTPException(status_code=503, detail="Resend delivery is selected but its API key or verified sender is missing.")
+        payload = json.dumps({"from": resend_sender, "to": [recipient],
+            "subject": str(message["Subject"]), "text": body_text, "html": html_body}).encode("utf-8")
+        request = urllib.request.Request("https://api.resend.com/emails", data=payload,
+            headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(request, timeout=25) as response:
+                if response.status < 200 or response.status >= 300:
+                    raise HTTPException(status_code=502, detail=f"Email provider returned HTTP {response.status}. Check the Resend API key and verified sender.")
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code in (401, 403):
+                detail = "Resend rejected the API key. Check RESEND_API_KEY in Railway Variables."
+            elif exc.code == 422:
+                detail = "Resend rejected the sender or recipient. Verify RESEND_FROM_EMAIL and the sending domain in Resend."
+            else:
+                detail = f"Resend email request failed with HTTP {exc.code}. Check the Resend dashboard."
+            raise HTTPException(status_code=502, detail=detail)
+        except (urllib.error.URLError, TimeoutError, OSError):
+            raise HTTPException(status_code=502, detail="Could not reach the email provider over HTTPS. Check Railway outbound connectivity and try again.")
+
+    if not all((host, username, password, sender)):
+        raise HTTPException(status_code=503, detail="Supplier email is not configured. Select EMAIL_PROVIDER=gmail and add Gmail OAuth credentials, or configure another supported email provider.")
+    message["From"] = sender
+    port = int(os.getenv("SMTP_PORT", "587"))
+    use_ssl = os.getenv("SMTP_USE_SSL", "false").lower() == "true"
+    use_tls = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(host, port, timeout=25, context=ssl.create_default_context()) as server:
+                server.login(username, password)
+                server.send_message(message)
+        else:
+            with smtplib.SMTP(host, port, timeout=25) as server:
+                server.ehlo()
+                if use_tls:
+                    server.starttls(context=ssl.create_default_context())
+                    server.ehlo()
+                server.login(username, password)
+                server.send_message(message)
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=502, detail="SMTP authentication failed. Check the mailbox username and app password.")
+    except smtplib.SMTPResponseException as exc:
+        raise HTTPException(status_code=502, detail=f"SMTP server rejected the request with code {exc.smtp_code}. Check the SMTP account and sender settings.")
+    except (smtplib.SMTPException, OSError, ValueError):
+        raise HTTPException(status_code=502, detail="SMTP connection failed before the email could be sent. Your hosting provider may restrict outbound SMTP; use Gmail API or another HTTPS email provider.")
+
+
+def _ensure_supplier_po_overview_email_table(db):
+    db.execute("""CREATE TABLE IF NOT EXISTS supplier_po_overview_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL UNIQUE,
+        supplier_id INTEGER NOT NULL,
+        recipient TEXT NOT NULL,
+        sent_by TEXT NOT NULL DEFAULT '',
+        sent_at TEXT NOT NULL
+    )""")
+
+
+def _send_supplier_po_overview_email(order: dict):
+    recipient = (order.get("supplier_email") or "").strip()
+    parsed = parseaddr(recipient)[1]
+    if not parsed or parsed != recipient or "@" not in parsed:
+        raise HTTPException(status_code=409, detail="This seller has no valid email address. Update the seller record before sending the PO overview.")
+    supplier_name = str(order.get("supplier") or "Supplier")
+    status = str(order.get("status") or "Pending approval")
+    pending = status.casefold() == "pending approval"
+    esc = lambda value: html.escape(str(value if value not in (None, "") else "—"), quote=True)
+    money = lambda value: "₦" + format(Decimal(str(value or 0)), ",.2f")
+    subtotal = Decimal(str(order.get("quantity") or 0)) * Decimal(str(order.get("unit_price") or 0))
+    status_notice = (
+        "This is a preliminary purchase-order overview awaiting internal approval. It is not an approved purchase order, award notice, contract, authority to supply, or commitment to pay. Do not dispatch goods or commence work until Gestro Global Consult Ltd issues the formally approved purchase order."
+        if pending else
+        "This overview reflects the internally approved purchase order. Confirm acceptance and delivery arrangements with Gestro Global Consult Ltd before dispatch."
+        if status.casefold() == "approved" else
+        "This purchase order has been rejected and is not valid for supply. Do not dispatch goods or commence work."
+    )
+    body_text = "\n".join([
+        f"Dear {supplier_name},", "",
+        f"Please find the purchase-order overview for {order.get('code')}.",
+        "", "PURCHASE ORDER OVERVIEW",
+        f"PO reference: {order.get('code')}",
+        f"Status: {status}",
+        f"Purchase request: {order.get('request_code')}",
+        f"Item / material: {order.get('material')}",
+        f"Category: {order.get('category')}",
+        f"Quantity: {order.get('quantity')} {order.get('unit') or ''}".strip(),
+        f"Delivery location: {order.get('site')}",
+        f"Required delivery date: {order.get('required_by')}",
+        f"Unit price: {money(order.get('unit_price'))}",
+        f"Subtotal: {money(subtotal)}",
+        f"Tax: {money(order.get('tax'))}",
+        f"Freight / delivery: {money(order.get('freight'))}",
+        f"Commercial total: {money(order.get('total'))}",
+        f"Delivery lead time: {order.get('lead_days')} days",
+        f"Payment terms: Net {order.get('payment_days')} days",
+        "", "IMPORTANT", status_notice, "",
+        "Kind regards,", "Procurement Team", "Gestro Global Consult Ltd",
+    ])
+    rows = [
+        ("PO reference", order.get("code")), ("Status", status),
+        ("Purchase request", order.get("request_code")), ("Item / material", order.get("material")),
+        ("Category", order.get("category")),
+        ("Quantity", f"{order.get('quantity')} {order.get('unit') or ''}".strip()),
+        ("Delivery location", order.get("site")), ("Required delivery date", order.get("required_by")),
+        ("Unit price", money(order.get("unit_price"))), ("Subtotal", money(subtotal)),
+        ("Tax", money(order.get("tax"))), ("Freight / delivery", money(order.get("freight"))),
+        ("Commercial total", money(order.get("total"))),
+        ("Delivery lead time", f"{order.get('lead_days')} days"),
+        ("Payment terms", f"Net {order.get('payment_days')} days"),
+    ]
+    html_rows = "".join(
+        f"<tr><td style='padding:10px 12px;border-bottom:1px solid #e5eaf0;color:#64748b;width:38%'>{esc(label)}</td>"
+        f"<td style='padding:10px 12px;border-bottom:1px solid #e5eaf0;font-weight:600'>{esc(value)}</td></tr>"
+        for label, value in rows
+    )
+    html_body = f"""<!doctype html><html lang="en"><body style="margin:0;padding:24px 12px;background:#f3f5f8;font-family:Arial,sans-serif;color:#243044">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:680px;margin:auto;background:#fff;border:1px solid #e3e8ef;border-radius:10px;overflow:hidden">
+    <tr><td style="padding:24px 30px;background:#172b4d;color:#fff"><div style="font-size:12px;letter-spacing:1.5px;font-weight:bold;color:#f5a623">GESTRO GLOBAL CONSULT LTD</div><div style="font-size:22px;font-weight:bold;margin-top:8px">Purchase Order Overview</div><div style="font-size:13px;color:#dce5f2;margin-top:6px">{esc(order.get('code'))}</div></td></tr>
+    <tr><td style="padding:26px 30px"><p>Dear <b>{esc(supplier_name)}</b>,</p><p style="line-height:1.7;color:#526174">Please review the proposed procurement details below and contact our procurement team if any detail requires clarification.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:14px;border:1px solid #e2e8f0">{html_rows}</table>
+    <div style="margin-top:22px;padding:15px 16px;background:#fff8e8;border-left:4px solid #e5a12a;color:#624b22;line-height:1.6"><b>IMPORTANT PROCUREMENT NOTICE</b><br>{esc(status_notice)}</div>
+    <p style="margin-top:22px">Kind regards,<br><b>Procurement Team<br>Gestro Global Consult Ltd</b></p></td></tr>
+    <tr><td style="padding:14px 30px;background:#f7f9fc;border-top:1px solid #e8edf3;font-size:11px;color:#8793a3">Generated by ProcureAI for procurement communication.</td></tr>
+    </table></body></html>"""
+    message = EmailMessage()
+    message["Subject"] = f"Purchase Order Overview {order.get('code')} – {order.get('material')}"
+    message["To"] = recipient
+    message.set_content(body_text)
+    message.add_alternative(html_body, subtype="html")
+    _deliver_supplier_email(message, recipient, body_text, html_body)
+
 def _send_supplier_request_email(quote):
     host = os.getenv("SMTP_HOST", "").strip()
     username = os.getenv("SMTP_USERNAME", "").strip()
@@ -1413,7 +1612,52 @@ def dashboard_quotes():
 
 @app.get("/api/orders")
 def dashboard_orders():
-    return {"orders": dashboard_module.dashboard()["orders"]}
+    orders = dashboard_module.dashboard()["orders"]
+    with dashboard_module.connect() as db:
+        _ensure_supplier_po_overview_email_table(db)
+        sent_rows = db.execute("SELECT order_id,sent_at,recipient FROM supplier_po_overview_emails").fetchall()
+    sent = {int(row["order_id"]): dict(row) for row in sent_rows}
+    for order in orders:
+        record = sent.get(int(order["id"]))
+        order["po_overview_sent"] = bool(record)
+        order["po_overview_sent_at"] = record["sent_at"] if record else None
+        order["po_overview_recipient"] = record["recipient"] if record else None
+    return {"orders": orders}
+
+
+@app.post("/api/orders/{order_id}/send-overview")
+def dashboard_send_po_overview(order_id: int, request: Request):
+    with dashboard_module.connect() as db:
+        _ensure_supplier_po_overview_email_table(db)
+        row = db.execute("""SELECT o.id,o.code,o.quantity,o.unit_price,o.freight,o.tax,o.total,
+            o.status,o.required_by,o.lead_days,o.payment_days,
+            s.id AS supplier_id,s.name AS supplier,s.email AS supplier_email,
+            r.code AS request_code,r.material,r.category,r.unit,r.site
+            FROM orders o JOIN suppliers s ON s.id=o.supplier_id
+            JOIN requests r ON r.id=o.request_id WHERE o.id=?""", (order_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Purchase order not found")
+        existing = db.execute("SELECT recipient,sent_at FROM supplier_po_overview_emails WHERE order_id=?", (order_id,)).fetchone()
+        if existing:
+            return {"success": True, "already_sent": True, "recipient": existing["recipient"], "sent_at": existing["sent_at"]}
+        order = dict(row)
+        if order["status"] not in ("Pending approval", "Approved", "Rejected"):
+            raise HTTPException(status_code=409, detail="This purchase order is not in a sendable status.")
+    _send_supplier_po_overview_email(order)
+    sent_at = datetime.utcnow().isoformat()
+    with dashboard_module.connect() as db:
+        _ensure_supplier_po_overview_email_table(db)
+        try:
+            db.execute("INSERT INTO supplier_po_overview_emails(order_id,supplier_id,recipient,sent_by,sent_at) VALUES(?,?,?,?,?)",
+                (order_id, order["supplier_id"], order["supplier_email"].strip(), getattr(request.state, "auth_user", ""), sent_at))
+        except sqlite3.IntegrityError:
+            existing = db.execute("SELECT recipient,sent_at FROM supplier_po_overview_emails WHERE order_id=?", (order_id,)).fetchone()
+            return {"success": True, "already_sent": True, "recipient": existing["recipient"], "sent_at": existing["sent_at"]}
+        db.execute("CREATE TABLE IF NOT EXISTS audit_events (id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)")
+        db.execute("INSERT INTO audit_events(actor,action,entity_type,entity_id,details_json,created_at) VALUES(?,?,?,?,?,?)",
+            (getattr(request.state, "auth_user", ""), "send_supplier_po_overview", "purchase_order", str(order_id),
+             json.dumps({"po_number": order["code"], "recipient": order["supplier_email"]}), sent_at))
+    return {"success": True, "already_sent": False, "recipient": order["supplier_email"], "sent_at": sent_at}
 
 
 @app.get("/api/orders/{order_id}")
