@@ -808,14 +808,30 @@ async function openPurchaseRequestDetails(requestId) {
           <div class="request-detail-section-heading"><h4>${escapeHtml(section.title)}</h4><p>${escapeHtml(section.description)}</p></div>
           <div class="request-detail-grid">${section.fields.map(([label,value])=>`<div class="request-detail-field"><span>${escapeHtml(label)}</span><b>${escapeHtml(value ?? "Not provided")}</b></div>`).join("")}</div>
         </section>`).join("")}
+      <section class="request-detail-section" aria-label="Additional information">
+        <div class="request-detail-section-heading"><h4>Additional information & technical specifications</h4><p>Technical requirements and instructions supplied with this request.</p></div>
+        <p class="request-detail-additional">${r.additional_information ? escapeHtml(r.additional_information) : "No additional information provided."}</p>
+      </section>
       <div class="request-detail-note"><span class="request-note-icon" aria-hidden="true">i</span><div><b>Next procurement step</b><p>Collect supplier offers against this request in RFQs & quotations. Buyer confirmation and approval remain part of the project workflow.</p></div></div>
-      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button><button type="button" class="btn btn-primary" data-open-quotes>View quotations</button></div>`;
+      <div class="request-detail-actions"><button type="button" class="btn btn-ghost" data-close>Close details</button><button type="button" class="btn btn-secondary" data-add-quote="${escapeHtml(r.id)}">✦ Add quotation with Magic Extraction</button><button type="button" class="btn btn-primary" data-open-quotes>View quotations</button></div>`;
     content.querySelector("[data-close]")?.addEventListener("click", () => modal.classList.remove("open"));
   } catch (error) {
     content.innerHTML = `<div class="request-detail-error"><b>Request details unavailable</b><p>${escapeHtml(error.message)}</p></div>`;
   }
 }
 document.getElementById("requestDetailContent")?.addEventListener("click", event => {
+  const addQuote = event.target.closest("[data-add-quote]");
+  if (addQuote) {
+    const requestId = addQuote.dataset.addQuote;
+    document.getElementById("requestDetailModal")?.classList.remove("open");
+    document.querySelector('[data-modal="quoteModal"]')?.click();
+    requestAnimationFrame(() => {
+      const requestSelect = document.getElementById("quoteRequest");
+      if (requestSelect) requestSelect.value = String(requestId);
+      document.getElementById("quoteSourceMessage")?.focus();
+    });
+    return;
+  }
   if (!event.target.closest("[data-open-quotes]")) return;
   document.getElementById("requestDetailModal")?.classList.remove("open");
   document.querySelector('.nav-item[data-page="quotes"]')?.click();
