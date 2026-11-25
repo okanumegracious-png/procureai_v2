@@ -301,6 +301,9 @@ async function fetchDashboard() {
   const quoteResponse = await apiFetch(`${API}/quotes`);
   const quoteData = quoteResponse.ok ? await quoteResponse.json() : { quotes: [] };
   quoteRecords = quoteData.quotes || [];
+  const rfqResponse = await apiFetch(`${API}/rfq/status`);
+  const rfqData = rfqResponse.ok ? await rfqResponse.json() : {requests:[]};
+  dashboardData.rfqStatus = Object.fromEntries((rfqData.requests || []).map(item => [String(item.request_id), item]));
   const invoiceResponse = await apiFetch(`${API}/invoices`);
   const invoiceData = invoiceResponse.ok ? await invoiceResponse.json() : { invoices: [] };
   invoiceRecords = invoiceData.invoices || [];
@@ -873,6 +876,7 @@ function renderDashboard() {
       <td>${r.required_by}</td>
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
       <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${escapeHtml(r.status)}</span></td>
+      <td>${(() => { const q=(dashboardData.rfqStatus||{})[String(r.id)]||{}; const n=Number(q.quote_count||0), sent=Number(q.sent_count||0), failed=Number(q.failed_count||0); return n>0 ? '<span class="pill green">'+n+' quotation'+(n===1?'':'s')+' received</span>' : sent>0 ? '<span class="pill blue">RFQ sent · '+sent+'</span>' : failed>0 ? '<span class="pill red">RFQ email failed</span>' : '<span class="pill gray">No quotation yet</span>'; })()}</td>
       <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button><button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
     </tr>
   `).join("");
