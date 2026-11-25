@@ -185,6 +185,13 @@
 </form></div></div>
 <div class="modal-backdrop" id="requestModal"><div class="modal"><div class="modal-head"><div><span class="eyebrow">DEMAND MANAGEMENT</span><h2>Create purchase request</h2></div><button class="close" data-close>×</button></div>
 <form id="requestForm" class="form-grid">
+<section class="request-magic-panel wide" aria-labelledby="requestMagicTitle">
+  <div class="request-magic-heading"><div class="request-magic-mark" aria-hidden="true">✦</div><div class="request-magic-copy"><span class="eyebrow">AI-ASSISTED REQUEST ENTRY</span><h3 id="requestMagicTitle">Magic purchase request extraction</h3><p>Paste a rough WhatsApp message, email or project instruction. ProcureAI will identify the request details and fill the form for you to review.</p></div><span class="request-magic-tag">AI-assisted</span></div>
+  <label for="requestSourceMessage">Paste purchase requirement</label>
+  <textarea id="requestSourceMessage" rows="4" maxlength="12000" placeholder="Example: We need 1 main distribution panel, 400A, 415V, floor-standing metal enclosure with MCCB protection, for the mechanical workshop at Orleans Invest. Required within 14 days."></textarea>
+  <div class="request-magic-controls"><span id="requestParseStatus" role="status" aria-live="polite">Paste the requirement, then parse to populate the fields below.</span><button type="button" class="btn btn-secondary" id="parsePurchaseRequest">✦ Parse request</button></div>
+  <div id="requestParseReview" class="request-parse-review" hidden></div>
+</section>
 <label class="wide">Project workspace<select name="project_id" id="requestProjectId" required><option value="">Select a project first</option></select><small>Every purchase request must be attached to an existing project workspace.</small></label>
 <label class="wide">Material description<input name="material" required placeholder="e.g. Reinforcement steel T12"></label>
 <label>Category<select name="category"><option>Reinforcement</option><option>Cementitious</option><option>Aggregate</option><option>Formwork</option><option>Electrical</option><option>Plumbing</option><option>Other</option></select></label>
@@ -200,7 +207,12 @@
 </select></label>
 <label id="requestCustomUnitWrap" hidden>Specify unit<input name="custom_unit" id="requestCustomUnit" maxlength="40" placeholder="e.g. bundle, length, sheet"></label>
 <label>Project / site<input name="site" required placeholder="e.g. Lagos Tower"></label>
-<label class="wide">Additional information<textarea name="additional_information" rows="4" maxlength="8000" placeholder="Add technical specifications, ratings, dimensions, standards, preferred brands, installation scope, site conditions or any other requirements suppliers should consider."></textarea><small>Include the technical details suppliers must follow. This information will be retained with the request and shown when reviewing it.</small></label>
+<section class="request-additional-panel wide" aria-labelledby="requestAdditionalTitle">
+  <div class="request-additional-heading"><div><span class="request-additional-icon" aria-hidden="true">≡</span><div><h3 id="requestAdditionalTitle">Additional information</h3><p>Capture the technical and delivery requirements suppliers need to quote accurately.</p></div></div><span class="request-optional-tag">Recommended</span></div>
+  <label for="requestAdditionalInformation">Technical specifications &amp; instructions <span class="optional-label">Optional</span></label>
+  <textarea id="requestAdditionalInformation" name="additional_information" rows="5" maxlength="8000" placeholder="For example: 400A, 415V, 3-phase, 50Hz; floor-standing metal enclosure; minimum IP rating; MCCB protection; applicable IEC standards; include supply, installation, testing and commissioning."></textarea>
+  <div class="request-additional-footer"><span>Include ratings, dimensions, standards, preferred brands, installation scope, site conditions and acceptance criteria.</span><span id="requestAdditionalCount" aria-live="polite">0 / 8,000</span></div>
+</section>
 <label>Required by<input name="required_by" type="date" required></label>
 <label>Priority<select name="priority"><option>Normal</option><option>Urgent</option></select></label>
 <div class="form-actions wide"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button class="btn btn-primary">Create request</button></div>
