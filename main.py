@@ -791,7 +791,20 @@ class LoginPayload(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 @app.post("/api/auth/login")
-def login(payload: LoginPayload, request: Request, response: Response):
+async def login(request: Request, response: Response):
+    # Accept both the normal JSON/AJAX request and a safe POST form fallback.
+    # Never allow browser-native form submission to put credentials in the URL.
+    content_type = request.headers.get("content-type", "").lower()
+    is_form_submission = "application/json" not in content_type
+    try:
+        if not is_form_submission:
+            submitted = await request.json()
+        else:
+            raw_form = (await request.body()).decode("utf-8", errors="replace")
+            submitted = {key: values[-1] for key, values in urllib.parse.parse_qs(raw_form, keep_blank_values=True).items()}
+        payload = LoginPayload(**submitted)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Enter your username and password, then try again.")
     configured_username = os.getenv("PROCUREAI_ADMIN_USERNAME", "").strip()
     if not configured_username or not os.getenv("PROCUREAI_ADMIN_PASSWORD_HASH"):
         raise HTTPException(status_code=503, detail="Administrator login is not configured")
@@ -820,6 +833,10 @@ def login(payload: LoginPayload, request: Request, response: Response):
                         secure=COOKIE_SECURE, samesite="lax", path="/")
     response.set_cookie(CSRF_COOKIE, csrf, max_age=SESSION_TTL_SECONDS, httponly=False,
                         secure=COOKIE_SECURE, samesite="lax", path="/")
+    if is_form_submission:
+        response.status_code = 303
+        response.headers["Location"] = "/"
+        return response
     return {"success": True, "username": configured_username, "expires_in": SESSION_TTL_SECONDS}
 
 @app.get("/api/auth/me")
