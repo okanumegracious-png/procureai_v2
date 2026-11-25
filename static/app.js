@@ -575,7 +575,10 @@ ${project.status === "completed" ? `<div class="project-closure-notice"><b>Proje
       await loadBuyerConfirmations(project.project_id);
       buyerForm.hidden = true;
       const toggle = document.getElementById("toggleBuyerConfirmation");
-      if (toggle) toggle.textContent = "✎ Edit confirmation";
+      if (toggle) {
+        toggle.textContent = "✎ Edit confirmation";
+        toggle.setAttribute("aria-expanded", "false");
+      }
     } catch(error) { showToast(error.message,true); }
     finally { button.disabled = false; }
   });
@@ -608,14 +611,20 @@ async function loadBuyerConfirmations(projectId) {
       form.dataset.saved = "yes";
       form.hidden = true;
       const toggle = document.getElementById("toggleBuyerConfirmation");
-      if (toggle) toggle.textContent = "✎ Edit confirmation";
+      if (toggle) {
+        toggle.textContent = "✎ Edit confirmation";
+        toggle.setAttribute("aria-expanded", "false");
+      }
     } else if (form) {
       const submit = form.querySelector('button[type="submit"]');
       if (submit) submit.textContent = "Save buyer confirmation";
       form.dataset.saved = "no";
       form.hidden = true;
       const toggle = document.getElementById("toggleBuyerConfirmation");
-      if (toggle) toggle.textContent = "＋ Record confirmation";
+      if (toggle) {
+        toggle.textContent = "＋ Record confirmation";
+        toggle.setAttribute("aria-expanded", "false");
+      }
     }
   } catch(error) {
     status.textContent = "Unavailable";
