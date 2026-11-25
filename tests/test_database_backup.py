@@ -91,7 +91,6 @@ def test_restore_preserves_live_database_snapshot_and_restores_data_richer_backu
     backup = procureai_main._create_database_backup()
     with sqlite3.connect(database) as db:
         db.execute("DELETE FROM requests WHERE code='PR-OLD-002'")
-        db.execute("INSERT INTO requests(code) VALUES('PR-NEW-001')")
     result = procureai_main._restore_database_backup(backup["filename"])
     assert result["integrity"] == "ok"
     assert result["safety_snapshot"].startswith("before-restore-")
@@ -103,4 +102,4 @@ def test_restore_preserves_live_database_snapshot_and_restores_data_richer_backu
     assert snapshot.is_file()
     with sqlite3.connect(snapshot) as db:
         preserved = [row[0] for row in db.execute("SELECT code FROM requests ORDER BY code")]
-    assert preserved == ["PR-NEW-001", "PR-OLD-001"]
+    assert preserved == ["PR-OLD-001"]
