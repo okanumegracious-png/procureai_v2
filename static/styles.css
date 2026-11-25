@@ -520,3 +520,6 @@
 .buyer-confirmation-toggle{white-space:nowrap}
 .buyer-confirmation-form[hidden]{display:none!important}
 @media(max-width:640px){.buyer-confirmation-heading-actions{width:100%;justify-content:flex-start}.project-request-open{padding:6px 8px;font-size:10px}}
+
+/* Keep sign-in action text as readable as the username and password fields. */
+.login-card .login-submit { font-size: 13px; line-height: 1.4; min-height: 46px; }
