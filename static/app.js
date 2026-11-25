@@ -814,6 +814,26 @@ document.addEventListener("click", async event => {
   }
 });
 
+
+async function sendPurchaseOrderOverview(orderId) {
+  const button = document.querySelector(`[data-send-po-overview="${CSS.escape(String(orderId))}"]`);
+  if (!window.confirm("Email the purchase-order overview to this seller? The message will clearly state whether the PO is pending approval, approved or rejected.")) return;
+  if (button) { button.disabled = true; button.textContent = "Sending overview…"; }
+  try {
+    const response = await apiFetch(`${API}/orders/${encodeURIComponent(orderId)}/send-overview`, {method:"POST"});
+    const raw = await response.text();
+    let data;
+    try { data = raw ? JSON.parse(raw) : {}; }
+    catch { throw new Error(`The email service returned an unreadable response (HTTP ${response.status}). Check the PO record before retrying.`); }
+    if (!response.ok) throw new Error(data.detail || "Could not email the PO overview");
+    showToast(data.already_sent ? "PO overview was already emailed to " + data.recipient : "PO overview emailed to " + data.recipient);
+    await fetchDashboard();
+  } catch (error) {
+    showToast(error.message, true);
+    if (button) { button.disabled = false; button.textContent = "Email PO overview to seller"; }
+  }
+}
+
 async function exportPurchaseOrder(orderId) {
   const popup = window.open("", "_blank");
   if (!popup) return showToast("Allow pop-ups to export this purchase order.", true);
@@ -1083,6 +1103,7 @@ function renderDashboard() {
       <td>${o.required_by}</td>
       <td><span class="pill ${o.status === 'Approved' ? 'green' : (o.status === 'Rejected' ? 'red' : 'amber')}">${o.status}</span></td>
       <td>
+        ${o.po_overview_sent ? '<span class="pill green">Overview emailed</span>' : `<button type="button" class="action-btn" data-send-po-overview="${o.id}">Email PO overview to seller</button>`}
         <button type="button" class="action-btn" data-export-po="${o.id}">↓ Export PDF</button>
         ${o.status === 'Approved' ? (invoiceRecords.find(i => Number(i.order_id) === Number(o.id)) ? `<button type="button" class="action-btn" data-open-invoice="${invoiceRecords.find(i => Number(i.order_id) === Number(o.id)).id}">View invoice</button>` : `<button type="button" class="action-btn" data-create-invoice="${o.id}">＋ Create invoice</button>`) : ''}
         ${o.status === 'Pending approval' ? `
@@ -1145,6 +1166,8 @@ document.addEventListener("click", async event => {
 
 // --- Administrator request and quotation controls ---
 document.addEventListener("click", event => {
+  const sendPoOverviewButton = event.target.closest("[data-send-po-overview]");
+  if (sendPoOverviewButton) sendPurchaseOrderOverview(sendPoOverviewButton.dataset.sendPoOverview);
   const exportPoButton = event.target.closest("[data-export-po]");
   if (exportPoButton) exportPurchaseOrder(exportPoButton.dataset.exportPo);
   const deleteButton = event.target.closest("[data-delete-request]");
