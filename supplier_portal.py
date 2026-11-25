@@ -126,13 +126,18 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
             if not email:
                 skipped.append(supplier["name"]+" (no email)"); continue
             existing=db.execute("SELECT id,status FROM supplier_rfq_invites WHERE request_id=? AND supplier_id=?",(request_id,supplier["id"])).fetchone()
-            if existing:
+            if existing and existing["status"] in ("sent","submitted","sending"):
                 skipped.append(supplier["name"]); continue
             raw=secrets.token_urlsafe(36)
             expires=(datetime.utcnow()+timedelta(days=INVITE_DAYS)).replace(microsecond=0).isoformat()+"Z"
-            db.execute("""INSERT INTO supplier_rfq_invites(request_id,supplier_id,token_hash,recipient,status,expires_at,created_at)
-                VALUES(?,?,?,?,?,?,?)""",(request_id,supplier["id"],_hash(raw),email,"sending",expires,_now()))
-            invite_id=db.execute("SELECT last_insert_rowid()").fetchone()[0]
+            if existing:
+                invite_id=existing["id"]
+                db.execute("""UPDATE supplier_rfq_invites SET token_hash=?,recipient=?,status='sending',sent_at=NULL,expires_at=?,submitted_at=NULL,quote_id=NULL,error='',created_at=? WHERE id=?""",
+                    (_hash(raw),email,expires,_now(),invite_id))
+            else:
+                db.execute("""INSERT INTO supplier_rfq_invites(request_id,supplier_id,token_hash,recipient,status,expires_at,created_at)
+                    VALUES(?,?,?,?,?,?,?)""",(request_id,supplier["id"],_hash(raw),email,"sending",expires,_now()))
+                invite_id=db.execute("SELECT last_insert_rowid()").fetchone()[0]
             base=os.getenv("PROCUREAI_PUBLIC_URL",os.getenv("APP_BASE_URL","https://procureaiv2-production.up.railway.app")).split(",")[0].strip().rstrip("/")
             link=base+"/supplier-portal/"+raw
             q=dict(req); s=dict(supplier)
