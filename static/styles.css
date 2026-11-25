@@ -486,3 +486,20 @@
 .request-additional-footer span:first-child{max-width:78%}
 #requestAdditionalCount{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:600px){.request-magic-panel,.request-additional-panel{padding:14px}.request-magic-heading{flex-wrap:wrap}.request-magic-tag{margin-left:52px}.request-magic-controls{align-items:stretch;flex-direction:column}.request-magic-controls .btn{width:100%}.request-additional-heading{align-items:flex-start}.request-additional-footer{flex-direction:column;gap:5px}.request-additional-footer span:first-child{max-width:none}}
+
+
+/* Supplier RFQ tracking inside purchase-request details */
+.rfq-tracking-section{background:linear-gradient(145deg,rgba(36,87,197,.045),rgba(36,87,197,.015));border:1px solid var(--border,#e2e8f0);border-radius:14px;padding:18px;margin:18px 0}
+.rfq-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+.rfq-summary-grid>div{background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px}
+.rfq-summary-grid b{font-size:21px;line-height:1.2;color:var(--text,#172b4d);font-variant-numeric:tabular-nums}
+.rfq-summary-grid span{font-size:11px;color:var(--muted,#64748b)}
+.rfq-supplier-list{display:grid;gap:8px;margin:12px 0}
+.rfq-supplier-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;background:var(--surface,#fff);border:1px solid var(--border,#e2e8f0);border-radius:9px}
+.rfq-supplier-row>div{min-width:0;display:flex;flex-direction:column;gap:3px}
+.rfq-supplier-row b{font-size:13px}
+.rfq-supplier-row small{font-size:11px;color:var(--muted,#64748b);overflow-wrap:anywhere}
+.rfq-supplier-row .rfq-error{color:#b42318}
+.rfq-tracking-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}
+.rfq-tracking-actions>span{font-size:11px;color:var(--muted,#64748b);max-width:390px;line-height:1.5}
+@media(max-width:620px){.rfq-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rfq-supplier-row{align-items:flex-start;flex-direction:column}.rfq-tracking-section{padding:13px}}
