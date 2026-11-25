@@ -450,3 +450,7 @@
 .btn-install:focus-visible{outline:3px solid #15966c55;outline-offset:2px}
 .btn-install[hidden]{display:none!important}
 @media(max-width:520px){.btn-install{padding:8px 9px;font-size:10px}.top-actions{gap:7px}.top-actions .signout-btn{padding:7px 9px;font-size:10px}}
+
+
+/* Long-form technical notes on purchase request details */
+.request-detail-additional{margin:0;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);color:var(--text);white-space:pre-wrap;line-height:1.6;overflow-wrap:anywhere;}
