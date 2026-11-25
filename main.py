@@ -174,6 +174,7 @@ def _send_supplier_request_email(quote):
     quantity = f"{quote['quantity']} {quote['unit'] or ''}".strip()
     site = str(quote["site"] or "To be confirmed")
     required_by = str(quote["required_by"] or "To be confirmed")
+    additional_information = str(quote["additional_information"] or "").strip()
     esc = lambda value: html.escape(str(value), quote=True)
 
     body_text = "\n".join([
@@ -188,6 +189,7 @@ def _send_supplier_request_email(quote):
         f"Required quantity: {quantity}",
         f"Delivery location: {site}",
         f"Required delivery date: {required_by}",
+        *(["", "ADDITIONAL INFORMATION / TECHNICAL SPECIFICATIONS", additional_information] if additional_information else []),
         "",
         "Please reply with your unit price, total price, applicable taxes and charges, delivery lead time, payment terms, and quotation validity. Clearly state any exclusions or deviations from the requirement.",
         "",
@@ -218,6 +220,7 @@ def _send_supplier_request_email(quote):
           <tr style="background:#f7f9fc;"><td style="padding:11px 13px;color:#64748b;border-bottom:1px solid #e2e8f0;">Delivery location</td><td style="padding:11px 13px;border-bottom:1px solid #e2e8f0;">{esc(site)}</td></tr>
           <tr><td style="padding:11px 13px;color:#64748b;">Required delivery date</td><td style="padding:11px 13px;">{esc(required_by)}</td></tr>
         </table>
+        {"<div style='margin:18px 0;padding:15px 16px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:6px;'><div style='font-size:12px;font-weight:bold;letter-spacing:.5px;color:#172b4d;margin-bottom:7px;'>ADDITIONAL INFORMATION / TECHNICAL SPECIFICATIONS</div><div style='font-size:14px;line-height:1.7;color:#526174;white-space:pre-wrap;'>" + esc(additional_information) + "</div></div>" if additional_information else ""}
         <p style="margin:22px 0 8px;font-size:14px;font-weight:bold;color:#172b4d;">Quotation submission</p>
         <p style="margin:0;font-size:14px;line-height:1.7;color:#526174;">Please reply with your unit price, total price, applicable taxes and charges, delivery lead time, payment terms, and quotation validity. Clearly state any exclusions or deviations from the requirement.</p>
         <div style="margin:22px 0 8px;padding:14px 16px;background:#fff8e8;border-left:4px solid #e5a12a;border-radius:4px;">
@@ -1494,7 +1497,7 @@ def review_quote_technical_compliance(quote_id: int, payload: TechnicalReviewPay
 def dashboard_send_supplier_request(quote_id: int, request: Request):
     with dashboard_module.connect() as db:
         _ensure_supplier_request_email_table(db)
-        quote = db.execute("""SELECT q.id AS quote_id, q.supplier_id, q.request_id, s.name AS supplier_name, s.email AS supplier_email, s.status AS supplier_status, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.status AS request_status FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?""", (quote_id,)).fetchone()
+        quote = db.execute("""SELECT q.id AS quote_id, q.supplier_id, q.request_id, s.name AS supplier_name, s.email AS supplier_email, s.status AS supplier_status, r.code AS request_code, r.material, r.category, r.quantity, r.unit, r.site, r.required_by, r.additional_information, r.status AS request_status FROM quotes q JOIN suppliers s ON s.id=q.supplier_id JOIN requests r ON r.id=q.request_id WHERE q.id=?""", (quote_id,)).fetchone()
         if not quote: raise HTTPException(status_code=404, detail="Quotation not found")
         if (quote["supplier_status"] or "").strip().casefold() not in {"verified", "active"} or "[fictional demo]" in quote["supplier_name"].casefold():
             raise HTTPException(status_code=409, detail="Only verified or active real sellers can receive purchase requests.")
