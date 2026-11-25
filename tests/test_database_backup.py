@@ -103,3 +103,28 @@ def test_restore_preserves_live_database_snapshot_and_restores_data_richer_backu
     with sqlite3.connect(snapshot) as db:
         preserved = [row[0] for row in db.execute("SELECT code FROM requests ORDER BY code")]
     assert preserved == ["PR-OLD-001"]
+
+
+def test_purchase_order_overview_email_marks_pending_order_as_non_authorising(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(procureai_main, "_deliver_supplier_email",
+        lambda message, recipient, body_text, html_body: sent.update(
+            message=message, recipient=recipient, text=body_text, html=html_body
+        ))
+    order = {
+        "code": "PO-261125-001", "status": "Pending approval",
+        "supplier": "Verified Industrial Supplies", "supplier_email": "sales@example.com",
+        "request_code": "PR-261125-001", "material": "Industrial pump seal",
+        "category": "Mechanical", "quantity": 4, "unit": "ea", "site": "Oyigbo",
+        "required_by": "2026-12-05", "unit_price": 125000, "tax": 37500,
+        "freight": 10000, "total": 547500, "lead_days": 5, "payment_days": 30,
+    }
+    procureai_main._send_supplier_po_overview_email(order)
+    assert sent["recipient"] == "sales@example.com"
+    assert "Purchase Order Overview PO-261125-001" in sent["message"]["Subject"]
+    assert "PO-261125-001" in sent["text"]
+    assert "Pending approval" in sent["text"]
+    assert "not an approved purchase order" in sent["text"]
+    assert "do not dispatch goods" in sent["text"]
+    assert "₦547,500.00" in sent["text"]
+    assert "IMPORTANT PROCUREMENT NOTICE" in sent["html"]
