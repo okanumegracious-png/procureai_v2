@@ -133,7 +133,7 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
             db.execute("""INSERT INTO supplier_rfq_invites(request_id,supplier_id,token_hash,recipient,status,expires_at,created_at)
                 VALUES(?,?,?,?,?,?,?)""",(request_id,supplier["id"],_hash(raw),email,"sending",expires,_now()))
             invite_id=db.execute("SELECT last_insert_rowid()").fetchone()[0]
-            base=os.getenv("APP_BASE_URL",os.getenv("FRONTEND_URL","https://procureaiv2-production.up.railway.app")).split(",")[0].strip().rstrip("/")
+            base=os.getenv("PROCUREAI_PUBLIC_URL",os.getenv("APP_BASE_URL","https://procureaiv2-production.up.railway.app")).split(",")[0].strip().rstrip("/")
             link=base+"/supplier-portal/"+raw
             q=dict(req); s=dict(supplier)
             safe=lambda v:html.escape(str(v or "—"),quote=True)
