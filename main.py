@@ -1133,6 +1133,7 @@ class DashboardRequestPayload(BaseModel):
     required_by: str
     priority: str = "Normal"
     project_id: str = Field(min_length=1, max_length=80)
+    additional_information: str = Field(default="", max_length=8000)
 
 
 class DashboardQuotePayload(BaseModel):
@@ -1426,10 +1427,10 @@ def dashboard_create_request(payload: DashboardRequestPayload):
         next_id = db.execute("SELECT COALESCE(MAX(id),0)+1 FROM requests").fetchone()[0]
         code = f"PR-{next_id+141:04d}"
         created_at = _now()
-        cur = db.execute("""INSERT INTO requests(code,material,category,quantity,unit,site,required_by,priority,status,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?)""",
+        cur = db.execute("""INSERT INTO requests(code,material,category,quantity,unit,site,required_by,priority,status,created_at,additional_information)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
             (code,payload.material.strip(),payload.category,payload.quantity,payload.unit.strip(),payload.site.strip(),
-             payload.required_by,payload.priority,"Open",created_at))
+             payload.required_by,payload.priority,"Open",created_at,payload.additional_information.strip()))
         request_id = cur.lastrowid
         db.execute("""INSERT INTO project_purchase_requests(project_id,request_id,linked_by,linked_at)
             VALUES(?,?,?,?)""",
