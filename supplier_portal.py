@@ -118,6 +118,8 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
         req=db.execute("SELECT * FROM requests WHERE id=?",(request_id,)).fetchone()
         if not req:
             raise HTTPException(status_code=404,detail="Purchase request not found.")
+        if req["status"] != "Open":
+            raise HTTPException(status_code=409,detail="This purchase request is no longer accepting supplier quotations.")
         suppliers=db.execute("SELECT * FROM suppliers ORDER BY name COLLATE NOCASE").fetchall()
         for supplier in suppliers:
             if not _supplier_matches(supplier, req["category"]):
@@ -125,9 +127,24 @@ def dispatch_request_rfq(request_id: int, actor: str = "ProcureAI"):
             email=(supplier["email"] or "").strip()
             if not email:
                 skipped.append(supplier["name"]+" (no email)"); continue
-            existing=db.execute("SELECT id,status FROM supplier_rfq_invites WHERE request_id=? AND supplier_id=?",(request_id,supplier["id"])).fetchone()
-            if existing and existing["status"] in ("sent","submitted","sending"):
-                skipped.append(supplier["name"]); continue
+            existing=db.execute("SELECT id,status,expires_at,created_at FROM supplier_rfq_invites WHERE request_id=? AND supplier_id=?",(request_id,supplier["id"])).fetchone()
+            if existing:
+                state=existing["status"]
+                if state=="submitted":
+                    skipped.append(supplier["name"]); continue
+                if state=="sent":
+                    try:
+                        if datetime.fromisoformat(existing["expires_at"].replace("Z","+00:00")).timestamp()>time.time():
+                            skipped.append(supplier["name"]); continue
+                    except (TypeError,ValueError):
+                        skipped.append(supplier["name"]); continue
+                if state=="sending":
+                    try:
+                        started=datetime.fromisoformat(existing["created_at"].replace("Z","+00:00")).timestamp()
+                        if started>time.time()-600:
+                            skipped.append(supplier["name"]); continue
+                    except (TypeError,ValueError):
+                        skipped.append(supplier["name"]); continue
             raw=secrets.token_urlsafe(36)
             expires=(datetime.utcnow()+timedelta(days=INVITE_DAYS)).replace(microsecond=0).isoformat()+"Z"
             if existing:
