@@ -559,7 +559,7 @@ ${project.status === "completed" ? `<div class="project-closure-notice"><b>Proje
   progressInput?.addEventListener("input", () => { document.getElementById("projectReportedProgressValue").textContent = progressInput.value + "%"; });
   loadProjectQuotationOptions(project.project_id);
   loadBuyerConfirmations(project.project_id);
-  const buyerForm = document.getElementById("buyerConfirmationForm");
+
   buyerForm?.addEventListener("submit", async event => {
     event.preventDefault();
     const button = buyerForm.querySelector('button[type="submit"]');
