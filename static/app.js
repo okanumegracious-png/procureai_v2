@@ -1807,9 +1807,14 @@ async function loadDatabaseBackups() {
     const response = await apiFetch(API + "/admin/database/backups");
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not load database backups");
-    status.textContent = data.automatic_backup
+    const currentCounts = data.current_counts || {};
+    const currentSummary = ["projects","requests","quotes","orders","suppliers"]
+      .map(key => key.replace("_", " ") + ": " + Number(currentCounts[key] || 0))
+      .join(" · ");
+    status.textContent = (data.automatic_backup
       ? "Automatic daily backups are enabled. Seven recent copies are retained."
-      : "Automatic backups are disabled. Create a backup manually.";
+      : "Automatic backups are disabled. Create a backup manually.")
+      + " Current records — " + currentSummary + ".";
     list.replaceChildren();
     if (!data.backups.length) {
       const empty = document.createElement("p");
@@ -1825,7 +1830,12 @@ async function loadDatabaseBackups() {
       const name = document.createElement("strong");
       name.textContent = backup.filename;
       const detail = document.createElement("small");
-      detail.textContent = new Date(backup.created_at).toLocaleString() + " · " + Math.ceil(backup.size_bytes / 1024) + " KB";
+      const counts = backup.table_counts || {};
+      const recordSummary = ["projects","requests","quotes","orders"]
+        .map(key => key.replace("_", " ") + " " + Number(counts[key] || 0)).join(" · ");
+      detail.textContent = new Date(backup.created_at).toLocaleString() + " · "
+        + Math.ceil(backup.size_bytes / 1024) + " KB · " + recordSummary
+        + (backup.recoverable ? " · Contains more procurement records" : "");
       meta.append(name, detail);
       const actions = document.createElement("div");
       actions.className = "backup-row-actions";
@@ -1850,7 +1860,41 @@ async function loadDatabaseBackups() {
       download.href = API + "/admin/database/backups/" + encodeURIComponent(backup.filename) + "/download";
       download.textContent = "Download";
       download.setAttribute("download", backup.filename);
-      actions.append(verify, download);
+      actions.append(verify);
+      if (backup.recoverable) {
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "btn btn-primary";
+        restore.textContent = "Restore records";
+        restore.addEventListener("click", async () => {
+          const approved = window.confirm(
+            "Restore this backup? It contains more procurement records than the live database. "
+            + "The current database will first be preserved in a separate recovery snapshot. "
+            + "The selected backup will then replace the live database. Continue?"
+          );
+          if (!approved) return;
+          restore.disabled = true;
+          status.textContent = "Creating a safety snapshot and restoring verified records…";
+          try {
+            const result = await apiFetch(
+              API + "/admin/database/backups/" + encodeURIComponent(backup.filename) + "/restore",
+              {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({confirm:true})}
+            );
+            const body = await result.json();
+            if (!result.ok) throw new Error(body.detail || "Database restore failed");
+            status.textContent = "Records restored. Safety snapshot: " + body.restore.safety_snapshot
+              + ". Reconnecting to the restored workspace…";
+            showToast("Database recovery completed");
+            window.location.reload();
+          } catch (error) {
+            status.textContent = error.message;
+            showToast(error.message, true);
+            restore.disabled = false;
+          }
+        });
+        actions.append(restore);
+      }
+      actions.append(download);
       row.append(meta, actions);
       list.append(row);
     });
