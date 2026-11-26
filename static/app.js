@@ -946,7 +946,7 @@ document.getElementById("requestDetailContent")?.addEventListener("click", async
   if (dispatch) {
     dispatch.disabled = true; dispatch.textContent = "Sending invitations…";
     try {
-      const response = await apiFetch(`${API}/rfq/dispatch/${encodeURIComponent(dispatch.dataset.dispatchRfq)}`, {method:"POST"});
+      const response = await apiFetch(`${API}/rfq/dispatch/${encodeURIComponent(dispatch.dataset.dispatchRfq)}?retry_failed=true`, {method:"POST"});
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Could not send supplier invitations");
       showToast(`RFQs sent to ${Number(result.sent_count || 0)} supplier(s); ${Number(result.failed_count || 0)} email(s) failed.`, Number(result.failed_count || 0) > 0);
@@ -975,7 +975,7 @@ document.getElementById("allRequests")?.addEventListener("click", async event =>
   if (dispatch) {
     dispatch.disabled = true;
     try {
-      const response = await apiFetch(`${API}/rfq/dispatch/${encodeURIComponent(dispatch.dataset.dispatchRfq)}`, {method:"POST"});
+      const response = await apiFetch(`${API}/rfq/dispatch/${encodeURIComponent(dispatch.dataset.dispatchRfq)}?retry_failed=true`, {method:"POST"});
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not send supplier invitations");
       showToast(`RFQs sent to ${data.sent_count || 0} supplier(s); ${data.failed_count || 0} email(s) failed.`, Number(data.failed_count || 0)>0);
@@ -987,7 +987,7 @@ document.getElementById("allRequests")?.addEventListener("click", async event =>
   if (retry) {
     retry.disabled = true;
     try {
-      const response = await apiFetch(`${API}/rfq/dispatch/${retry.dataset.retryRfq}`, {method:"POST"});
+      const response = await apiFetch(`${API}/rfq/dispatch/${retry.dataset.retryRfq}?retry_failed=true`, {method:"POST"});
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Could not retry RFQ dispatch");
       showToast(`RFQs sent to ${data.sent_count || 0} supplier(s); ${data.failed_count || 0} email(s) still failed.`, Number(data.failed_count || 0)>0);
