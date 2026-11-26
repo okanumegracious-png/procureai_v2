@@ -657,3 +657,11 @@ td { font-size: 13px; line-height: 1.45; }
 @media(max-width:390px){.quote-detail-price-grid,.quote-detail-request{grid-template-columns:1fr}}
 
 .quote-detail-head-actions{display:flex;align-items:center;gap:9px}.quote-detail-head-actions .btn{white-space:nowrap}.quote-detail-head-actions .close{flex:0 0 auto}@media(max-width:480px){.quote-detail-head-actions{gap:6px}.quote-detail-head-actions .btn{padding:9px 10px;font-size:10px}}
+
+
+/* Hugeicons free Stroke Rounded icon system */
+.hgi-stroke{display:inline-flex;align-items:center;justify-content:center;font-size:1.15em;line-height:1;vertical-align:-.12em;font-weight:400;font-style:normal;flex:0 0 auto}
+.nav-item .hgi-stroke{width:18px;font-size:19px;color:#9caec4}
+.nav-item:hover .hgi-stroke,.nav-item.active .hgi-stroke{color:#49c89c}
+.metric-icon .hgi-stroke,.rule-icon .hgi-stroke,.insight-mark .hgi-stroke,.setup-icon .hgi-stroke{font-size:20px}
+.mobile-menu .hgi-stroke{font-size:21px}
