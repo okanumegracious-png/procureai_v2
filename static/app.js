@@ -416,7 +416,7 @@ function renderProjectCards() {
   document.getElementById("projectCount").textContent = `${filteredProjects.length} ${filteredProjects.length === 1 ? "project" : "projects"}`;
   if (!filteredProjects.length) {
     const message = filter === "completed" ? "No completed projects yet." : filter === "terminated" ? "No terminated projects." : filter === "uncompleted" ? "No uncompleted projects. Great work!" : "No project workspaces yet.";
-    grid.innerHTML = `<div class="project-empty"><span>▦</span><h3>${escapeHtml(message)}</h3><p>${filter === "all" ? "Create your first project to get started." : "Try another filter or update a project's completion status."}</p>${filter === "all" ? '<button class="btn btn-primary" data-modal="projectModal">Create first project</button>' : ""}</div>`;
+    grid.innerHTML = `<div class="project-empty"><span><i class="hgi-stroke hgi-dashboard-circle" aria-hidden="true"></i></span><h3>${escapeHtml(message)}</h3><p>${filter === "all" ? "Create your first project to get started." : "Try another filter or update a project's completion status."}</p>${filter === "all" ? '<button class="btn btn-primary" data-modal="projectModal">Create first project</button>' : ""}</div>`;
     return;
   }
   grid.innerHTML = filteredProjects.map(project => `
@@ -734,7 +734,7 @@ async function loadInvoices() {
         <td>${escapeHtml(invoice.issue_date)}</td>
         <td>${escapeHtml(invoice.due_date)}</td>
         <td><span class="pill ${invoice.status === "Paid" ? "green" : "amber"}">${escapeHtml(invoice.status)}</span></td>
-        <td><button type="button" class="action-btn" data-export-invoice="${invoice.id}">↓ PDF</button>${invoice.status !== "Paid" ? ` <button type="button" class="action-btn" data-mark-invoice-paid="${invoice.id}">Mark paid</button>` : ""}</td>
+        <td><button type="button" class="action-btn" data-export-invoice="${invoice.id}"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> PDF</button>${invoice.status !== "Paid" ? ` <button type="button" class="action-btn" data-mark-invoice-paid="${invoice.id}">Mark paid</button>` : ""}</td>
       </tr>`).join("") || '<tr><td colspan="9" class="empty-state">No invoices match this view. Generate one from an approved purchase order.</td></tr>';
   } catch (error) {
     body.innerHTML = `<tr><td colspan="9">${escapeHtml(error.message)}</td></tr>`;
@@ -1104,7 +1104,7 @@ function renderDashboard() {
       <td><span class="pill ${o.status === 'Approved' ? 'green' : (o.status === 'Rejected' ? 'red' : 'amber')}">${o.status}</span></td>
       <td>
         ${o.po_overview_sent ? '<span class="pill green">Overview emailed</span>' : `<button type="button" class="action-btn" data-send-po-overview="${o.id}">Email PO overview to seller</button>`}
-        <button type="button" class="action-btn" data-export-po="${o.id}">↓ Export PDF</button>
+        <button type="button" class="action-btn" data-export-po="${o.id}"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button>
         ${o.status === 'Approved' ? (invoiceRecords.find(i => Number(i.order_id) === Number(o.id)) ? `<button type="button" class="action-btn" data-open-invoice="${invoiceRecords.find(i => Number(i.order_id) === Number(o.id)).id}">View invoice</button>` : `<button type="button" class="action-btn" data-create-invoice="${o.id}">＋ Create invoice</button>`) : ''}
         ${o.status === 'Pending approval' ? `
           <button class="action-btn" onclick="decideOrder(${o.id}, 'approve')">Approve</button>
@@ -1492,7 +1492,7 @@ document.getElementById("runAnalysis").addEventListener("click", async () => {
   const button = document.getElementById("runAnalysis");
   const resultContainer = document.getElementById("analysisResult");
   button.disabled = true; button.textContent = "Reviewing bids…";
-  resultContainer.innerHTML = '<div class="empty-state"><span>◈</span><h3>Evaluating procurement options</h3><p>Reviewing quotations, delivery risks and possible alternatives…</p></div>';
+  resultContainer.innerHTML = '<div class="empty-state"><span><i class="hgi-stroke hgi-analytics-01" aria-hidden="true"></i></span><h3>Evaluating procurement options</h3><p>Reviewing quotations, delivery risks and possible alternatives…</p></div>';
   try {
     const res = await apiFetch(`${API}/analysis?request_id=${encodeURIComponent(rid)}`);
     const responseText = await res.text();
