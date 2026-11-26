@@ -10,7 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ProcureAI — Industrial operations workspace</title>
-  <link rel="stylesheet" href="/static/styles.css?v=20261126-quotation-fix">
+  <link rel="stylesheet" href="https://use.hugeicons.com/font/icons.css">
+  <link rel="stylesheet" href="/static/styles.css?v=20261126-hugeicons-stroke">
 </head>
 <body>
 <section class="login-screen" id="loginScreen">
@@ -28,27 +29,27 @@
     <a class="brand" href="#"><span class="brand-mark">P</span><span>procure<span class="brand-ai">ai</span><small>INDUSTRIAL OPERATIONS</small></span></a>
     <div class="workspace-label">WORKSPACE</div>
     <nav class="nav">
-      <button class="nav-item active" data-page="overview"><span>▦</span> Overview</button>
-      <button class="nav-item" data-page="projects"><span>▦</span> Projects</button>
-      <button class="nav-item" data-page="requests"><span>▤</span> Purchase requests <i id="requestCount">0</i></button>
-      <button class="nav-item" data-page="suppliers"><span>♧</span> Suppliers</button>
-      <button class="nav-item" data-page="quotes"><span>⇄</span> RFQs & quotations</button>
-      <button class="nav-item" data-page="analysis"><span>◈</span> Bid analysis</button>
-      <button class="nav-item" data-page="orders"><span>▣</span> Purchase orders <i id="approvalCount">0</i></button>
-      <button class="nav-item" data-page="invoices"><span>▤</span> Invoices</button>
-      <button class="nav-item" data-page="settings"><span>⚙</span> Company setup</button>
+      <button class="nav-item active" data-page="overview"><span><i class="hgi-stroke hgi-dashboard-circle" aria-hidden="true"></i></span> Overview</button>
+      <button class="nav-item" data-page="projects"><span><i class="hgi-stroke hgi-dashboard-circle" aria-hidden="true"></i></span> Projects</button>
+      <button class="nav-item" data-page="requests"><span><i class="hgi-stroke hgi-file-text" aria-hidden="true"></i></span> Purchase requests <i id="requestCount">0</i></button>
+      <button class="nav-item" data-page="suppliers"><span><i class="hgi-stroke hgi-users" aria-hidden="true"></i></span> Suppliers</button>
+      <button class="nav-item" data-page="quotes"><span><i class="hgi-stroke hgi-arrow-left-right" aria-hidden="true"></i></span> RFQs & quotations</button>
+      <button class="nav-item" data-page="analysis"><span><i class="hgi-stroke hgi-analytics-01" aria-hidden="true"></i></span> Bid analysis</button>
+      <button class="nav-item" data-page="orders"><span><i class="hgi-stroke hgi-shopping-bag-01" aria-hidden="true"></i></span> Purchase orders <i id="approvalCount">0</i></button>
+      <button class="nav-item" data-page="invoices"><span><i class="hgi-stroke hgi-file-text" aria-hidden="true"></i></span> Invoices</button>
+      <button class="nav-item" data-page="settings"><span><i class="hgi-stroke hgi-settings-01" aria-hidden="true"></i></span> Company setup</button>
     </nav>
     <div class="sidebar-bottom">
-      <div class="rule-card"><span class="rule-icon">✳</span><div><b>Built on clear decisions</b><p>AI reads. The math calculates. People approve.</p></div></div>
+      <div class="rule-card"><span class="rule-icon"><i class="hgi-stroke hgi-sparkles" aria-hidden="true"></i></span><div><b>Built on clear decisions</b><p>AI reads. The math calculates. People approve.</p></div></div>
       <div class="user-row"><div class="avatar">GO</div><div><b>Workspace administrator</b><small>Administrator</small></div><span class="dots">•••</span></div>
     </div>
   </aside>
 
   <main class="main">
     <header class="topbar">
-      <button class="mobile-menu" id="mobileMenu" aria-label="Open menu">☰</button>
+      <button class="mobile-menu" id="mobileMenu" aria-label="Open menu"><i class="hgi-stroke hgi-menu-01" aria-hidden="true"></i></button>
       <div class="crumb">Workspace <span>/</span> <b id="crumbTitle">Overview</b></div>
-      <div class="top-actions"><span class="live-dot"></span><span class="system-label">Private workspace</span><button class="btn btn-install" id="installAppBtn" type="button" hidden><span aria-hidden="true">↓</span> Install app</button><button class="signout-btn" id="logoutBtn" type="button">Sign out</button><div class="top-avatar">GO</div></div>
+      <div class="top-actions"><span class="live-dot"></span><span class="system-label">Private workspace</span><button class="btn btn-install" id="installAppBtn" type="button" hidden><span aria-hidden="true"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i></span> Install app</button><button class="signout-btn" id="logoutBtn" type="button">Sign out</button><div class="top-avatar">GO</div></div>
     </header>
 
     <section class="page active" id="page-overview">
@@ -57,9 +58,9 @@
         <button class="btn btn-primary" data-modal="requestModal">＋ New purchase request</button>
       </div>
       <div class="metric-grid">
-        <button type="button" class="metric metric-action" data-metric-page="requests" data-metric-filter="Open" aria-label="View open purchase requests"><span class="metric-top"><span>Open requests</span><span class="metric-icon blue">▤</span></span><strong id="mRequests">—</strong><small><span class="positive">●</span> Requiring procurement action · View requests →</small></button>
-        <button type="button" class="metric metric-action" data-metric-page="suppliers" data-metric-filter="Active" aria-label="View active suppliers"><span class="metric-top"><span>Active suppliers</span><span class="metric-icon purple">♧</span></span><strong id="mSuppliers">—</strong><small>Across your supplier network · View suppliers →</small></button>
-        <button type="button" class="metric metric-action" data-metric-page="orders" data-metric-filter="Pending approval" aria-label="View purchase orders awaiting approval"><span class="metric-top"><span>Awaiting approval</span><span class="metric-icon amber">◷</span></span><strong id="mApprovals">—</strong><small>Human decision required · Review approvals →</small></button>
+        <button type="button" class="metric metric-action" data-metric-page="requests" data-metric-filter="Open" aria-label="View open purchase requests"><span class="metric-top"><span>Open requests</span><span class="metric-icon blue"><i class="hgi-stroke hgi-file-text" aria-hidden="true"></i></span></span><strong id="mRequests">—</strong><small><span class="positive">●</span> Requiring procurement action · View requests →</small></button>
+        <button type="button" class="metric metric-action" data-metric-page="suppliers" data-metric-filter="Active" aria-label="View active suppliers"><span class="metric-top"><span>Active suppliers</span><span class="metric-icon purple"><i class="hgi-stroke hgi-users" aria-hidden="true"></i></span></span><strong id="mSuppliers">—</strong><small>Across your supplier network · View suppliers →</small></button>
+        <button type="button" class="metric metric-action" data-metric-page="orders" data-metric-filter="Pending approval" aria-label="View purchase orders awaiting approval"><span class="metric-top"><span>Awaiting approval</span><span class="metric-icon amber"><i class="hgi-stroke hgi-clock-01" aria-hidden="true"></i></span></span><strong id="mApprovals">—</strong><small>Human decision required · Review approvals →</small></button>
         <button type="button" class="metric metric-action" data-metric-page="orders" data-metric-filter="Approved" aria-label="View approved purchase orders"><span class="metric-top"><span>Approved spend</span><span class="metric-icon green">₦</span></span><strong id="mSpend">₦0</strong><small>Approved purchase orders · View orders →</small></button>
       </div>
       <section class="project-trends-panel" id="projectTrendsPanel"><div class="project-loading">Loading project completion trends…</div></section>
@@ -75,7 +76,7 @@
       </div>
       <div class="content-grid lower-grid">
         <section class="panel"><div class="panel-heading"><div><h2>Latest quotations</h2><p>Recently received supplier pricing</p></div><button class="text-btn" data-goto="quotes">Manage quotes →</button></div><div id="recentQuotes" class="quote-list"></div></section>
-        <section class="panel insight-panel"><div class="insight-mark">✳</div><div><span class="eyebrow">PROCUREMENT PRINCIPLE</span><h2>Decisions backed by evidence.</h2><p>Compare total cost, delivery risk and supplier reliability. Keep final award decisions in human hands.</p><button class="text-btn" data-goto="analysis">Explore bid analysis →</button></div></section>
+        <section class="panel insight-panel"><div class="insight-mark"><i class="hgi-stroke hgi-sparkles" aria-hidden="true"></i></div><div><span class="eyebrow">PROCUREMENT PRINCIPLE</span><h2>Decisions backed by evidence.</h2><p>Compare total cost, delivery risk and supplier reliability. Keep final award decisions in human hands.</p><button class="text-btn" data-goto="analysis">Explore bid analysis →</button></div></section>
       </div>
     </section>
 
@@ -86,7 +87,7 @@
       </div>
             <div id="projectsListView">
         <div class="project-list-toolbar"><div><h2>Managed projects</h2><p>Every project has its own overview, timeline and activity history.</p></div><div class="project-toolbar-controls"><label class="project-filter-label" for="projectStatusFilter">Show projects</label><select class="filter-select project-status-filter" id="projectStatusFilter" aria-label="Filter projects by completion status"><option value="all">All projects</option><option value="completed">Completed projects</option><option value="terminated">Terminated / archived</option><option value="uncompleted">Uncompleted projects</option></select><span class="project-list-count" id="projectCount">0 projects</span></div></div>
-        <div class="project-cards-grid" id="projectCards"><div class="project-empty"><span>▦</span><h3>No project workspaces yet</h3><p>Create your first project to start tracking its procurement lifecycle and daily progress.</p><button class="btn btn-primary" data-modal="projectModal">Create first project</button></div></div>
+        <div class="project-cards-grid" id="projectCards"><div class="project-empty"><span><i class="hgi-stroke hgi-dashboard-circle" aria-hidden="true"></i></span><h3>No project workspaces yet</h3><p>Create your first project to start tracking its procurement lifecycle and daily progress.</p><button class="btn btn-primary" data-modal="projectModal">Create first project</button></div></div>
       </div>
       <div id="projectWorkspaceView" hidden>
         <div class="project-back-row"><button type="button" class="text-btn" id="backToProjects">← All projects</button><button type="button" class="btn btn-ghost" id="recalculateProject">↻ Recalculate progress</button></div>
@@ -96,29 +97,29 @@
 
     <section class="page" id="page-requests">
       <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials, parts and services required for workshop or client jobs.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
-      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th>QUOTATION STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th>QUOTATION STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-suppliers">
       <div class="page-heading"><div><div class="eyebrow">SUPPLIER NETWORK</div><h1>Suppliers & service providers</h1><p class="subheading">Maintain seller contacts, technical capabilities and verification status.</p></div><button class="btn btn-primary" data-modal="supplierModal">＋ Add seller</button></div>
-      <section class="panel supplier-tools"><div class="panel-heading"><div><h2>Seller directory</h2><p>Only mark a seller verified after your team has checked their identity and capability.</p></div><div class="toolbar-actions"><input class="search" id="supplierSearch" placeholder="Search sellers…"><select class="filter-select" id="supplierCategoryFilter" aria-label="Filter sellers by service category"><option value="">All service categories</option><option value="panels">Panels & distribution</option><option value="protection">Breakers & protection</option><option value="lighting">Lighting</option><option value="cables">Cables & wiring</option><option value="installation">Installation & commissioning</option><option value="supplies">Electrical supplies</option></select><select class="filter-select" id="supplierStatusFilter" aria-label="Filter sellers by status"><option value="">All statuses</option><option>Active</option><option>Pending verification</option><option>Verified</option><option>Rejected</option><option>Demo / Unverified</option></select><button class="btn btn-ghost" data-export="suppliers">↓ Export PDF</button></div></div><div class="supplier-cards" id="supplierCards"></div></section>
+      <section class="panel supplier-tools"><div class="panel-heading"><div><h2>Seller directory</h2><p>Only mark a seller verified after your team has checked their identity and capability.</p></div><div class="toolbar-actions"><input class="search" id="supplierSearch" placeholder="Search sellers…"><select class="filter-select" id="supplierCategoryFilter" aria-label="Filter sellers by service category"><option value="">All service categories</option><option value="panels">Panels & distribution</option><option value="protection">Breakers & protection</option><option value="lighting">Lighting</option><option value="cables">Cables & wiring</option><option value="installation">Installation & commissioning</option><option value="supplies">Electrical supplies</option></select><select class="filter-select" id="supplierStatusFilter" aria-label="Filter sellers by status"><option value="">All statuses</option><option>Active</option><option>Pending verification</option><option>Verified</option><option>Rejected</option><option>Demo / Unverified</option></select><button class="btn btn-ghost" data-export="suppliers"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="supplier-cards" id="supplierCards"></div></section>
     </section>
 
     <section class="page" id="page-quotes">
       <div class="page-heading"><div><div class="eyebrow">SOURCING</div><h1>RFQs & quotations</h1><p class="subheading">Capture offers against open purchase requests.</p></div><button class="btn btn-primary" data-modal="quoteModal">＋ Add quotation</button></div>
-      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Filter offers by supplier or request, then export the register.</p></div><div class="toolbar-actions"><input class="search" id="quoteSearch" placeholder="Search quotations…"><button class="btn btn-ghost" data-export="quotes">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th><th>DETAILS</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Filter offers by supplier or request, then export the register.</p></div><div class="toolbar-actions"><input class="search" id="quoteSearch" placeholder="Search quotations…"><button class="btn btn-ghost" data-export="quotes"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th><th>DETAILS</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-analysis">
       <div class="page-heading"><div><div class="eyebrow">DECISION INTELLIGENCE</div><h1>Bid analysis</h1><p class="subheading">Compare landed cost, delivery and supplier reliability before award.</p></div></div>
       <section class="panel analysis-picker"><div><label for="analysisRequest">Select a purchase request</label><select id="analysisRequest"></select></div><button class="btn btn-primary" id="runAnalysis">Analyse quotations →</button></section>
-      <div id="analysisResult" class="analysis-result"><div class="empty-state"><span>◈</span><h3>Ready to compare offers</h3><p>Select a purchase request and run the analysis to see a cost breakdown and supplier recommendation.</p></div></div>
+      <div id="analysisResult" class="analysis-result"><div class="empty-state"><span><i class="hgi-stroke hgi-analytics-01" aria-hidden="true"></i></span><h3>Ready to compare offers</h3><p>Select a purchase request and run the analysis to see a cost breakdown and supplier recommendation.</p></div></div>
     </section>
 
     <section class="page" id="page-settings">
       <div class="page-heading"><div><div class="eyebrow">ADMINISTRATION</div><h1>Company setup</h1><p class="subheading">Enter your organisation details and operating scope. ProcureAI will use this configuration for your workspace.</p></div></div>
       <div class="setup-layout">
-        <section class="setup-intro"><div class="setup-icon">⚙</div><div><span class="eyebrow">WORKSPACE PROFILE</span><h2>Make ProcureAI understand your business.</h2><p>These details shape supplier categories, procurement requests and the way your team describes its work. You can update them at any time.</p></div><div class="setup-note"><b>Administrator settings</b><span>Changes are saved to your shared workspace.</span></div></section>
+        <section class="setup-intro"><div class="setup-icon"><i class="hgi-stroke hgi-settings-01" aria-hidden="true"></i></div><div><span class="eyebrow">WORKSPACE PROFILE</span><h2>Make ProcureAI understand your business.</h2><p>These details shape supplier categories, procurement requests and the way your team describes its work. You can update them at any time.</p></div><div class="setup-note"><b>Administrator settings</b><span>Changes are saved to your shared workspace.</span></div></section>
         <section class="panel setup-panel"><form id="companyProfileForm" class="setup-form">
           <div class="setup-section"><div class="setup-section-title"><span>01</span><div><h2>Organisation identity</h2><p>Use the name and registration details your clients recognise.</p></div></div><div class="form-grid"><label class="wide">Company / organisation name<input id="companyName" required minlength="2" maxlength="200" placeholder="e.g. Gestro Global Consult Ltd"></label><label>Registration number<input id="companyRegistration" maxlength="80" placeholder="CAC / registration number"></label><label>Industry / expertise<input id="companyIndustry" maxlength="160" placeholder="e.g. Industrial engineering & maintenance"></label></div></div>
           <div class="setup-section"><div class="setup-section-title"><span>02</span><div><h2>Services & capabilities</h2><p>List the work your organisation can deliver, one service per line.</p></div></div><div class="form-grid"><label class="wide">Services provided<textarea id="companyServices" rows="4" placeholder="Generator servicing and repairs&#10;Electrical systems and control panels&#10;Mechanical fabrication and installation"></textarea><small>Include maintenance, repairs, installation, supply and specialist technical services.</small></label><label class="wide">Service delivery modes<textarea id="companyModes" rows="3" placeholder="On-site inspection and repairs&#10;Workshop repairs and testing&#10;Equipment installation and commissioning"></textarea></label></div></div>
@@ -136,7 +137,7 @@
 
     <section class="page" id="page-orders">
       <div class="page-heading"><div><div class="eyebrow">AWARD & CONTROL</div><h1>Purchase orders</h1><p class="subheading">Review generated orders and resolve approval decisions.</p></div></div>
-      <section class="panel"><div class="panel-heading"><div><h2>Purchase order register</h2><p>Every order retains its supplier, source request and decision status.</p></div><div class="toolbar-actions"><input class="search" id="orderSearch" placeholder="Search orders…"><select class="filter-select" id="orderStatusFilter" aria-label="Filter orders by status"><option value="">All statuses</option><option>Pending approval</option><option>Approved</option><option>Rejected</option></select><button class="btn btn-ghost" data-export="orders">↓ Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>SUPPLIER</th><th>MATERIAL</th><th>TOTAL</th><th>DELIVERY</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allOrders"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>Purchase order register</h2><p>Every order retains its supplier, source request and decision status.</p></div><div class="toolbar-actions"><input class="search" id="orderSearch" placeholder="Search orders…"><select class="filter-select" id="orderStatusFilter" aria-label="Filter orders by status"><option value="">All statuses</option><option>Pending approval</option><option>Approved</option><option>Rejected</option></select><button class="btn btn-ghost" data-export="orders"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>SUPPLIER</th><th>MATERIAL</th><th>TOTAL</th><th>DELIVERY</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="allOrders"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-invoices">
@@ -244,7 +245,7 @@
   <div id="requestDetailContent" class="request-detail-content"><p>Loading purchase request…</p></div>
 </div></div>
 <div class="modal-backdrop" id="quoteDetailModal"><div class="modal quote-detail-modal">
-  <div class="modal-head"><div><span class="eyebrow">QUOTATION RECORD</span><h2 id="quoteDetailTitle">Quotation details</h2></div><div class="quote-detail-head-actions"><button type="button" class="btn btn-primary" id="exportQuotePdfBtn" onclick="exportQuotePdf()" disabled>↓ Export PDF</button><button class="close" data-close aria-label="Close quotation">×</button></div></div>
+  <div class="modal-head"><div><span class="eyebrow">QUOTATION RECORD</span><h2 id="quoteDetailTitle">Quotation details</h2></div><div class="quote-detail-head-actions"><button type="button" class="btn btn-primary" id="exportQuotePdfBtn" onclick="exportQuotePdf()" disabled><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button><button class="close" data-close aria-label="Close quotation">×</button></div></div>
   <div id="quoteDetailContent" class="quote-detail-content"><p>Loading quotation…</p></div>
 </div></div>
 <div class="modal-backdrop" id="poPreviewModal"><div class="modal po-preview-modal">
