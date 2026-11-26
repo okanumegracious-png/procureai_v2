@@ -655,3 +655,5 @@ td { font-size: 13px; line-height: 1.45; }
 .quote-detail-content .technical-review-form select,.quote-detail-content .technical-review-form textarea{width:100%;margin-top:6px;border:1px solid #d5deea;border-radius:9px;padding:11px;font:inherit;font-size:13px;background:#fff;color:#25364b}
 @media(max-width:650px){.quote-detail-modal{width:calc(100vw - 18px);max-height:94vh}.quote-detail-hero{grid-template-columns:1fr;padding:16px;gap:12px}.quote-detail-hero h3{font-size:19px}.quote-detail-two-col{grid-template-columns:1fr;gap:0}.quote-detail-price-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.quote-detail-request{grid-template-columns:1fr 1fr}.quote-detail-section{padding:14px}.quote-detail-section-head{align-items:flex-start}}
 @media(max-width:390px){.quote-detail-price-grid,.quote-detail-request{grid-template-columns:1fr}}
+
+.quote-detail-head-actions{display:flex;align-items:center;gap:9px}.quote-detail-head-actions .btn{white-space:nowrap}.quote-detail-head-actions .close{flex:0 0 auto}@media(max-width:480px){.quote-detail-head-actions{gap:6px}.quote-detail-head-actions .btn{padding:9px 10px;font-size:10px}}
