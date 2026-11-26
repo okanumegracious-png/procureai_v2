@@ -1343,6 +1343,9 @@ window.openQuote = async function(id) {
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.detail || "Could not save technical review");
+          if (window.currentQuotePdfData && String(window.currentQuotePdfData.id) === String(id)) {
+            window.currentQuotePdfData = {...window.currentQuotePdfData, technical_status:result.technical_status || statusSelect.value, technical_notes:notes.value, technical_reviewed_by:result.reviewed_by, technical_reviewed_at:result.reviewed_at};
+          }
           if (result.technical_status && result.technical_status !== "pending") {
             renderSavedReview({
               status:result.technical_status,
