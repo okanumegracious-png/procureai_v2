@@ -155,8 +155,16 @@ def _ensure_supplier_request_email_table(db):
     db.execute("""CREATE TABLE IF NOT EXISTS supplier_request_emails (id INTEGER PRIMARY KEY AUTOINCREMENT, quote_id INTEGER NOT NULL UNIQUE, supplier_id INTEGER NOT NULL, request_id INTEGER NOT NULL, recipient TEXT NOT NULL, sent_by TEXT NOT NULL DEFAULT '', sent_at TEXT NOT NULL)""")
 
 
-def _deliver_supplier_email(message: EmailMessage, recipient: str, body_text: str, html_body: str):
-    """Deliver supplier communications through the configured HTTPS or SMTP provider."""
+def _deliver_supplier_email(message: EmailMessage, recipient, body_text: str, html_body: str):
+    """Deliver supplier communications through the configured HTTPS or SMTP provider.
+
+    Accept one recipient or a list so RFQs can reach every valid address on a supplier record.
+    """
+    recipients = [recipient] if isinstance(recipient, str) else list(recipient or [])
+    recipients = [str(address).strip() for address in recipients if str(address).strip()]
+    if not recipients:
+        raise HTTPException(status_code=400, detail="At least one valid supplier email address is required.")
+    message["To"] = ", ".join(recipients)
     host = os.getenv("SMTP_HOST", "").strip()
     username = os.getenv("SMTP_USERNAME", "").strip()
     password = os.getenv("SMTP_PASSWORD", "")
@@ -222,7 +230,7 @@ def _deliver_supplier_email(message: EmailMessage, recipient: str, body_text: st
         resend_sender = os.getenv("RESEND_FROM_EMAIL", "").strip()
         if not resend_key or not resend_sender:
             raise HTTPException(status_code=503, detail="Resend delivery is selected but its API key or verified sender is missing.")
-        payload = json.dumps({"from": resend_sender, "to": [recipient],
+        payload = json.dumps({"from": resend_sender, "to": recipients,
             "subject": str(message["Subject"]), "text": body_text, "html": html_body}).encode("utf-8")
         request = urllib.request.Request("https://api.resend.com/emails", data=payload,
             headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}, method="POST")
@@ -252,7 +260,7 @@ def _deliver_supplier_email(message: EmailMessage, recipient: str, body_text: st
         if use_ssl:
             with smtplib.SMTP_SSL(host, port, timeout=25, context=ssl.create_default_context()) as server:
                 server.login(username, password)
-                server.send_message(message)
+                server.send_message(message, to_addrs=recipients)
         else:
             with smtplib.SMTP(host, port, timeout=25) as server:
                 server.ehlo()
