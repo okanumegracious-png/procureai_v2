@@ -1217,6 +1217,9 @@ window.deleteQuote = async function(id) {
 window.openQuote = async function(id) {
   const modal = document.getElementById("quoteDetailModal");
   const content = document.getElementById("quoteDetailContent");
+  const exportButton = document.getElementById("exportQuotePdfBtn");
+  if (exportButton) exportButton.disabled = true;
+  window.currentQuotePdfData = null;
   document.getElementById("quoteDetailTitle").textContent = "Quotation #" + id;
   content.textContent = "Loading quotation details…";
   modal.classList.add("open");
@@ -1225,6 +1228,7 @@ window.openQuote = async function(id) {
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
     window.currentQuotePdfData = q;
+    if (exportButton) exportButton.disabled = false;
     const money = value => formatMoney(Number(value || 0));
     const safe = value => escapeHtml(String(value ?? "—"));
     const status = String(q.technical_status || "pending").toLowerCase();
