@@ -109,51 +109,23 @@ def ensure_tables(db):
     db.execute("CREATE INDEX IF NOT EXISTS idx_supplier_rfq_request ON supplier_rfq_invites(request_id,status)")
 
 def _send_email(recipient, subject, text_body, html_body):
-    parsed = parseaddr(recipient)[1]
-    if not parsed or parsed != recipient or "@" not in parsed:
-        raise RuntimeError("Supplier email address is missing or invalid.")
+    """Send RFQs through the same configured provider used by other ProcureAI mail."""
+    parts = [part.strip() for part in str(recipient or "").replace(";", ",").split(",") if part.strip()]
+    recipients = [parseaddr(part)[1] for part in parts]
+    if not recipients or any(
+        not address or "@" not in address or any(char.isspace() for char in address)
+        for address in recipients
+    ):
+        raise RuntimeError("Supplier email address is missing or invalid. Check the supplier email field.")
     message = EmailMessage()
     message["Subject"] = subject
-    message["To"] = recipient
+    message["To"] = ", ".join(recipients)
     message.set_content(text_body)
     message.add_alternative(html_body, subtype="html")
-    if os.getenv("EMAIL_PROVIDER", "").strip().lower() == "gmail":
-        client_id = os.getenv("GMAIL_CLIENT_ID", "").strip()
-        client_secret = os.getenv("GMAIL_CLIENT_SECRET", "").strip()
-        refresh_token = os.getenv("GMAIL_REFRESH_TOKEN", "").strip()
-        sender = os.getenv("GMAIL_SENDER_EMAIL", "").strip()
-        if not all((client_id, client_secret, refresh_token, sender)):
-            raise RuntimeError("Gmail OAuth credentials are incomplete.")
-        message["From"] = sender
-        payload = urllib.parse.urlencode({"client_id":client_id,"client_secret":client_secret,"refresh_token":refresh_token,"grant_type":"refresh_token"}).encode()
-        req = urllib.request.Request("https://oauth2.googleapis.com/token", data=payload, headers={"Content-Type":"application/x-www-form-urlencoded"}, method="POST")
-        with urllib.request.urlopen(req, timeout=25) as response:
-            access = json.loads(response.read().decode()).get("access_token","")
-        if not access:
-            raise RuntimeError("Gmail OAuth did not return an access token.")
-        raw = base64.urlsafe_b64encode(message.as_bytes()).decode().rstrip("=")
-        req = urllib.request.Request("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", data=json.dumps({"raw":raw}).encode(), headers={"Authorization":"Bearer "+access,"Content-Type":"application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=25) as response:
-            if response.status < 200 or response.status >= 300:
-                raise RuntimeError("Gmail API rejected the RFQ email.")
-        return
-    host=os.getenv("SMTP_HOST","").strip()
-    username=os.getenv("SMTP_USERNAME","").strip()
-    password=os.getenv("SMTP_PASSWORD","")
-    sender=os.getenv("SMTP_FROM_EMAIL",username).strip()
-    if not all((host,username,password,sender)):
-        raise RuntimeError("Supplier email is not configured. Configure the existing Gmail OAuth or SMTP settings.")
-    message["From"]=sender
-    port=int(os.getenv("SMTP_PORT","587"))
-    if os.getenv("SMTP_USE_SSL","false").lower()=="true":
-        with smtplib.SMTP_SSL(host,port,timeout=25,context=ssl.create_default_context()) as server:
-            server.login(username,password); server.send_message(message)
-    else:
-        with smtplib.SMTP(host,port,timeout=25) as server:
-            server.ehlo()
-            if os.getenv("SMTP_USE_TLS","true").lower()=="true":
-                server.starttls(context=ssl.create_default_context()); server.ehlo()
-            server.login(username,password); server.send_message(message)
+
+    # Import at call time because main imports this router during application startup.
+    import main as procureai_main
+    procureai_main._deliver_supplier_email(message, recipients, text_body, html_body)
 
 def _supplier_matches(supplier, category):
     status=(supplier["status"] or "").strip().casefold()
