@@ -1224,6 +1224,7 @@ window.openQuote = async function(id) {
     const response = await apiFetch(API + "/quotes/" + id);
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
+    window.currentQuotePdfData = q;
     const money = value => formatMoney(Number(value || 0));
     const safe = value => escapeHtml(String(value ?? "—"));
     const status = String(q.technical_status || "pending").toLowerCase();
@@ -1374,6 +1375,44 @@ window.openQuote = async function(id) {
       content.append(reviewForm);
     }
   } catch (error) { content.textContent = error.message; }
+};
+
+window.exportQuotePdf = function() {
+  const q = window.currentQuotePdfData;
+  if (!q) { showToast("Open a quotation record before exporting it.", true); return; }
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) { showToast("Allow pop-ups for ProcureAI to export this quotation as a PDF.", true); return; }
+  const esc = value => escapeHtml(String(value ?? "—"));
+  const money = value => formatMoney(Number(value || 0));
+  const date = value => value ? new Date(value).toLocaleDateString(undefined,{day:"2-digit",month:"long",year:"numeric"}) : "Not specified";
+  const timestamp = q.created_at ? new Date(q.created_at).toLocaleString() : "—";
+  const technical = String(q.technical_status || "pending").replaceAll("_"," ");
+  const technicalLabel = technical === "compliant" ? "Technically compliant" : technical === "deviation" ? "Deviation to review" : technical === "non compliant" ? "Not compliant" : "Awaiting technical review";
+  const quantity = Number(q.quantity || 0).toLocaleString() + " " + (q.unit || "");
+  const cell = (label,value) => '<div class="cell"><span>' + label + '</span><strong>' + value + '</strong></div>';
+  const section = (number,title,body) => '<section><div class="section-head"><span>' + number + '</span><h2>' + title + '</h2></div>' + body + '</section>';
+  const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Quotation ' + esc(q.id) + ' - ' + esc(q.supplier) + '</title><style>' +
+    '@page{size:A4;margin:15mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#1d2c40;margin:0;background:#fff;line-height:1.45}' +
+    '.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #168463;padding:0 0 15px;margin-bottom:18px}.brand{font-size:22px;font-weight:800;letter-spacing:-1px;color:#15263d}.brand span{color:#168463}.doc{font-size:9px;letter-spacing:1.5px;color:#758397;font-weight:bold;text-align:right}' +
+    'h1{font-size:22px;margin:0 0 5px;color:#14243a}.subtitle{font-size:11px;color:#617087;margin:0}.hero{display:flex;justify-content:space-between;gap:18px;background:#f1f5f8;border:1px solid #dce5ed;border-radius:10px;padding:16px;margin-bottom:16px}.hero small,.cell span,.muted{color:#718096}.hero small{font-size:9px;font-weight:bold;letter-spacing:1px}.hero h2{font-size:17px;margin:6px 0 3px}.hero p{margin:0;color:#53647a}' +
+    '.total{min-width:175px;background:#152941;color:white;border-radius:8px;padding:12px}.total span{display:block;font-size:9px;color:#c5d3e1;letter-spacing:1px}.total strong{display:block;font-size:21px;margin:5px 0}section{margin:0 0 14px;page-break-inside:avoid}.section-head{display:flex;align-items:center;gap:8px;border-bottom:1px solid #e4eaf0;padding-bottom:7px;margin-bottom:9px}.section-head span{font-size:9px;font-weight:bold;color:#168463}.section-head h2{font-size:12px;margin:0;color:#1d3048}' +
+    '.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.cell{border:1px solid #e5eaf0;border-radius:6px;padding:9px;min-width:0}.cell span{display:block;font-size:9px;margin-bottom:4px}.cell strong{font-size:11px;overflow-wrap:anywhere}.total-cell{background:#eef7f2;border-color:#d4e9dd}.total-cell strong{color:#13734f;font-size:13px}.note{background:#f6f8fb;border-radius:6px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere}.status{display:inline-block;border-radius:20px;padding:5px 9px;background:#edf2f7;color:#46566a;font-size:9px;font-weight:bold;text-transform:capitalize}' +
+    'footer{border-top:1px solid #e5eaf0;margin-top:18px;padding-top:9px;color:#8793a2;font-size:9px;display:flex;justify-content:space-between}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}' +
+    '</style></head><body>' +
+    '<div class="top"><div class="brand">procure<span>ai</span></div><div class="doc">PROCUREMENT DOCUMENT<br>QUOTATION RECORD · #' + esc(q.id) + '</div></div>' +
+    '<h1>Supplier quotation</h1><p class="subtitle">Purchase request ' + esc(q.request_code) + ' · Record created ' + esc(timestamp) + '</p>' +
+    '<div class="hero"><div><small>SUPPLIER SUBMISSION</small><h2>' + esc(q.supplier) + '</h2><p>' + esc(q.material) + ' · ' + esc(q.category) + '</p><p class="muted">Priority: ' + esc(q.priority || "Standard") + '</p></div><div class="total"><span>TOTAL LANDED COST</span><strong>' + money(q.total_landed) + '</strong><span>Including freight and tax</span></div></div>' +
+    section("01","Commercial summary",'<div class="grid">' + cell("Quantity quoted",esc(quantity)) + cell("Unit price",money(q.unit_price)) + cell("Subtotal",money(q.subtotal)) + cell("Freight / delivery",money(q.freight)) + cell("Tax (" + esc(q.tax_rate) + "%)",money(q.tax_amount)) + '<div class="cell total-cell"><span>Total landed cost</span><strong>' + money(q.total_landed) + '</strong></div></div>') +
+    section("02","Supplier information",'<div class="grid two">' + cell("Supplier",esc(q.supplier)) + cell("Contact person",esc(q.supplier_contact || "Not provided")) + cell("Email",esc(q.supplier_email || "Not provided")) + cell("Location",esc(q.supplier_city || "Not provided")) + '</div>') +
+    section("03","Delivery & payment",'<div class="grid two">' + cell("Delivery lead time",esc(q.lead_days) + " days") + cell("Required by",date(q.required_by)) + cell("Payment terms","Net " + esc(q.payment_days) + " days") + cell("Delivery site",esc(q.site || "Not specified")) + '</div>') +
+    section("04","Linked purchase request",'<div class="grid two">' + cell("Request reference",esc(q.request_code)) + cell("Request status",esc(q.request_status || "Not available")) + cell("Requested material",esc(q.material)) + cell("Requested quantity",esc(quantity)) + cell("Category",esc(q.category)) + cell("Project / site",esc(q.site || "Not specified")) + '</div>') +
+    section("05","Technical compliance",'<p><span class="status">' + esc(technicalLabel) + '</span></p>' + (q.technical_notes ? '<div class="note">' + esc(q.technical_notes) + '</div>' : '<p class="muted">No technical review notes recorded.</p>') + '<p class="muted">Reviewed by: ' + esc(q.technical_reviewed_by || "Not recorded") + ' · Review date: ' + date(q.technical_reviewed_at) + '</p>') +
+    (q.note ? section("06","Supplier remarks",'<div class="note">' + esc(q.note) + '</div>') : "") +
+    '<footer><span>Generated from ProcureAI Industrial</span><span>Generated ' + esc(new Date().toLocaleString()) + '</span></footer>' +
+    '<script>window.addEventListener("load",function(){setTimeout(function(){window.print();},400);});<\/script></body></html>';
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 };
 
 // --- Actions ---
