@@ -608,3 +608,50 @@ td { font-size: 13px; line-height: 1.45; }
   outline: 3px solid rgba(21,150,108,.42);
   outline-offset: 2px;
 }
+
+/* Refined quotation record: commercial-first, structured and responsive */
+.quote-detail-modal{width:min(900px,calc(100vw - 28px));max-height:90vh}
+.quote-detail-content{padding:0 2px 4px}
+.quote-detail-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,.62fr);gap:20px;padding:22px;border:1px solid #dce5ef;border-radius:15px;background:linear-gradient(135deg,#f5f8fc 0%,#eef4f8 100%);margin:4px 0 18px}
+.quote-detail-kicker{font-size:10px;font-weight:800;letter-spacing:.1em;color:#64758b}
+.quote-detail-hero h3{font-size:22px;line-height:1.25;margin:8px 0 5px;color:#15243a}
+.quote-detail-hero p{margin:0;color:#526176;font-size:14px;font-weight:600}
+.quote-detail-hero p span{color:#9aa7b6;padding:0 4px}
+.quote-detail-tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
+.quote-detail-tag{font-size:11px;color:#526176;background:#fff;border:1px solid #dce5ef;border-radius:20px;padding:5px 9px}
+.quote-detail-total{align-self:stretch;display:flex;flex-direction:column;justify-content:center;padding:15px 17px;background:#13243b;color:#fff;border-radius:12px;min-width:0}
+.quote-detail-total small{font-size:10px;letter-spacing:.09em;color:#b6c7d9;font-weight:800}
+.quote-detail-total strong{font-size:clamp(22px,3vw,30px);line-height:1.2;margin:7px 0;overflow-wrap:anywhere}
+.quote-detail-total span{font-size:11px;color:#c4d1df}
+.quote-detail-section{border:1px solid #e1e7ef;border-radius:13px;padding:17px;margin:0 0 14px;background:#fff}
+.quote-detail-section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.quote-detail-section-head .eyebrow{font-size:9px;letter-spacing:.1em;color:#78889c;font-weight:800}
+.quote-detail-section-head h4{font-size:16px;color:#1c2d43;margin:4px 0 0}
+.quote-detail-price-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.quote-detail-price-grid>div{padding:12px;background:#f7f9fc;border:1px solid #edf1f5;border-radius:9px;min-width:0}
+.quote-detail-price-grid small,.quote-detail-info-list small,.quote-detail-request small{display:block;color:#78879a;font-size:11px;margin-bottom:5px}
+.quote-detail-price-grid b,.quote-detail-info-list b,.quote-detail-request b{display:block;color:#26384e;font-size:13px;overflow-wrap:anywhere}
+.quote-detail-price-grid .quote-detail-price-total{background:#edf7f2;border-color:#d5eadf}
+.quote-detail-price-total b{color:#14724f;font-size:15px}
+.quote-detail-two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.quote-detail-two-col .quote-detail-section{margin-bottom:14px}
+.quote-detail-info-list{display:grid;gap:12px}
+.quote-detail-info-list>div{padding-bottom:9px;border-bottom:1px solid #edf1f5}
+.quote-detail-info-list>div:last-child{padding-bottom:0;border:0}
+.quote-detail-request{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.quote-detail-request-code{font-size:11px;font-weight:800;color:#315f91;background:#edf4fb;border-radius:20px;padding:6px 10px}
+.quote-detail-note{font-size:13px;line-height:1.65;color:#43546a;background:#f7f9fc;border-radius:9px;padding:12px;margin:0}
+.quote-detail-compliance{font-size:10px;font-weight:800;border-radius:20px;padding:6px 10px;white-space:nowrap}
+.quote-detail-compliance.is-good{color:#14724f;background:#e8f6ef}
+.quote-detail-compliance.is-bad{color:#a83b3b;background:#fff0f0}
+.quote-detail-compliance.is-warn{color:#8a5a12;background:#fff5df}
+.quote-detail-compliance.is-neutral{color:#5d6b7c;background:#eef2f6}
+.quote-detail-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px;flex-wrap:wrap;padding:2px 0 14px}
+.quote-detail-actions .quote-lock-note{margin:0;flex:1}
+.quote-detail-content .technical-review-form{margin-top:12px;border:1px solid #dfe7ef;border-radius:13px;padding:18px;background:#f8fafc}
+.quote-detail-content .technical-review-form>strong{font-size:16px;color:#1d3047}
+.quote-detail-content .technical-review-form>p{font-size:13px;line-height:1.55;color:#627187}
+.quote-detail-content .technical-review-form label{display:block;margin:12px 0;color:#43546a;font-size:12px;font-weight:700}
+.quote-detail-content .technical-review-form select,.quote-detail-content .technical-review-form textarea{width:100%;margin-top:6px;border:1px solid #d5deea;border-radius:9px;padding:11px;font:inherit;font-size:13px;background:#fff;color:#25364b}
+@media(max-width:650px){.quote-detail-modal{width:calc(100vw - 18px);max-height:94vh}.quote-detail-hero{grid-template-columns:1fr;padding:16px;gap:12px}.quote-detail-hero h3{font-size:19px}.quote-detail-two-col{grid-template-columns:1fr;gap:0}.quote-detail-price-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.quote-detail-request{grid-template-columns:1fr 1fr}.quote-detail-section{padding:14px}.quote-detail-section-head{align-items:flex-start}}
+@media(max-width:390px){.quote-detail-price-grid,.quote-detail-request{grid-template-columns:1fr}}

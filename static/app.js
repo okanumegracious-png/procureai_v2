@@ -1224,8 +1224,38 @@ window.openQuote = async function(id) {
     const response = await apiFetch(API + "/quotes/" + id);
     const q = await response.json();
     if (!response.ok) throw new Error(q.detail || "Quotation could not be loaded");
-    const fields = [["Supplier",q.supplier],["Supplier contact",q.supplier_contact || "Not provided"],["Supplier location",q.supplier_city || "Not provided"],["Linked request",q.request_code],["Material / equipment",q.material],["Category",q.category],["Quantity",Number(q.quantity).toLocaleString() + " " + q.unit],["Project / site",q.site],["Required by",q.required_by],["Priority",q.priority],["Request status",q.request_status],["Unit price",formatMoney(q.unit_price)],["Freight",formatMoney(q.freight)],["Tax rate",q.tax_rate + "%"],["Tax amount",formatMoney(q.tax_amount)],["Subtotal",formatMoney(q.subtotal)],["Total landed",formatMoney(q.total_landed)],["Lead time",q.lead_days + " days"],["Payment terms","Net " + q.payment_days + " days"],["Technical compliance",q.technical_status || "pending"],["Technical review notes",q.technical_notes || "Not reviewed"],["Reviewed by",q.technical_reviewed_by || "Not reviewed"],["Review date",q.technical_reviewed_at || "—"],["Quotation date",new Date(q.created_at).toLocaleString()],["Notes",q.note || "None"]];
-    content.innerHTML = "<div class=\"quote-detail-grid\">" + fields.map(pair => "<div class=\"quote-detail-field\"><small>" + pair[0] + "</small><b>" + escapeHtml(String(pair[1] ?? "—")) + "</b></div>").join("") + "</div>" + (q.has_purchase_order ? '<p class="quote-lock-note">This quotation is locked because a purchase-order proposal is linked to it.</p>' : '<div class="quote-detail-actions"><button type="button" class="btn btn-ghost" data-edit-quote="' + q.id + '">✎ Edit quotation</button><button type="button" class="btn btn-ghost reject" data-delete-quote="' + q.id + '">Delete quotation</button></div>');
+    const money = value => formatMoney(Number(value || 0));
+    const safe = value => escapeHtml(String(value ?? "—"));
+    const status = String(q.technical_status || "pending").toLowerCase();
+    const statusLabel = status === "compliant" ? "Technically compliant" : status === "deviation" ? "Deviation to review" : status === "non_compliant" ? "Not compliant" : "Awaiting technical review";
+    const statusClass = status === "compliant" ? "is-good" : status === "non_compliant" ? "is-bad" : status === "deviation" ? "is-warn" : "is-neutral";
+    const dateLabel = value => value ? new Date(value).toLocaleDateString(undefined,{day:"2-digit",month:"short",year:"numeric"}) : "Not specified";
+    const itemQuantity = Number(q.quantity || 0).toLocaleString() + " " + (q.unit || "");
+    const recordDate = q.created_at ? new Date(q.created_at).toLocaleString() : "—";
+    document.getElementById("quoteDetailTitle").textContent = "Quotation #" + id;
+    content.innerHTML = `
+      <div class="quote-detail-hero">
+        <div class="quote-detail-hero-main">
+          <span class="quote-detail-kicker">SUPPLIER SUBMISSION · ${safe(q.request_code)}</span>
+          <h3>${safe(q.supplier)}</h3>
+          <p>${safe(q.material)} <span>·</span> ${safe(q.category)}</p>
+          <div class="quote-detail-tags"><span class="quote-detail-tag">${safe(q.priority || "Standard")} priority</span><span class="quote-detail-tag">${safe(q.request_status || "Request status unavailable")}</span><span class="quote-detail-tag">${safe(recordDate)}</span></div>
+        </div>
+        <div class="quote-detail-total"><small>TOTAL LANDED COST</small><strong>${money(q.total_landed)}</strong><span>Including freight and tax</span></div>
+      </div>
+      <div class="quote-detail-section">
+        <div class="quote-detail-section-head"><div><span class="eyebrow">01 · COMMERCIAL SUMMARY</span><h4>Price breakdown</h4></div><span class="quote-detail-compliance ${statusClass}">${safe(statusLabel)}</span></div>
+        <div class="quote-detail-price-grid">
+          <div><small>Quantity quoted</small><b>${safe(itemQuantity)}</b></div><div><small>Unit price</small><b>${money(q.unit_price)}</b></div><div><small>Subtotal</small><b>${money(q.subtotal)}</b></div><div><small>Freight / delivery</small><b>${money(q.freight)}</b></div><div><small>Tax (${safe(q.tax_rate)}%)</small><b>${money(q.tax_amount)}</b></div><div class="quote-detail-price-total"><small>Total landed cost</small><b>${money(q.total_landed)}</b></div>
+        </div>
+      </div>
+      <div class="quote-detail-two-col">
+        <section class="quote-detail-section"><div class="quote-detail-section-head"><div><span class="eyebrow">02 · SUPPLIER</span><h4>Supplier information</h4></div></div><div class="quote-detail-info-list"><div><small>Contact person</small><b>${safe(q.supplier_contact || "Not provided")}</b></div><div><small>Email</small><b>${safe(q.supplier_email || "Not provided")}</b></div><div><small>Location</small><b>${safe(q.supplier_city || "Not provided")}</b></div></div></section>
+        <section class="quote-detail-section"><div class="quote-detail-section-head"><div><span class="eyebrow">03 · FULFILMENT</span><h4>Delivery & payment</h4></div></div><div class="quote-detail-info-list"><div><small>Delivery lead time</small><b>${safe(q.lead_days)} days</b></div><div><small>Required by</small><b>${safe(dateLabel(q.required_by))}</b></div><div><small>Payment terms</small><b>Net ${safe(q.payment_days)} days</b></div><div><small>Delivery site</small><b>${safe(q.site || "Not specified")}</b></div></div></section>
+      </div>
+      <section class="quote-detail-section"><div class="quote-detail-section-head"><div><span class="eyebrow">04 · PROCUREMENT CONTEXT</span><h4>Linked purchase request</h4></div><span class="quote-detail-request-code">${safe(q.request_code)}</span></div><div class="quote-detail-request"><div><small>Requested material / equipment</small><b>${safe(q.material)}</b></div><div><small>Requested quantity</small><b>${safe(itemQuantity)}</b></div><div><small>Category</small><b>${safe(q.category)}</b></div><div><small>Project / site</small><b>${safe(q.site)}</b></div></div></section>
+      ${q.note ? `<section class="quote-detail-section"><div class="quote-detail-section-head"><div><span class="eyebrow">05 · SELLER REMARKS</span><h4>Quotation notes</h4></div></div><p class="quote-detail-note">${safe(q.note)}</p></section>` : ""}
+      <div class="quote-detail-actions">${q.has_purchase_order ? '<span class="quote-lock-note">This quotation is locked because a purchase-order proposal is linked to it.</span>' : '<button type="button" class="btn btn-ghost" data-edit-quote="' + q.id + '">Edit quotation</button><button type="button" class="btn btn-ghost reject" data-delete-quote="' + q.id + '">Delete quotation</button>'}</div>`;
     if (!q.has_purchase_order) {
       const reviewForm = document.createElement("form");
       reviewForm.className = "technical-review-form";
