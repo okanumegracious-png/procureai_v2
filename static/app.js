@@ -1149,7 +1149,7 @@ function renderDashboard() {
   // All Quotes Table
   const visibleQuotes = filterRecords(quoteRecords, document.getElementById("quoteSearch")?.value, "", ["supplier","request_code","material","category","note"]);
   document.getElementById("allQuotes").innerHTML = visibleQuotes.map(q => `
-    <tr>
+    <tr class="quote-record-row" data-open-quote="${escapeHtml(q.id)}" tabindex="0" aria-label="Open quotation details for ${escapeHtml(q.supplier)} · ${escapeHtml(q.request_code)}" title="Select to view full quotation details">
       <td class="material">${q.supplier}</td>
       <td class="code">${q.request_code}</td>
       <td class="material"><strong>${escapeHtml(q.material || "Item description not provided")}</strong><small class="item-context">${escapeHtml(q.category || "Category not specified")}</small></td>
@@ -1157,7 +1157,7 @@ function renderDashboard() {
       <td>${formatMoney(q.freight)}</td>
       <td>${q.lead_days} days</td>
       <td>Net ${q.payment_days}</td>
-      <td class="quote-actions"><button class="action-btn" data-open-quote="${q.id}">Open</button>
+      <td class="quote-actions">
         ${q.has_purchase_order ? '<span class="pill gray">PO linked · locked</span>' : `<button type="button" class="icon-action" data-edit-quote="${q.id}" aria-label="Edit quotation ${q.id}" title="Edit quotation">✎</button><button type="button" class="action-btn reject" data-delete-quote="${q.id}">Delete</button>`}</td>
     </tr>
   `).join("");
@@ -1256,6 +1256,12 @@ document.addEventListener("keydown", event => {
   if (supplierRow && event.target === supplierRow) {
     event.preventDefault();
     openSupplierPerformanceDetails(supplierRow.dataset.openSupplier);
+    return;
+  }
+  const quoteRow = event.target.closest("tr[data-open-quote], .quote-item[data-open-quote]");
+  if (quoteRow && event.target === quoteRow) {
+    event.preventDefault();
+    window.openQuote(quoteRow.dataset.openQuote);
   }
 });
 
@@ -1268,7 +1274,7 @@ document.addEventListener("click", event => {
   const deleteButton = event.target.closest("[data-delete-request]");
   if (deleteButton) window.deleteRequest(deleteButton.dataset.deleteRequest, deleteButton.dataset.requestCode);
   const quoteButton = event.target.closest("[data-open-quote]");
-  if (quoteButton) window.openQuote(quoteButton.dataset.openQuote);
+  if (quoteButton && !event.target.closest("button,a,input,select,textarea")) window.openQuote(quoteButton.dataset.openQuote);
   const editQuoteButton = event.target.closest("[data-edit-quote]");
   if (editQuoteButton) window.editQuote(editQuoteButton.dataset.editQuote);
   const deleteQuoteButton = event.target.closest("[data-delete-quote]");

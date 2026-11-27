@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ProcureAI — Industrial operations workspace</title>
   <link rel="stylesheet" href="https://use.hugeicons.com/font/icons.css">
-  <link rel="stylesheet" href="/static/styles.css?v=20261127-clickable-record-details">
+  <link rel="stylesheet" href="/static/styles.css?v=20261127-clickable-quotation-rows">
 </head>
 <body>
 <section class="login-screen" id="loginScreen">
@@ -107,7 +107,7 @@
 
     <section class="page" id="page-quotes">
       <div class="page-heading"><div><div class="eyebrow">SOURCING</div><h1>RFQs & quotations</h1><p class="subheading">Capture offers against open purchase requests.</p></div><button class="btn btn-primary" data-modal="quoteModal">＋ Add quotation</button></div>
-      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Filter offers by supplier or request, then export the register.</p></div><div class="toolbar-actions"><input class="search" id="quoteSearch" placeholder="Search quotations…"><button class="btn btn-ghost" data-export="quotes"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th><th>DETAILS</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
+      <section class="panel"><div class="panel-heading"><div><h2>Received quotations</h2><p>Filter offers by supplier or request · Select any row to view the full quotation.</p></div><div class="toolbar-actions"><input class="search" id="quoteSearch" placeholder="Search quotations…"><button class="btn btn-ghost" data-export="quotes"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>SUPPLIER</th><th>REQUEST</th><th>MATERIAL</th><th>UNIT PRICE</th><th>FREIGHT</th><th>LEAD TIME</th><th>PAYMENT</th><th>DETAILS</th></tr></thead><tbody id="allQuotes"></tbody></table></div></section>
     </section>
 
     <section class="page" id="page-analysis">
@@ -259,7 +259,7 @@
 </div></div>
 <footer class="app-creator-footer">Created by Gracious - +2348036421877</footer>
 <div class="toast" id="toast"></div>
-<script src="/static/app.js?v=20261127-clickable-record-details"></script>
+<script src="/static/app.js?v=20261127-clickable-quotation-rows"></script>
 <script src="/static/auth.js"></script>
 <script src="/static/job-completion.js"></script>
 </body></html>
