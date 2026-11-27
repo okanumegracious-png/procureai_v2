@@ -961,6 +961,7 @@ function openSupplierPerformanceDetails(supplierId) {
   );
   const rating = Number(supplier.rating || 0);
   const onTime = Number(supplier.on_time || 0);
+  const supplierWebsite = /^https?:\/\//i.test(String(supplier.website || "")) ? String(supplier.website) : "";
   const displayValue = value => value === null || value === undefined || String(value).trim() === "" ? "Not recorded" : String(value);
   const activityDate = value => {
     if (!value) return "Date not recorded";
@@ -993,7 +994,7 @@ function openSupplierPerformanceDetails(supplierId) {
           <div><dt>Email</dt><dd>${escapeHtml(displayValue(supplier.email))}</dd></div>
           <div><dt>Phone / WhatsApp</dt><dd>${escapeHtml(displayValue(supplier.phone))}</dd></div>
           <div><dt>Business address</dt><dd>${escapeHtml(displayValue(supplier.address))}</dd></div>
-          <div><dt>Website</dt><dd>${supplier.website ? '<a href="' + escapeHtml(supplier.website) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(supplier.website) + '</a>' : "Not recorded"}</dd></div>
+          <div><dt>Website</dt><dd>${supplierWebsite ? '<a href="' + escapeHtml(supplierWebsite) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(supplierWebsite) + '</a>' : "Not recorded"}</dd></div>
           <div><dt>Services / parts supplied</dt><dd>${escapeHtml(displayValue(supplier.services))}</dd></div>
         </dl>
       </section>
