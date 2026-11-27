@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ProcureAI — Industrial operations workspace</title>
   <link rel="stylesheet" href="https://use.hugeicons.com/font/icons.css">
-  <link rel="stylesheet" href="/static/styles.css?v=20261126-hugeicons-stroke">
+  <link rel="stylesheet" href="/static/styles.css?v=20261127-clickable-record-details">
 </head>
 <body>
 <section class="login-screen" id="loginScreen">
@@ -66,11 +66,11 @@
       <section class="project-trends-panel" id="projectTrendsPanel"><div class="project-loading">Loading project completion trends…</div></section>
       <div class="content-grid">
         <section class="panel requests-panel">
-          <div class="panel-heading"><div><h2>Recent purchase requests</h2><p>Material demand across your active projects</p></div><button class="text-btn" data-goto="requests">View all →</button></div>
+          <div class="panel-heading"><div><h2>Recent purchase requests</h2><p>Material demand across active projects · Select a row to view full details</p></div><button class="text-btn" data-goto="requests">View all →</button></div>
           <div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>QUANTITY</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th></tr></thead><tbody id="recentRequests"></tbody></table></div>
         </section>
         <section class="panel supplier-panel">
-          <div class="panel-heading"><div><h2>Supplier performance</h2><p>Highest-rated suppliers</p></div><button class="text-btn" data-goto="suppliers">All suppliers →</button></div>
+          <div class="panel-heading"><div><h2>Supplier performance</h2><p>Highest-rated suppliers · Select a supplier to view its record</p></div><button class="text-btn" data-goto="suppliers">All suppliers →</button></div>
           <div id="topSuppliers" class="supplier-list"></div>
         </section>
       </div>
@@ -96,7 +96,7 @@
     </section>
 
     <section class="page" id="page-requests">
-      <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials, parts and services required for workshop or client jobs.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
+      <div class="page-heading"><div><div class="eyebrow">DEMAND MANAGEMENT</div><h1>Purchase requests</h1><p class="subheading">Track materials, parts and services required for workshop or client jobs. Select any row to open its full record.</p></div><button class="btn btn-primary" data-modal="requestModal">＋ New request</button></div>
       <section class="panel"><div class="panel-heading"><div><h2>All requests</h2><p>Filter the register or export the currently matching records.</p></div><div class="toolbar-actions"><input class="search" id="requestSearch" placeholder="Search requests…"><select class="filter-select" id="requestStatusFilter" aria-label="Filter requests by status"><option value="">All statuses</option><option>Open</option><option>Awarded</option></select><button class="btn btn-ghost" data-export="requests"><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button></div></div><div class="table-wrap"><table><thead><tr><th>REQUEST</th><th>MATERIAL</th><th>CATEGORY</th><th>QUANTITY</th><th>PROJECT / SITE</th><th>REQUIRED BY</th><th>PRIORITY</th><th>STATUS</th><th>QUOTATION STATUS</th><th></th></tr></thead><tbody id="allRequests"></tbody></table></div></section>
     </section>
 
@@ -244,6 +244,10 @@
   <div class="modal-head"><div><span class="eyebrow">DEMAND MANAGEMENT</span><h2 id="requestDetailTitle">Purchase request details</h2></div><button class="close" data-close>×</button></div>
   <div id="requestDetailContent" class="request-detail-content"><p>Loading purchase request…</p></div>
 </div></div>
+<div class="modal-backdrop" id="supplierPerformanceModal"><div class="modal supplier-performance-modal">
+  <div class="modal-head"><div><span class="eyebrow">SUPPLIER NETWORK</span><h2 id="supplierPerformanceTitle">Supplier performance</h2><p class="subheading">Supplier profile, recorded delivery performance and linked procurement activity.</p></div><button class="close" data-close aria-label="Close supplier details">×</button></div>
+  <div id="supplierPerformanceContent" class="supplier-performance-content"><p>Loading supplier details…</p></div>
+</div></div>
 <div class="modal-backdrop" id="quoteDetailModal"><div class="modal quote-detail-modal">
   <div class="modal-head"><div><span class="eyebrow">QUOTATION RECORD</span><h2 id="quoteDetailTitle">Quotation details</h2></div><div class="quote-detail-head-actions"><button type="button" class="btn btn-primary" id="exportQuotePdfBtn" onclick="exportQuotePdf()" disabled><i class="hgi-stroke hgi-download-01" aria-hidden="true"></i> Export PDF</button><button class="close" data-close aria-label="Close quotation">×</button></div></div>
   <div id="quoteDetailContent" class="quote-detail-content"><p>Loading quotation…</p></div>
@@ -255,7 +259,7 @@
 </div></div>
 <footer class="app-creator-footer">Created by Gracious - +2348036421877</footer>
 <div class="toast" id="toast"></div>
-<script src="/static/app.js?v=20261126-hugeicons-stroke"></script>
+<script src="/static/app.js?v=20261127-clickable-record-details"></script>
 <script src="/static/auth.js"></script>
 <script src="/static/job-completion.js"></script>
 </body></html>
