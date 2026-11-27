@@ -941,6 +941,76 @@ async function openPurchaseRequestDetails(requestId) {
     content.innerHTML = `<div class="request-detail-error"><b>Request details unavailable</b><p>${escapeHtml(error.message)}</p></div>`;
   }
 }
+
+function openSupplierPerformanceDetails(supplierId) {
+  const modal = document.getElementById("supplierPerformanceModal");
+  const content = document.getElementById("supplierPerformanceContent");
+  const title = document.getElementById("supplierPerformanceTitle");
+  const supplier = (dashboardData.suppliers || []).find(item => Number(item.id) === Number(supplierId));
+  if (!modal || !content) return;
+  if (!supplier) {
+    showToast("Supplier record could not be found. Refresh the dashboard and try again.", true);
+    return;
+  }
+
+  const relatedQuotes = (quoteRecords || [])
+    .filter(quote => Number(quote.supplier_id) === Number(supplier.id))
+    .sort((a, b) => Number(b.id || 0) - Number(a.id || 0));
+  const linkedOrders = relatedQuotes.filter(quote =>
+    quote.has_purchase_order === true || Number(quote.has_purchase_order) === 1
+  );
+  const rating = Number(supplier.rating || 0);
+  const onTime = Number(supplier.on_time || 0);
+  const displayValue = value => value === null || value === undefined || String(value).trim() === "" ? "Not recorded" : String(value);
+  const activityDate = value => {
+    if (!value) return "Date not recorded";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString(undefined, {day:"numeric",month:"short",year:"numeric"});
+  };
+
+  title.textContent = supplier.name || "Supplier performance";
+  content.innerHTML = `
+    <section class="supplier-performance-hero">
+      <div class="supplier-performance-identity">
+        <div class="supplier-performance-logo">${escapeHtml(String(supplier.name || "S").slice(0, 2).toUpperCase())}</div>
+        <div><span class="eyebrow">SUPPLIER RECORD</span><h3>${escapeHtml(supplier.name || "Unnamed supplier")}</h3><p>${escapeHtml(supplier.city || "Location not recorded")} · <span class="pill ${String(supplier.status || "").toLowerCase() === "verified" ? "green" : "gray"}">${escapeHtml(supplier.status || "Status not recorded")}</span>${supplier.is_demo ? ' <span class="pill amber">DEMO DATA</span>' : ""}</p></div>
+      </div>
+      <button type="button" class="btn btn-secondary" data-edit-seller="${escapeHtml(supplier.id)}">Edit supplier record</button>
+    </section>
+
+    <section class="supplier-performance-metrics" aria-label="Supplier performance summary">
+      <div><span>Recorded rating</span><strong>${rating > 0 ? "★ " + rating.toFixed(1) + " / 5" : "Not rated"}</strong><small>Supplier record score</small></div>
+      <div><span>On-time delivery</span><strong>${onTime > 0 ? onTime.toFixed(0) + "%" : "Not recorded"}</strong><small>Saved delivery-performance figure</small></div>
+      <div><span>Quotations received</span><strong>${relatedQuotes.length}</strong><small>Linked quotation records</small></div>
+      <div><span>Purchase orders</span><strong>${linkedOrders.length}</strong><small>Quotations linked to a PO</small></div>
+    </section>
+
+    <div class="supplier-performance-columns">
+      <section class="supplier-performance-section">
+        <div class="supplier-performance-section-heading"><span class="eyebrow">SUPPLIER PROFILE</span><h4>Contact & capability</h4></div>
+        <dl class="supplier-performance-details">
+          <div><dt>Contact person / notes</dt><dd>${escapeHtml(displayValue(supplier.contact))}</dd></div>
+          <div><dt>Email</dt><dd>${escapeHtml(displayValue(supplier.email))}</dd></div>
+          <div><dt>Phone / WhatsApp</dt><dd>${escapeHtml(displayValue(supplier.phone))}</dd></div>
+          <div><dt>Business address</dt><dd>${escapeHtml(displayValue(supplier.address))}</dd></div>
+          <div><dt>Website</dt><dd>${supplier.website ? '<a href="' + escapeHtml(supplier.website) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(supplier.website) + '</a>' : "Not recorded"}</dd></div>
+          <div><dt>Services / parts supplied</dt><dd>${escapeHtml(displayValue(supplier.services))}</dd></div>
+        </dl>
+      </section>
+      <section class="supplier-performance-section">
+        <div class="supplier-performance-section-heading"><span class="eyebrow">PROCUREMENT ACTIVITY</span><h4>Recent quotations</h4></div>
+        ${relatedQuotes.length ? `<div class="supplier-performance-activity">${relatedQuotes.slice(0, 5).map(quote => `
+          <div class="supplier-performance-activity-row">
+            <div><b>${escapeHtml(quote.material || "Quotation")}</b><small>${escapeHtml(quote.request_code || "Request reference unavailable")} · ${escapeHtml(activityDate(quote.created_at))}</small></div>
+            <div class="supplier-performance-activity-value"><strong>${formatMoney(quote.unit_price)}</strong><small>${quote.has_purchase_order ? '<span class="pill green">PO linked</span>' : '<span class="pill gray">Not awarded</span>'}</small></div>
+          </div>`).join("")}</div>` : '<p class="supplier-performance-empty">No quotations have been recorded for this supplier yet. Supplier performance will become more informative as quotations and purchase orders are captured.</p>'}
+        <p class="supplier-performance-footnote">Rating and on-time delivery are the figures saved on this supplier record. Quotation and purchase-order counts are calculated from linked procurement records.</p>
+      </section>
+    </div>
+  `;
+  modal.classList.add("open");
+}
+
 document.getElementById("requestDetailContent")?.addEventListener("click", async event => {
   const dispatch = event.target.closest("[data-dispatch-rfq]");
   if (dispatch) {
@@ -995,8 +1065,6 @@ document.getElementById("allRequests")?.addEventListener("click", async event =>
     } catch (error) { showToast(error.message, true); retry.disabled = false; }
     return;
   }
-  const open = event.target.closest("[data-open-request]");
-  if (open) openPurchaseRequestDetails(open.dataset.openRequest);
 });
 function renderDashboard() {
   const { metrics, requests, suppliers, orders, recent_quotes } = dashboardData;
@@ -1010,8 +1078,8 @@ function renderDashboard() {
   // Recent Requests
   const reqBody = document.getElementById("recentRequests");
   reqBody.innerHTML = requests.slice(0, 5).map(r => `
-    <tr>
-      <td class="code">${r.code}</td>
+    <tr class="request-record-row" data-open-request="${escapeHtml(r.id)}" tabindex="0" aria-label="Open purchase request ${escapeHtml(r.code)} details" title="Select to view request details">
+      <td class="code">${escapeHtml(r.code)}</td>
       <td class="material"><strong>${escapeHtml(r.material || "Item description not provided")}</strong><small class="item-context">${escapeHtml([r.category, r.site].filter(Boolean).join(" · "))}</small></td>
       <td>${Number(r.quantity).toLocaleString()} ${escapeHtml(r.unit || "")}</td>
       <td>${r.required_by}</td>
@@ -1022,8 +1090,8 @@ function renderDashboard() {
   // All Requests
   const visibleRequests = filterRecords(requests, document.getElementById("requestSearch")?.value, document.getElementById("requestStatusFilter")?.value, ["code","material","category","site","status"]);
   document.getElementById("allRequests").innerHTML = visibleRequests.map(r => `
-    <tr>
-      <td class="code">${r.code}</td>
+    <tr class="request-record-row" data-open-request="${escapeHtml(r.id)}" tabindex="0" aria-label="Open purchase request ${escapeHtml(r.code)} details" title="Select to view request details">
+      <td class="code">${escapeHtml(r.code)}</td>
       <td class="material"><strong>${escapeHtml(r.material || "Item description not provided")}</strong><small class="item-context">${escapeHtml(r.category || "Category not specified")}</small></td>
       <td>${escapeHtml(r.category || "—")}</td>
       <td>${Number(r.quantity).toLocaleString()} ${escapeHtml(r.unit || "")}</td>
@@ -1032,12 +1100,12 @@ function renderDashboard() {
       <td><span class="pill ${r.priority === 'Urgent' ? 'red' : 'gray'}">${r.priority}</span></td>
       <td><span class="pill ${r.status === 'Open' ? 'blue' : 'green'}">${escapeHtml(r.status)}</span></td>
       <td>${(() => { const q=(dashboardData.rfqStatus||{})[String(r.id)]||{}; const n=Number(q.quote_count||0), sent=Number(q.sent_count||0), failed=Number(q.failed_count||0); return n>0 ? '<span class="pill green">'+n+' quotation'+(n===1?'':'s')+' received</span>' : sent>0 ? '<span class="pill blue">RFQ sent · '+sent+'</span>' : failed>0 ? '<span class="pill red">RFQ email failed</span>' : '<span class="pill gray">No quotation yet</span>'; })()}</td>
-      <td class="request-row-actions"><button type="button" class="action-btn request-open-btn" data-open-request="${r.id}">Open</button><button type="button" class="action-btn" data-dispatch-rfq="${r.id}">Invite suppliers</button>${Number(((dashboardData.rfqStatus||{})[String(r.id)]||{}).failed_count||0)>0 ? `<button type="button" class="action-btn" data-retry-rfq="${r.id}">Retry failed RFQs</button>` : ""}<button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
+      <td class="request-row-actions"><button type="button" class="action-btn" data-dispatch-rfq="${r.id}">Invite suppliers</button>${Number(((dashboardData.rfqStatus||{})[String(r.id)]||{}).failed_count||0)>0 ? `<button type="button" class="action-btn" data-retry-rfq="${r.id}">Retry failed RFQs</button>` : ""}<button type="button" class="action-btn reject" data-delete-request="${r.id}" data-request-code="${escapeHtml(r.code)}">Delete</button></td>
     </tr>
   `).join("");
   // Suppliers
   document.getElementById("topSuppliers").innerHTML = suppliers.slice(0, 4).map(s => `
-    <div class="supplier-row">
+    <div class="supplier-row" data-open-supplier="${escapeHtml(s.id)}" tabindex="0" role="button" aria-label="View performance details for ${escapeHtml(s.name)}" title="Select to view supplier performance">
       <div class="supplier-logo">${escapeHtml(s.name.substring(0,2).toUpperCase())}</div>
       <div class="supplier-info">
         <b>${escapeHtml(s.name)} ${s.is_demo ? '<span class="pill amber">DEMO</span>' : ''}</b>
@@ -1122,6 +1190,16 @@ function renderDashboard() {
   }
 }
 document.addEventListener("click", async event => {
+  const supplierPerformanceRow = event.target.closest("[data-open-supplier]");
+  if (supplierPerformanceRow && !event.target.closest("button,a,input,select,textarea")) {
+    openSupplierPerformanceDetails(supplierPerformanceRow.dataset.openSupplier);
+    return;
+  }
+  const requestRecordRow = event.target.closest("tr[data-open-request]");
+  if (requestRecordRow && !event.target.closest("button,a,input,select,textarea")) {
+    openPurchaseRequestDetails(requestRecordRow.dataset.openRequest);
+    return;
+  }
   const unlinkButton = event.target.closest("[data-unlink-project-quote]");
   if (unlinkButton && activeProjectId) {
     if (!confirm("Unlink this quotation from the project? The quotation itself will remain unchanged.")) return;
@@ -1161,7 +1239,23 @@ document.addEventListener("click", async event => {
   document.getElementById("supplierModalTitle").textContent = "Edit seller information";
   document.getElementById("supplierModalDescription").textContent = "Update this seller's contact details, technical capabilities and verification status.";
   setFormSubmitLabel(form, "Save changes");
+  document.getElementById("supplierPerformanceModal")?.classList.remove("open");
   document.getElementById("supplierModal").classList.add("open");
+});
+
+document.addEventListener("keydown", event => {
+  if (!["Enter", " "].includes(event.key) || event.target.closest("button,a,input,select,textarea")) return;
+  const requestRow = event.target.closest("tr[data-open-request]");
+  if (requestRow && event.target === requestRow) {
+    event.preventDefault();
+    openPurchaseRequestDetails(requestRow.dataset.openRequest);
+    return;
+  }
+  const supplierRow = event.target.closest("[data-open-supplier]");
+  if (supplierRow && event.target === supplierRow) {
+    event.preventDefault();
+    openSupplierPerformanceDetails(supplierRow.dataset.openSupplier);
+  }
 });
 
 // --- Administrator request and quotation controls ---
